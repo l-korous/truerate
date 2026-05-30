@@ -62,29 +62,51 @@ else
   gh repo create "$GH_OWNER/$REPO" --private --source=. --remote=origin --push
 fi
 
-# ── 2. Azure resource group + service principal ───────────────────────────────
+# ── 2. Azure: app registration + federated credentials (OIDC, no secret) ─────
 say "Creating resource group $RG ($LOCATION)"
 az group create -n "$RG" -l "$LOCATION" -o none
+
+TENANT_ID="$(az account show --query tenantId -o tsv)"
+
+# Reuse the app registration if it already exists (idempotent re-runs).
+APP_ID="$(az ad app list --display-name "$SP_NAME" --query "[0].appId" -o tsv 2>/dev/null || true)"
+if [ -z "$APP_ID" ]; then
+  say "Creating app registration '$SP_NAME'"
+  APP_ID="$(az ad app create --display-name "$SP_NAME" --query appId -o tsv)"
+fi
+# Ensure a service principal exists for the app (idempotent).
+az ad sp show --id "$APP_ID" >/dev/null 2>&1 || az ad sp create --id "$APP_ID" -o none
 
 # The deploy pipeline's Bicep creates role assignments (ACR pull, Key Vault
 # secrets, Cosmos data role), which requires Owner on the scope. Scoping Owner to
 # this single resource group keeps the blast radius to TrueRate's own resources.
 SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG"
-say "Creating service principal '$SP_NAME' (Owner on $RG only)"
+say "Granting the app Owner on $RG only"
+az role assignment create --assignee "$APP_ID" --role Owner --scope "$SCOPE" -o none 2>/dev/null || true
 
-CREDS_FILE="$(mktemp)"
-trap 'rm -f "$CREDS_FILE"' EXIT
-# Newer Azure CLI uses --json-auth; older uses --sdk-auth. Both emit the JSON
-# shape that azure/login@v2 expects in the `creds` field.
-if ! az ad sp create-for-rbac --name "$SP_NAME" --role Owner --scopes "$SCOPE" \
-      --json-auth -o json > "$CREDS_FILE" 2>/dev/null; then
-  az ad sp create-for-rbac --name "$SP_NAME" --role Owner --scopes "$SCOPE" \
-      --sdk-auth -o json > "$CREDS_FILE"
-fi
+# Federated credentials: let GitHub Actions exchange its OIDC token for Azure
+# access, with no stored secret. The subject must match how the workflow runs.
+# deploy.yml pins `environment: production`, so that subject is what's used;
+# we also add the main-branch subject as a belt-and-braces fallback.
+add_fic() {
+  local name="$1" subject="$2"
+  az ad app federated-credential list --id "$APP_ID" --query "[].subject" -o tsv 2>/dev/null | grep -qx "$subject" && return 0
+  az ad app federated-credential create --id "$APP_ID" --parameters "{
+    \"name\": \"$name\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"$subject\",
+    \"audiences\": [\"api://AzureADTokenExchange\"]
+  }" -o none
+}
+say "Adding GitHub OIDC federated credentials"
+add_fic "truerate-gha-env-prod" "repo:$GH_OWNER/$REPO:environment:production"
+add_fic "truerate-gha-main"      "repo:$GH_OWNER/$REPO:ref:refs/heads/main"
 
 # ── 3. GitHub Actions secrets + variables ─────────────────────────────────────
-say "Storing GitHub Actions secrets"
-gh secret set AZURE_CREDENTIALS   --repo "$GH_OWNER/$REPO" < "$CREDS_FILE"
+say "Storing GitHub Actions secrets (OIDC identifiers + app secrets)"
+printf "%s" "$APP_ID"          | gh secret set AZURE_CLIENT_ID       --repo "$GH_OWNER/$REPO"
+printf "%s" "$TENANT_ID"       | gh secret set AZURE_TENANT_ID       --repo "$GH_OWNER/$REPO"
+printf "%s" "$SUBSCRIPTION_ID" | gh secret set AZURE_SUBSCRIPTION_ID --repo "$GH_OWNER/$REPO"
 printf "%s" "$(openssl rand -base64 32)" | gh secret set TRUERATE_JWT_SECRET --repo "$GH_OWNER/$REPO"
 printf "%s" "$(openssl rand -base64 32)" | gh secret set TRUERATE_CRED_KEY   --repo "$GH_OWNER/$REPO"
 
@@ -97,16 +119,20 @@ say "Done."
 cat <<EOF
 
   Repository : https://github.com/$GH_OWNER/$REPO  (private)
-  Secrets set: AZURE_CREDENTIALS, TRUERATE_JWT_SECRET, TRUERATE_CRED_KEY
+  Auth       : OIDC federated credentials (no stored Azure secret)
+  Secrets set: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+               TRUERATE_JWT_SECRET, TRUERATE_CRED_KEY
   Variables  : AZURE_RG=$RG, AZURE_LOCATION=$LOCATION, AZURE_PREFIX=$PREFIX
+
+  Note: the deploy job uses a "production" GitHub Environment. The first run may
+  prompt you to approve it (Settings → Environments) if you add reviewers.
 
   Next:
     - The push above already triggered CI.
-    - To deploy: trigger the "Deploy (Azure)" workflow (it also runs on push to main):
+    - To deploy (also runs on push to main):
         gh workflow run "Deploy (Azure)" --repo $GH_OWNER/$REPO
-    - Watch it:
         gh run watch --repo $GH_OWNER/$REPO
 
-  The TRUERATE_JWT_SECRET / TRUERATE_CRED_KEY were generated and stored directly
-  as repo secrets (never printed). They are also written to Key Vault on deploy.
+  New role assignments can take a minute to propagate; if the first deploy fails
+  on an auth/role error, re-run it.
 EOF

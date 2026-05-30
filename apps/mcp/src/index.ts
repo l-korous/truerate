@@ -68,6 +68,28 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   await transport.handleRequest(req, res, body);
 });
 
-httpServer.listen(port, () => {
+httpServer.listen(port, async () => {
   console.log(`[mcp] TrueRate MCP on :${port}/mcp (enrichment mode: ${engine.mode})`);
+
+  // Dev-only: seed dummy data into this process's store and print a ready token.
+  if (process.env.TRUERATE_DEV_SEED === "true") {
+    try {
+      const { seedDevUser } = await import("./seed.js");
+      const token = await seedDevUser();
+      const line = "─".repeat(72);
+      console.log(
+        `\n${line}\n` +
+          ` TrueRate MCP — dev seed loaded (demo@truerate.dev)\n` +
+          ` Memberships: Booking Genius L3, Marriott Platinum, Hilton Gold,\n` +
+          `              Revolut Metal, Hotel PECR (15% negotiated)\n` +
+          `${line}\n` +
+          ` Bearer token (paste into your Claude Desktop config):\n\n` +
+          ` ${token}\n\n` +
+          ` Endpoint: http://localhost:${port}/mcp\n` +
+          `${line}\n`,
+      );
+    } catch (err) {
+      console.error("[mcp] dev seed failed:", err);
+    }
+  }
 });
