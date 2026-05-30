@@ -63,6 +63,20 @@ else
 fi
 
 # ── 2. Azure: app registration + federated credentials (OIDC, no secret) ─────
+
+# Ensure the resource providers the Bicep uses are registered on this subscription.
+# On a brand-new subscription these are NotRegistered, and the deploy would fail
+# with MissingSubscriptionRegistration on first run.
+say "Registering required Azure resource providers"
+for ns in Microsoft.App Microsoft.ManagedIdentity Microsoft.DocumentDB \
+          Microsoft.KeyVault Microsoft.OperationalInsights Microsoft.Authorization; do
+  state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo NotRegistered)"
+  if [ "$state" != "Registered" ]; then
+    printf '  %s ... ' "$ns"
+    az provider register --namespace "$ns" --wait -o none && echo Registered
+  fi
+done
+
 say "Creating resource group $RG ($LOCATION)"
 az group create -n "$RG" -l "$LOCATION" -o none
 
