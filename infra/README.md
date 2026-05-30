@@ -46,3 +46,15 @@ secrets at the end.
 - Put Front Door / custom domains in front of the apps; restrict ingress.
 - Add Cosmos continuous backup and a second region if availability needs it.
 - Add a deployment slot / revision-based rollout for the apps.
+
+## Scaling & cost
+
+All three Container Apps run with `minReplicas: 0` (scale-to-zero). With external
+ingress, Container Apps wakes a replica on the first incoming request, so idle
+cost is ~$0 — at the price of a cold start (typically a second or two) on the
+first request after a period of no traffic. This is the right default
+pre-launch.
+
+When a surface needs warm latency (e.g. the MCP server or API once you have
+users), set its `minReplicas: 1`. One always-on 0.5 vCPU / 1 GiB replica is
+roughly $13/month. See `docs/DEPLOYMENT.md` for the full cost breakdown.

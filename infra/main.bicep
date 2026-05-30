@@ -211,7 +211,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           env: concat(cosmosEnv, secretEnv, [ { name: 'API_PORT', value: '8787' } ])
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 5 }
+      scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
   dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
@@ -238,7 +238,7 @@ resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
           env: concat(cosmosEnv, secretEnv, [ { name: 'MCP_PORT', value: '8788' } ])
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 5 }
+      scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
   dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
@@ -264,7 +264,7 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
           // NEXT_PUBLIC_* is baked at build time; set it as a build arg in CI.
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 5 }
+      scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
   dependsOn: [ acrPull ]
