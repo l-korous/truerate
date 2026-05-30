@@ -13,10 +13,11 @@ concurrency:
 permissions:
   contents: read
   id-token: write # required for OIDC federated login to Azure
+  packages: write # required to push container images to ghcr.io and flip visibility
 
 jobs:
   deploy:
-    name: Provision & deploy to Azure Container Apps
+    name: Build images and deploy to Azure Container Apps
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -26,11 +27,24 @@ jobs:
       LOCATION: ${{ vars.AZURE_LOCATION || 'westeurope' }}
       PREFIX: ${{ vars.AZURE_PREFIX || 'truerate' }}
       IMAGE_TAG: ${{ github.sha }}
+      # ghcr.io packages live under the repo owner's namespace, lowercased.
+      GHCR_OWNER: ${{ github.repository_owner }}
     steps:
       - uses: actions/checkout@v4
 
-      # OIDC federated login: GitHub mints a short-lived token that Azure trusts
-      # via a federated credential on the app registration. No secret is stored.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Web bakes the API URL at build time. The API app's FQDN is stable once
+      # created, so on first deploy this is empty and the web image rebuilds on
+      # the next deploy with the real URL. (Deterministic enough for hobby use.)
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -38,49 +52,90 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Provision, build images, and deploy
+      - name: Look up existing API URL (for web build arg)
+        id: api-url
+        run: |
+          set -euo pipefail
+          az group create -n "$RG" -l "$LOCATION" -o none
+          API_FQDN=$(az containerapp show -g "$RG" -n "${PREFIX}-api" \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+          if [ -n "$API_FQDN" ]; then
+            echo "api_url=https://${API_FQDN}" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_url=" >> "$GITHUB_OUTPUT"
+            echo "::notice::First deploy — web will rebuild with the real API URL on the next deploy."
+          fi
+
+      - name: Compute lowercase ghcr namespace
+        id: ns
+        run: |
+          # ghcr.io requires the owner segment to be lowercase even if the GitHub
+          # login isn't. github.repository_owner preserves case; downcase it.
+          echo "owner_lc=$(echo "${GHCR_OWNER}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-api:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-api:latest
+
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-mcp:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-mcp:latest
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ steps.api-url.outputs.api_url }}
+          tags: |
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-web:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-web:latest
+
+      # Make the three packages public so Container Apps can pull anonymously.
+      # Idempotent: a 404 on the first run (package not yet visible to the API)
+      # is harmless because pkgs are inherited-from-repo-visibility on first push;
+      # the next run flips them. Hide all errors so a redeploy never fails here.
+      - name: Make ghcr packages public
+        run: |
+          set +e
+          for pkg in truerate-api truerate-mcp truerate-web; do
+            gh api -X PATCH "/user/packages/container/${pkg}" -f visibility=public >/dev/null 2>&1 \
+              && echo "  $pkg → public" \
+              || echo "::notice::Could not flip $pkg to public (likely first push, harmless; retry on next deploy)."
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy Bicep with real image refs
         env:
           JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
           CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
+          OWNER_LC: ${{ steps.ns.outputs.owner_lc }}
         run: |
           set -euo pipefail
           test -n "$JWT_SECRET" || { echo "::error::TRUERATE_JWT_SECRET secret is not set"; exit 1; }
           test -n "$CRED_KEY"   || { echo "::error::TRUERATE_CRED_KEY secret is not set"; exit 1; }
 
-          echo "==> Resource group: $RG ($LOCATION)"
-          az group create -n "$RG" -l "$LOCATION" -o none
-
-          # Is the ACR already there (i.e. is this a first deploy or a redeploy)?
-          ACR=$(az acr list -g "$RG" --query "[0].loginServer" -o tsv 2>/dev/null || true)
-
-          if [ -z "$ACR" ]; then
-            echo "==> First deploy: provisioning infrastructure with seed images"
-            az deployment group create -g "$RG" -f infra/main.bicep \
-              -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" -o none
-            ACR=$(az deployment group show -g "$RG" -n main \
-              --query properties.outputs.acrLoginServer.value -o tsv)
-          fi
-          REG="${ACR%%.*}"
-          echo "    ACR: $ACR"
-
-          # The web image bakes in the API URL at build time; the API app's FQDN
-          # is stable once created.
-          API_FQDN=$(az containerapp show -g "$RG" -n "${PREFIX}-api" \
-            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
-          API_URL="https://${API_FQDN}"
-
-          echo "==> Building images in ACR (tag: $IMAGE_TAG)"
-          az acr build -r "$REG" -t "truerate-api:${IMAGE_TAG}" -f apps/api/Dockerfile .
-          az acr build -r "$REG" -t "truerate-mcp:${IMAGE_TAG}" -f apps/mcp/Dockerfile .
-          az acr build -r "$REG" -t "truerate-web:${IMAGE_TAG}" -f apps/web/Dockerfile \
-            --build-arg NEXT_PUBLIC_API_BASE_URL="$API_URL" .
-
-          echo "==> Deploying real images (idempotent; no image flip on redeploys)"
+          echo "==> Deploying Bicep (idempotent)"
           az deployment group create -g "$RG" -f infra/main.bicep -o none \
             -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" \
-               apiImage="${ACR}/truerate-api:${IMAGE_TAG}" \
-               mcpImage="${ACR}/truerate-mcp:${IMAGE_TAG}" \
-               webImage="${ACR}/truerate-web:${IMAGE_TAG}"
+               apiImage="ghcr.io/${OWNER_LC}/truerate-api:${IMAGE_TAG}" \
+               mcpImage="ghcr.io/${OWNER_LC}/truerate-mcp:${IMAGE_TAG}" \
+               webImage="ghcr.io/${OWNER_LC}/truerate-web:${IMAGE_TAG}"
 
           WEB_URL=$(az deployment group show -g "$RG" -n main --query properties.outputs.webUrl.value -o tsv)
           API_OUT=$(az deployment group show -g "$RG" -n main --query properties.outputs.apiUrl.value -o tsv)
@@ -96,4 +151,5 @@ jobs:
             echo "| MCP | $MCP_URL |"
             echo ""
             echo "Image tag: \`$IMAGE_TAG\`"
+            echo "Images on: \`ghcr.io/${OWNER_LC}/truerate-{api,mcp,web}\` (public)"
           } >> "$GITHUB_STEP_SUMMARY"

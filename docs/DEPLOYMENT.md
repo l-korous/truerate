@@ -4,6 +4,13 @@ This repo ships GitHub Actions for CI and for deploying to Azure Container Apps.
 Azure auth uses **OIDC federated credentials** — GitHub mints a short-lived
 token that Azure trusts, so **no Azure secret is stored** in GitHub.
 
+Container images live on **GitHub Container Registry (ghcr.io)** as **public
+packages**, not on ACR. This keeps the recurring Azure bill at ~€0–€1/month for a
+hobby deployment: Container Apps scale to zero when idle, Cosmos DB serverless
+charges only for the requests you make, Log Analytics is capped at 0.5 GB/day,
+and there's no fixed-cost registry. The compiled images contain only built
+artefacts; secrets live in Key Vault and the running app, not in the image.
+
 Everything that touches your accounts (creating the repo, the Azure app
 registration + federated credentials, and the GitHub secrets) is done by **you**
 via `scripts/bootstrap.sh` — it needs your credentials, so it can't be done for
@@ -25,9 +32,9 @@ That script:
    (`truerate-github-actions`) with a service principal, grants it **Owner of
    that resource group only**, and adds **federated credentials** for this repo
    (subjects `environment:production` and `ref:refs/heads/main`). Owner is
-   required because the deploy Bicep creates role assignments (ACR pull, Key
-   Vault secrets, Cosmos data role); scoping it to the single RG contains the
-   blast radius.
+   required because the deploy Bicep creates role assignments (Key Vault
+   secrets, Cosmos data role); scoping it to the single RG contains the blast
+   radius.
 3. Stores the GitHub Actions secrets and variables below.
 
 Override defaults with env vars, e.g. `RG=my-rg LOCATION=germanywestcentral ./scripts/bootstrap.sh`.
@@ -76,13 +83,16 @@ deploy, add reviewers to the `production` environment (Settings → Environments
 
 `.github/workflows/deploy.yml` — on push to `main` and manual dispatch:
 
-1. `azure/login@v2` via OIDC (client/tenant/subscription IDs).
-2. `az group create` (idempotent).
-3. First run only: provision `infra/main.bicep` with seed images to create ACR.
-4. `az acr build` builds the `api`, `mcp`, `web` images in the registry (no
-   Docker on the runner), tagged with the commit SHA; web bakes in the API URL.
-5. Re-deploy Bicep with the real image references (idempotent; no image flip on
-   redeploys). Deployed URLs are written to the run summary.
+1. `docker login ghcr.io` with the workflow's built-in `GITHUB_TOKEN` (no PAT).
+2. `azure/login@v2` via OIDC (client/tenant/subscription IDs); ensure the RG.
+3. `docker buildx build --push` for `api`, `mcp`, `web` to
+   `ghcr.io/<owner>/truerate-{api,mcp,web}:<sha>` (also tagged `:latest`).
+   The web image bakes the API URL at build time — empty on the very first
+   deploy, then real on every subsequent deploy.
+4. Flip the three packages to **public** visibility (idempotent;
+   `gh api PATCH /user/packages/container/<pkg>`).
+5. Deploy Bicep with the new image refs. Deployed URLs are written to the run
+   summary.
 
 ### Recommended: protect `main`
 
@@ -93,7 +103,22 @@ green code.
 ## Manual deploy (fallback)
 
 `infra/deploy.sh` does the same provision/build/deploy from your laptop with a
-logged-in `az`, if you ever need to deploy outside CI.
+logged-in `az`, `docker`, and `gh`, if you ever need to deploy outside CI.
+
+## Cost shape
+
+| Resource | Monthly (idle/light) |
+| --- | --- |
+| Container Apps × 3 (scale-to-zero) | ~€0 — fits inside the free monthly grants |
+| Cosmos DB (serverless) | ~€0–1 — pay-per-RU + €0.23/GB |
+| Key Vault (Standard, RBAC) | <€0.10 — pennies per 10k ops |
+| Log Analytics (PerGB2018, 0.5 GB/day cap) | ~€0 — capped, normally inside free quota |
+| Managed identity, env, ingress | €0 |
+| **Total** | **~€0–€1/month** |
+
+There is no Azure container registry; images are on ghcr.io (free for public
+packages). The Log Analytics daily cap is a hard ceiling — once hit, ingestion
+stops for the day, so a misbehaving container can't surprise-bill you.
 
 ## Rotating secrets
 

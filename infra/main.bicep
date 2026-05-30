@@ -1,12 +1,13 @@
-// TrueRate infrastructure — Azure, maximally managed.
+// TrueRate infrastructure — Azure, maximally managed, hobby-budget edition.
 //
 //   • Azure Cosmos DB (NoSQL, serverless)        data store, no servers/Redis
-//   • Azure Container Apps (3 apps + 1 env)       serverless containers
-//   • Azure Container Registry                    image store
+//   • Azure Container Apps (3 apps + 1 env)       serverless containers, scale-to-zero
 //   • Azure Key Vault (RBAC)                      JWT secret + credential key
-//   • User-assigned managed identity              ACR pull + KV read + Cosmos data
-//   • Log Analytics                               Container Apps logs
+//   • User-assigned managed identity              KV read + Cosmos data
+//   • Log Analytics (0.5 GB/day cap)              Container Apps logs, can't surprise-bill
 //
+// Container images live on GitHub Container Registry (ghcr.io, free) as public
+// packages, not on ACR. This removes the ~€4.50/mo Basic-SKU ACR fixed cost.
 // Auth to Cosmos and Key Vault is via the managed identity — no keys in app
 // config. NOTE: validate locally before deploying:  az bicep build -f main.bicep
 // (this file was authored without an az CLI available to compile it).
@@ -19,7 +20,7 @@ param location string = resourceGroup().location
 @maxLength(11)
 param namePrefix string = 'truerate'
 
-@description('Container image refs. Deploy infra first with the seed image, push real images, then update.')
+@description('Container image refs. Default to a public Microsoft sample for the very first deploy; CI replaces these with ghcr.io/<owner>/truerate-{api,mcp,web}:<sha> on every push.')
 param apiImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 param mcpImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 param webImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
@@ -33,7 +34,6 @@ param jwtSecret string
 param credKey string
 
 var suffix = uniqueString(resourceGroup().id)
-var acrName = toLower('${namePrefix}acr${suffix}')
 var kvName = take(toLower('${namePrefix}kv${suffix}'), 24)
 var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var laName = '${namePrefix}-logs'
@@ -48,25 +48,10 @@ resource mi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
 }
 
 // ─── Container registry ──────────────────────────────────────────────────────
-
-resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
-  name: acrName
-  location: location
-  sku: { name: 'Basic' }
-  properties: { adminUserEnabled: false }
-}
-
-// AcrPull for the identity
-resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, mi.id, 'acrpull')
-  scope: acr
-  properties: {
-    principalId: mi.properties.principalId
-    principalType: 'ServicePrincipal'
-    // AcrPull built-in role
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-  }
-}
+//
+// Images live on ghcr.io as PUBLIC packages. Container Apps pull anonymously,
+// so we need no registry credentials and no ACR. The deploy workflow handles
+// pushing and flipping package visibility to public.
 
 // ─── Key Vault (RBAC) ────────────────────────────────────────────────────────
 
@@ -152,7 +137,14 @@ resource cosmosDataRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignment
 resource la 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: laName
   location: location
-  properties: { sku: { name: 'PerGB2018' }, retentionInDays: 30 }
+  // 0.5 GB/day daily cap → hard ceiling on log ingestion cost. PerGB2018 charges
+  // ~€2.30/GB; this caps worst-case logs at ~€35/mo and in practice keeps a
+  // hobby-traffic deployment inside the 5 GB/month free included quota.
+  properties: {
+    sku: { name: 'PerGB2018' }
+    retentionInDays: 30
+    workspaceCapping: { dailyQuotaGb: json('0.5') }
+  }
 }
 
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
@@ -175,7 +167,7 @@ var miConfig = {
   type: 'UserAssigned'
   userAssignedIdentities: { '${mi.id}': {} }
 }
-var registries = [ { server: acr.properties.loginServer, identity: mi.id } ]
+// ghcr.io packages are public → no registries / no auth needed at pull time.
 var kvSecrets = [
   { name: 'jwt-secret', keyVaultUrl: jwtSecretRes.properties.secretUri, identity: mi.id }
   { name: 'cred-key', keyVaultUrl: credKeyRes.properties.secretUri, identity: mi.id }
@@ -199,7 +191,6 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8787, transport: 'auto' }
-      registries: registries
       secrets: kvSecrets
     }
     template: {
@@ -214,7 +205,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
-  dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
+  dependsOn: [ kvSecretsUser, cosmosDataRole ]
 }
 
 resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
@@ -226,7 +217,6 @@ resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8788, transport: 'auto' }
-      registries: registries
       secrets: kvSecrets
     }
     template: {
@@ -241,7 +231,7 @@ resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
-  dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
+  dependsOn: [ kvSecretsUser, cosmosDataRole ]
 }
 
 resource web 'Microsoft.App/containerApps@2024-03-01' = {
@@ -253,7 +243,6 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 3000, transport: 'auto' }
-      registries: registries
     }
     template: {
       containers: [
@@ -267,10 +256,8 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
-  dependsOn: [ acrPull ]
 }
 
-output acrLoginServer string = acr.properties.loginServer
 output apiUrl string = 'https://${api.properties.configuration.ingress.fqdn}'
 output mcpUrl string = 'https://${mcp.properties.configuration.ingress.fqdn}/mcp'
 output webUrl string = 'https://${web.properties.configuration.ingress.fqdn}'

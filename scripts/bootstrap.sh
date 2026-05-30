@@ -77,9 +77,9 @@ fi
 # Ensure a service principal exists for the app (idempotent).
 az ad sp show --id "$APP_ID" >/dev/null 2>&1 || az ad sp create --id "$APP_ID" -o none
 
-# The deploy pipeline's Bicep creates role assignments (ACR pull, Key Vault
-# secrets, Cosmos data role), which requires Owner on the scope. Scoping Owner to
-# this single resource group keeps the blast radius to TrueRate's own resources.
+# The deploy pipeline's Bicep creates role assignments (Key Vault secrets,
+# Cosmos data role), which requires Owner on the scope. Scoping Owner to this
+# single resource group keeps the blast radius to TrueRate's own resources.
 SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG"
 say "Granting the app Owner on $RG only"
 az role assignment create --assignee "$APP_ID" --role Owner --scope "$SCOPE" -o none 2>/dev/null || true
