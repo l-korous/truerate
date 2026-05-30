@@ -1,4 +1,5 @@
 import type { PageContext, PageMatchResult } from "@truerate/core";
+import { sendTrMessage } from "../utils/messages";
 
 // Content script for Booking.com.
 //
@@ -17,14 +18,14 @@ export default defineContentScript({
   runAt: "document_idle",
   async main() {
     const context = buildContext();
-    const status = await browser.runtime.sendMessage({ type: "TR_AUTH_STATUS" });
+    const status = await sendTrMessage({ type: "TR_AUTH_STATUS" });
     const shadow = mountHost();
-    if (!status?.signedIn) return renderSignedOut(shadow);
+    if (!status.signedIn) return renderSignedOut(shadow);
 
     renderLoading(shadow);
-    const resp = await browser.runtime.sendMessage({ type: "TR_MATCH", context });
-    if (!resp?.ok) return renderError(shadow, resp?.error ?? "Could not load benefits");
-    renderResult(shadow, resp.result as PageMatchResult);
+    const resp = await sendTrMessage({ type: "TR_MATCH", context });
+    if (!resp.ok) return renderError(shadow, resp.error ?? "Could not load benefits");
+    renderResult(shadow, resp.result);
   },
 });
 
