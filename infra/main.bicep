@@ -1,0 +1,278 @@
+// TrueRate infrastructure — Azure, maximally managed.
+//
+//   • Azure Cosmos DB (NoSQL, serverless)        data store, no servers/Redis
+//   • Azure Container Apps (3 apps + 1 env)       serverless containers
+//   • Azure Container Registry                    image store
+//   • Azure Key Vault (RBAC)                      JWT secret + credential key
+//   • User-assigned managed identity              ACR pull + KV read + Cosmos data
+//   • Log Analytics                               Container Apps logs
+//
+// Auth to Cosmos and Key Vault is via the managed identity — no keys in app
+// config. NOTE: validate locally before deploying:  az bicep build -f main.bicep
+// (this file was authored without an az CLI available to compile it).
+
+@description('Deployment location')
+param location string = resourceGroup().location
+
+@description('Short name prefix; lowercase letters/numbers only')
+@minLength(3)
+@maxLength(11)
+param namePrefix string = 'truerate'
+
+@description('Container image refs. Deploy infra first with the seed image, push real images, then update.')
+param apiImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+param mcpImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+param webImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('JWT signing secret (HS256). Provide at deploy time; stored in Key Vault.')
+@secure()
+param jwtSecret string
+
+@description('AES-256 credential key, base64 of 32 bytes. Stored in Key Vault.')
+@secure()
+param credKey string
+
+var suffix = uniqueString(resourceGroup().id)
+var acrName = toLower('${namePrefix}acr${suffix}')
+var kvName = take(toLower('${namePrefix}kv${suffix}'), 24)
+var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
+var laName = '${namePrefix}-logs'
+var envName = '${namePrefix}-env'
+var miName = '${namePrefix}-identity'
+
+// ─── Managed identity ────────────────────────────────────────────────────────
+
+resource mi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: miName
+  location: location
+}
+
+// ─── Container registry ──────────────────────────────────────────────────────
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
+  name: acrName
+  location: location
+  sku: { name: 'Basic' }
+  properties: { adminUserEnabled: false }
+}
+
+// AcrPull for the identity
+resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, mi.id, 'acrpull')
+  scope: acr
+  properties: {
+    principalId: mi.properties.principalId
+    principalType: 'ServicePrincipal'
+    // AcrPull built-in role
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  }
+}
+
+// ─── Key Vault (RBAC) ────────────────────────────────────────────────────────
+
+resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: kvName
+  location: location
+  properties: {
+    tenantId: subscription().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+  }
+}
+
+resource jwtSecretRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'jwt-secret'
+  properties: { value: jwtSecret }
+}
+
+resource credKeyRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'cred-key'
+  properties: { value: credKey }
+}
+
+// Key Vault Secrets User for the identity
+resource kvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kv.id, mi.id, 'secrets-user')
+  scope: kv
+  properties: {
+    principalId: mi.properties.principalId
+    principalType: 'ServicePrincipal'
+    // Key Vault Secrets User built-in role
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+  }
+}
+
+// ─── Cosmos DB (serverless, NoSQL) ───────────────────────────────────────────
+
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+  name: cosmosName
+  location: location
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    capabilities: [ { name: 'EnableServerless' } ]
+    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
+    locations: [ { locationName: location, failoverPriority: 0 } ]
+    disableLocalAuth: true // force AAD / managed identity, no account keys
+  }
+}
+
+resource cosmosDb 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+  parent: cosmos
+  name: 'truerate'
+  properties: { resource: { id: 'truerate' } }
+}
+
+resource usersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDb
+  name: 'users'
+  properties: {
+    resource: {
+      id: 'users'
+      partitionKey: { paths: [ '/id' ], kind: 'Hash' }
+    }
+  }
+}
+
+// Cosmos built-in Data Contributor role for the identity (data-plane).
+resource cosmosDataRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, mi.id, 'data-contributor')
+  properties: {
+    principalId: mi.properties.principalId
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    scope: cosmos.id
+  }
+}
+
+// ─── Logging + Container Apps environment ────────────────────────────────────
+
+resource la 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: laName
+  location: location
+  properties: { sku: { name: 'PerGB2018' }, retentionInDays: 30 }
+}
+
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: envName
+  location: location
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: la.properties.customerId
+        sharedKey: la.listKeys().primarySharedKey
+      }
+    }
+  }
+}
+
+// ─── Container Apps ──────────────────────────────────────────────────────────
+
+var miConfig = {
+  type: 'UserAssigned'
+  userAssignedIdentities: { '${mi.id}': {} }
+}
+var registries = [ { server: acr.properties.loginServer, identity: mi.id } ]
+var kvSecrets = [
+  { name: 'jwt-secret', keyVaultUrl: jwtSecretRes.properties.secretUri, identity: mi.id }
+  { name: 'cred-key', keyVaultUrl: credKeyRes.properties.secretUri, identity: mi.id }
+]
+var cosmosEnv = [
+  { name: 'COSMOS_ENDPOINT', value: cosmos.properties.documentEndpoint }
+  { name: 'COSMOS_DATABASE', value: 'truerate' }
+  { name: 'TRUERATE_INMEMORY', value: 'false' }
+]
+var secretEnv = [
+  { name: 'TRUERATE_JWT_SECRET', secretRef: 'jwt-secret' }
+  { name: 'TRUERATE_CRED_KEY', secretRef: 'cred-key' }
+]
+
+resource api 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${namePrefix}-api'
+  location: location
+  identity: miConfig
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: { external: true, targetPort: 8787, transport: 'auto' }
+      registries: registries
+      secrets: kvSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'api'
+          image: apiImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(cosmosEnv, secretEnv, [ { name: 'API_PORT', value: '8787' } ])
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 5 }
+    }
+  }
+  dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
+}
+
+resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${namePrefix}-mcp'
+  location: location
+  identity: miConfig
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: { external: true, targetPort: 8788, transport: 'auto' }
+      registries: registries
+      secrets: kvSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'mcp'
+          image: mcpImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(cosmosEnv, secretEnv, [ { name: 'MCP_PORT', value: '8788' } ])
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 5 }
+    }
+  }
+  dependsOn: [ acrPull, kvSecretsUser, cosmosDataRole ]
+}
+
+resource web 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${namePrefix}-web'
+  location: location
+  identity: miConfig
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: { external: true, targetPort: 3000, transport: 'auto' }
+      registries: registries
+    }
+    template: {
+      containers: [
+        {
+          name: 'web'
+          image: webImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          // NEXT_PUBLIC_* is baked at build time; set it as a build arg in CI.
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 5 }
+    }
+  }
+  dependsOn: [ acrPull ]
+}
+
+output acrLoginServer string = acr.properties.loginServer
+output apiUrl string = 'https://${api.properties.configuration.ingress.fqdn}'
+output mcpUrl string = 'https://${mcp.properties.configuration.ingress.fqdn}/mcp'
+output webUrl string = 'https://${web.properties.configuration.ingress.fqdn}'
+output identityClientId string = mi.properties.clientId
+output cosmosEndpoint string = cosmos.properties.documentEndpoint

@@ -1,0 +1,96 @@
+name: Deploy (Azure)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# One deploy at a time; let an in-flight deploy finish.
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Provision & deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      # Non-sensitive config: set as repository VARIABLES (Settings → Secrets and
+      # variables → Actions → Variables), or rely on these defaults.
+      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
+      LOCATION: ${{ vars.AZURE_LOCATION || 'westeurope' }}
+      PREFIX: ${{ vars.AZURE_PREFIX || 'truerate' }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticates the `az` CLI for all subsequent steps using the service
+      # principal JSON stored in the AZURE_CREDENTIALS GitHub Actions secret.
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Provision, build images, and deploy
+        env:
+          JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
+          CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$JWT_SECRET" || { echo "::error::TRUERATE_JWT_SECRET secret is not set"; exit 1; }
+          test -n "$CRED_KEY"   || { echo "::error::TRUERATE_CRED_KEY secret is not set"; exit 1; }
+
+          echo "==> Resource group: $RG ($LOCATION)"
+          az group create -n "$RG" -l "$LOCATION" -o none
+
+          # Is the ACR already there (i.e. is this a first deploy or a redeploy)?
+          ACR=$(az acr list -g "$RG" --query "[0].loginServer" -o tsv 2>/dev/null || true)
+
+          if [ -z "$ACR" ]; then
+            echo "==> First deploy: provisioning infrastructure with seed images"
+            az deployment group create -g "$RG" -f infra/main.bicep \
+              -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" -o none
+            ACR=$(az deployment group show -g "$RG" -n main \
+              --query properties.outputs.acrLoginServer.value -o tsv)
+          fi
+          REG="${ACR%%.*}"
+          echo "    ACR: $ACR"
+
+          # The web image bakes in the API URL at build time; the API app's FQDN
+          # is stable once created.
+          API_FQDN=$(az containerapp show -g "$RG" -n "${PREFIX}-api" \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+          API_URL="https://${API_FQDN}"
+
+          echo "==> Building images in ACR (tag: $IMAGE_TAG)"
+          az acr build -r "$REG" -t "truerate-api:${IMAGE_TAG}" -f apps/api/Dockerfile .
+          az acr build -r "$REG" -t "truerate-mcp:${IMAGE_TAG}" -f apps/mcp/Dockerfile .
+          az acr build -r "$REG" -t "truerate-web:${IMAGE_TAG}" -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="$API_URL" .
+
+          echo "==> Deploying real images (idempotent; no image flip on redeploys)"
+          az deployment group create -g "$RG" -f infra/main.bicep -o none \
+            -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" \
+               apiImage="${ACR}/truerate-api:${IMAGE_TAG}" \
+               mcpImage="${ACR}/truerate-mcp:${IMAGE_TAG}" \
+               webImage="${ACR}/truerate-web:${IMAGE_TAG}"
+
+          WEB_URL=$(az deployment group show -g "$RG" -n main --query properties.outputs.webUrl.value -o tsv)
+          API_OUT=$(az deployment group show -g "$RG" -n main --query properties.outputs.apiUrl.value -o tsv)
+          MCP_URL=$(az deployment group show -g "$RG" -n main --query properties.outputs.mcpUrl.value -o tsv)
+
+          {
+            echo "### TrueRate deployed :rocket:"
+            echo ""
+            echo "| Surface | URL |"
+            echo "| --- | --- |"
+            echo "| Web | $WEB_URL |"
+            echo "| API | $API_OUT |"
+            echo "| MCP | $MCP_URL |"
+            echo ""
+            echo "Image tag: \`$IMAGE_TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"

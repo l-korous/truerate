@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+.output
+.wxt
+.turbo
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+.azure
+playwright-report
+test-results
+*.tsbuildinfo

@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # `pnpm test` builds @truerate/core first, then runs every package's
+      # node:test suite (core, api, mcp, extension).
+      - name: Unit & integration tests
+        run: pnpm test
+
+  build:
+    name: Build web (production)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build core
+        run: pnpm --filter @truerate/core build
+      - name: Build web
+        # NEXT_PUBLIC_API_BASE_URL is baked at build time; the real value is
+        # injected during deploy. A placeholder is fine for the CI build check.
+        run: pnpm --filter @truerate/web build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://example.invalid
+
+  e2e:
+    name: Playwright journey
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build core
+        run: pnpm --filter @truerate/core build
+      - name: Install Playwright browser
+        run: pnpm --filter @truerate/web exec playwright install --with-deps chromium
+      - name: Run end-to-end journey
+        run: pnpm test:e2e
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore

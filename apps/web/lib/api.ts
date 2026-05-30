@@ -1,0 +1,144 @@
+"use client";
+
+const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
+const TOKEN_KEY = "truerate_token";
+
+export interface BenefitValue {
+  kind: "percentDiscount" | "fixedDiscount" | "perk" | "pointsEarn";
+  percentOff?: number;
+  amountOff?: number;
+  perks?: string[];
+  conditions?: string;
+}
+export interface Benefit {
+  id: string;
+  scope: string;
+  match: { brands?: string[]; domains?: string[]; propertyNames?: string[]; categories?: string[] };
+  value: BenefitValue;
+  source: "catalog" | "user-declared" | "provider-live";
+  programId?: string;
+}
+export interface PublicMembership {
+  id: string;
+  label: string;
+  programId?: string;
+  tier?: string;
+  attributes: Record<string, string>;
+  benefits: Benefit[];
+  hasCredential: boolean;
+  status: "active" | "unverified" | "invalid";
+}
+export interface PublicUser {
+  id: string;
+  email: string;
+  market: string;
+  currency: string;
+  memberships: PublicMembership[];
+}
+export interface ProgramField {
+  key: string;
+  label: string;
+  type: "text" | "select" | "secret";
+  options?: string[];
+  placeholder?: string;
+  secret?: boolean;
+}
+export interface Program {
+  id: string;
+  name: string;
+  category: string;
+  tiers?: string[];
+  fields: ProgramField[];
+  requiresCredential: boolean;
+  summaryByTier: Record<string, string[]>;
+}
+
+export interface RateOffer {
+  source: string;
+  label: string;
+  nightlyAmount: number;
+  totalAmount: number;
+  currency: string;
+  perks?: string[];
+  indicative?: boolean;
+}
+export interface EnrichedProperty {
+  propertyId: string;
+  name: string;
+  brand?: string;
+  area?: string;
+  rating?: number;
+  publicOffer: RateOffer;
+  bestOffer: RateOffer;
+  perks: string[];
+  savingsAmount: number;
+  savingsPercent: number;
+  indicative: boolean;
+}
+export interface EnrichmentResult {
+  currency: string;
+  properties: EnrichedProperty[];
+  totalSavings: number;
+  programsApplied: string[];
+  mode: "live" | "mock";
+}
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+function setToken(t: string) {
+  localStorage.setItem(TOKEN_KEY, t);
+}
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.message ?? `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface CustomBenefitInput {
+  label: string;
+  benefits: { scope: string; match: Record<string, string[]>; value: BenefitValue }[];
+}
+
+export const api = {
+  async register(email: string, password: string, market: string) {
+    const r = await req<{ token: string; user: PublicUser }>("/auth/register", {
+      method: "POST", body: JSON.stringify({ email, password, market }),
+    });
+    setToken(r.token);
+    return r.user;
+  },
+  async login(email: string, password: string) {
+    const r = await req<{ token: string; user: PublicUser }>("/auth/login", {
+      method: "POST", body: JSON.stringify({ email, password }),
+    });
+    setToken(r.token);
+    return r.user;
+  },
+  me: () => req<{ user: PublicUser }>("/me").then((r) => r.user),
+  programs: () => req<{ programs: Program[] }>("/programs").then((r) => r.programs),
+  addCatalogMembership: (body: { programId: string; tier?: string; attributes: Record<string, string> }) =>
+    req<{ user: PublicUser }>("/memberships", { method: "POST", body: JSON.stringify(body) }).then((r) => r.user),
+  addCustomMembership: (body: CustomBenefitInput) =>
+    req<{ user: PublicUser }>("/memberships", { method: "POST", body: JSON.stringify(body) }).then((r) => r.user),
+  removeMembership: (id: string) =>
+    req<{ user: PublicUser }>(`/memberships/${id}`, { method: "DELETE" }).then((r) => r.user),
+  searchHotels: (q: { location: string; checkIn: string; checkOut: string; adults: number; rooms: number }) =>
+    req<EnrichmentResult>("/search/hotels", { method: "POST", body: JSON.stringify(q) }),
+};

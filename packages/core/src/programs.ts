@@ -1,0 +1,327 @@
+import { randomUUID } from "node:crypto";
+import type { Benefit, BenefitTemplate, Program } from "./types.js";
+
+// The catalog is TrueRate's curated library of "what each membership program
+// brings". Each program declares how it is recognised on the web (defaultMatch)
+// and a set of benefit TEMPLATES per tier. When the user says "I have X", we
+// instantiate the matching templates into concrete benefits on their profile.
+//
+// THE DATA BELOW IS RESEARCHED FROM REAL PROGRAMS (sources + as-of date on each
+// entry), not invented. It is a SEED, not the truth: loyalty terms change, vary
+// by region, and carry conditions. Treat percentage discounts as INDICATIVE.
+// Perks are the high-trust part. This static seed should move to an ops-editable
+// store (e.g. Cosmos) so non-engineers can keep it current; the `asOf` /
+// `sourceUrl` / `region` fields exist to make that auditable.
+//
+// IMPORTANT honesty notes baked into the modelling:
+//  - OTA-wide and direct-booking discounts (Genius, Czech direct rates) are real
+//    percentage discounts and are modelled as such (indicative).
+//  - Big-chain "member rates" are small and vary by property; only Accor
+//    advertises an explicit headline % ("up to 10%"), so only it carries a base
+//    discount. Marriott/Hilton/IHG are modelled as PERKS by tier (accurate),
+//    not as a flat discount we can't stand behind.
+//  - Card/fintech perks (Amex, Revolut) are mostly account-level (status,
+//    lounge, credits, subscriptions), not on-site discounts, so they are global
+//    perks — they show in the user's summary and assistant context, and rarely
+//    trigger a price change on a hotel page. Region varies; flagged per entry.
+
+export const PROGRAMS: Program[] = [
+  // ── OTA ────────────────────────────────────────────────────────────────
+  {
+    id: "booking_genius",
+    name: "Booking.com Genius",
+    category: "ota",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.booking.com/genius.html",
+    defaultMatch: { domains: ["booking.com"], categories: ["hotel"] },
+    tiers: ["Level 1", "Level 2", "Level 3"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "Genius level", type: "select", options: ["Level 1", "Level 2", "Level 3"] }],
+    benefits: {
+      "Level 1": [{ scope: "domain", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "on participating properties when booking via Booking.com" } }],
+      "Level 2": [
+        { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.15, conditions: "participating properties" } },
+        { scope: "domain", value: { kind: "perk", perks: ["Free breakfast at select properties", "Free room upgrade at select properties"] } },
+      ],
+      "Level 3": [
+        { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.2, conditions: "participating properties" } },
+        { scope: "domain", value: { kind: "perk", perks: ["Free breakfast at select properties", "Free room upgrade at select properties", "Priority support"] } },
+      ],
+    },
+  },
+
+  // ── Czech direct-booking / independent (the cold-start sweet spot) ───────
+  {
+    id: "your_prague_hotels",
+    name: "Your Prague Hotels — Select",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-05",
+    sourceUrl: "https://www.yourpraguehotels.com/en/about-loyalty-program/",
+    // Largest private hotel chain in Prague (Hotel Roma, Caesar, Michelangelo,
+    // Galileo, Praga 1, Nová Živohošť). Free loyalty programme; direct only.
+    defaultMatch: { domains: ["yourpraguehotels.com"], propertyNames: ["Hotel Roma", "Hotel Caesar", "Michelangelo Grand Hotel", "Hotel Galileo", "Hotel Praga 1"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "direct booking only; stacks with promotions; not via OTAs" } },
+        { scope: "domain", value: { kind: "perk", perks: ["Priority early check-in", "Late check-out", "Complimentary room upgrade (when available)"] } },
+      ],
+    },
+  },
+  {
+    id: "emblem_prague",
+    name: "Emblem Prague — Emblematic",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-05",
+    sourceUrl: "https://www.emblemprague.com/about-us/loyalty",
+    // 5-star boutique hotel, Prague Old Town. Member rate is direct-only.
+    defaultMatch: { domains: ["emblemprague.com"], propertyNames: ["Emblem Hotel", "Emblem Prague"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.2, conditions: "member rate, direct booking only; subject to availability on high-demand dates" } },
+        { scope: "domain", value: { kind: "perk", perks: ["Priority room upgrade (when available)", "20% off Pure Altitude spa treatments", "Complimentary early check-in / late check-out (when available)"] } },
+      ],
+    },
+  },
+  {
+    id: "orea",
+    name: "OREA Hotels & Resorts",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-05",
+    sourceUrl: "https://www.orea.cz/en",
+    // Large Czech chain (mountains, cities, spa towns). Discounts via promo code
+    // on orea.cz; ~15% on selected stays/dates; peak periods excluded.
+    defaultMatch: { domains: ["orea.cz"], brands: ["OREA"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.15, conditions: "selected hotels/dates via promo code on orea.cz; excludes packages and peak periods (Easter, Christmas, NYE, school holidays)" } },
+      ],
+    },
+  },
+
+  // ── International chains operating in Czechia ─────────────────────────────
+  {
+    id: "accor_all",
+    name: "ALL — Accor Live Limitless",
+    category: "hotel",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://all.accor.com/loyalty-program/",
+    defaultMatch: {
+      domains: ["all.accor.com", "accor.com"],
+      brands: ["Sofitel", "Pullman", "Novotel", "Mercure", "ibis", "Raffles", "Fairmont", "MGallery", "Adagio", "Mövenpick", "Swissôtel", "Mama Shelter"],
+    },
+    tiers: ["Classic", "Silver", "Gold", "Platinum", "Diamond"],
+    requiresCredential: false,
+    fields: [
+      { key: "tier", label: "Status", type: "select", options: ["Classic", "Silver", "Gold", "Platinum", "Diamond"] },
+      { key: "membershipNumber", label: "ALL number (optional)", type: "text" },
+    ],
+    benefits: {
+      // Headline member rate is "up to 10% off the public rate"; modelled at a
+      // conservative, indicative 5% base across the brand.
+      Classic: [
+        { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate (up to ~10% at participating hotels)" } },
+        { scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi", "Online check-in"] } },
+      ],
+      Silver: [
+        { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
+        { scope: "brand", value: { kind: "perk", perks: ["Welcome drink", "Late check-out (when available)"] } },
+      ],
+      Gold: [
+        { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
+        { scope: "brand", value: { kind: "perk", perks: ["Welcome drink", "Room upgrade (when available)", "Executive lounge access (at applicable hotels)"] } },
+      ],
+      Platinum: [
+        { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
+        { scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "2 suite-night upgrades", "Executive lounge access", "Guaranteed availability"] } },
+      ],
+      Diamond: [
+        { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
+        { scope: "brand", value: { kind: "perk", perks: ["Weekend breakfast worldwide", "Dining & spa vouchers", "Premium room upgrade", "Executive lounge access"] } },
+      ],
+    },
+  },
+  {
+    id: "ihg_one_rewards",
+    name: "IHG One Rewards",
+    category: "hotel",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.ihg.com/onerewards/",
+    defaultMatch: {
+      domains: ["ihg.com"],
+      brands: ["InterContinental", "Crowne Plaza", "Holiday Inn", "Hotel Indigo", "Kimpton", "voco", "Regent", "Six Senses", "Staybridge", "Candlewood"],
+    },
+    tiers: ["Club", "Silver Elite", "Gold Elite", "Platinum Elite", "Diamond Elite"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "Status", type: "select", options: ["Club", "Silver Elite", "Gold Elite", "Platinum Elite", "Diamond Elite"] }],
+    benefits: {
+      Club: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate (lowest available)", "Free Wi-Fi", "Earns points"] } }],
+      "Silver Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi", "20% bonus points"] } }],
+      "Gold Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Room upgrade (when available)", "40% bonus points"] } }],
+      "Platinum Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "Guaranteed room availability", "Welcome amenity"] } }],
+      "Diamond Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Premium room upgrade", "Welcome amenity", "Dedicated support"] } }],
+    },
+  },
+  {
+    id: "hilton_honors",
+    name: "Hilton Honors",
+    category: "hotel",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.hilton.com/en/hilton-honors/",
+    defaultMatch: {
+      domains: ["hilton.com"],
+      brands: ["Hilton", "DoubleTree", "Hampton", "Conrad", "Waldorf Astoria", "Canopy", "Curio", "Embassy Suites", "Hilton Garden Inn"],
+    },
+    tiers: ["Member", "Silver", "Gold", "Diamond"],
+    requiresCredential: false,
+    fields: [
+      { key: "tier", label: "Status", type: "select", options: ["Member", "Silver", "Gold", "Diamond"] },
+      { key: "membershipNumber", label: "Honors number (optional)", type: "text" },
+    ],
+    benefits: {
+      Member: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate (lowest available)", "Free Wi-Fi"] } }],
+      Silver: [{ scope: "brand", value: { kind: "perk", perks: ["Free Wi-Fi", "5th night free on points", "Bonus points"] } }],
+      // Hilton Gold genuinely includes free breakfast (or daily F&B credit at US
+      // hotels) and space-available room upgrades — a real, high-value perk.
+      Gold: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (or daily F&B credit)", "Room upgrade (when available)", "Free Wi-Fi"] } }],
+      Diamond: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (or F&B credit)", "Executive lounge access", "Premium room upgrade", "48-hour guarantee"] } }],
+    },
+  },
+  {
+    id: "marriott_bonvoy",
+    name: "Marriott Bonvoy",
+    category: "hotel",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.marriott.com/loyalty.mi",
+    defaultMatch: {
+      domains: ["marriott.com"],
+      brands: ["Marriott", "Sheraton", "Westin", "Courtyard", "St. Regis", "Ritz-Carlton", "W Hotels", "Le Méridien", "Autograph", "Aloft", "Four Points", "Renaissance", "Moxy"],
+    },
+    tiers: ["Member", "Silver", "Gold", "Platinum", "Titanium"],
+    requiresCredential: false,
+    fields: [
+      { key: "tier", label: "Status", type: "select", options: ["Member", "Silver", "Gold", "Platinum", "Titanium"] },
+      { key: "membershipNumber", label: "Bonvoy number (optional)", type: "text" },
+    ],
+    benefits: {
+      Member: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi"] } }],
+      Silver: [{ scope: "brand", value: { kind: "perk", perks: ["Late check-out (when available)", "10% bonus points"] } }],
+      // NB: Marriott Gold does NOT include free breakfast — that begins at
+      // Platinum (and is brand-dependent). Modelled accurately.
+      Gold: [{ scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "2pm late check-out", "25% bonus points"] } }],
+      Platinum: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "4pm late check-out"] } }],
+      Titanium: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "Guaranteed 4pm late check-out", "Choice benefit"] } }],
+    },
+  },
+
+  // ── Cards / fintech (broader than hospitality) ───────────────────────────
+  {
+    id: "amex_platinum",
+    name: "American Express Platinum",
+    category: "card",
+    region: "US (benefits vary by region)",
+    asOf: "2026-05",
+    sourceUrl: "https://www.americanexpress.com/us/credit-cards/card/platinum/",
+    // Perks are account-level (status, credits, lounges), not on-site discounts,
+    // so they are global perks. The hotel elite status is the part most likely
+    // to matter on a hotel page.
+    defaultMatch: { categories: ["hotel", "card"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        { scope: "global", value: { kind: "perk", perks: ["Marriott Bonvoy Gold status (when enrolled)", "Hilton Honors Gold status (when enrolled)"], conditions: "enrolment required; US card — benefits vary by market" } },
+        { scope: "global", value: { kind: "perk", perks: ["Fine Hotels + Resorts: free breakfast, room upgrade, late checkout, on-property credit", "Airport lounge access (Centurion / Priority Pass)"], conditions: "FH+R via Amex Travel" } },
+      ],
+    },
+  },
+  {
+    id: "revolut",
+    name: "Revolut",
+    category: "subscription",
+    region: "EEA/UK (perks vary by country)",
+    asOf: "2026-05",
+    sourceUrl: "https://www.revolut.com/our-pricing-plans/",
+    // Value is mostly account-level (FX, fee-free ATM, lounge, insurance,
+    // partner subscriptions), not a hotel/site discount. Modelled as global
+    // perks. Partner line-up and limits change frequently and vary by country.
+    defaultMatch: { categories: ["subscription"] },
+    tiers: ["Standard", "Plus", "Premium", "Metal", "Ultra"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "Plan", type: "select", options: ["Standard", "Plus", "Premium", "Metal", "Ultra"] }],
+    benefits: {
+      Premium: [
+        { scope: "global", value: { kind: "perk", perks: ["Unlimited interbank FX", "Fee-free ATM withdrawals (monthly limit)", "Partner subscriptions (e.g. Headspace)", "Purchase protection"] } },
+      ],
+      Metal: [
+        { scope: "global", value: { kind: "perk", perks: ["Unlimited interbank FX", "Free Financial Times & The Athletic", "WeWork & ClassPass credits", "Discounted airport lounge access", "Travel & purchase insurance", "Higher cashback/points"] } },
+      ],
+      Ultra: [
+        { scope: "global", value: { kind: "perk", perks: ["Fee-free international transfers", "Unlimited worldwide airport lounge access", "Comprehensive travel & medical insurance", "Free eSIM data allowance", "Premium partner subscriptions", "Top-tier points earn"] } },
+      ],
+    },
+  },
+  {
+    id: "miles_and_more",
+    name: "Miles & More (Lufthansa Group)",
+    category: "airline",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.miles-and-more.com/",
+    defaultMatch: { brands: ["Lufthansa", "Austrian Airlines", "SWISS", "Brussels Airlines"], domains: ["lufthansa.com"] },
+    requiresCredential: false,
+    fields: [{ key: "membershipNumber", label: "Card number (optional)", type: "text" }],
+    benefits: { "*": [{ scope: "brand", value: { kind: "pointsEarn", pointsPerUnit: 1, perks: ["Earns award miles"] } }] },
+  },
+];
+
+const BY_ID = new Map(PROGRAMS.map((p) => [p.id, p]));
+
+export function getProgram(id: string): Program | undefined {
+  return BY_ID.get(id);
+}
+
+/** Templates that apply for a given tier: the "*" base plus tier-specific. */
+export function templatesForTier(program: Program, tier?: string): BenefitTemplate[] {
+  const base = program.benefits["*"] ?? [];
+  const tiered = tier ? program.benefits[tier] ?? [] : [];
+  return [...base, ...tiered];
+}
+
+/** Instantiate concrete benefits for a program/tier the user selected. */
+export function instantiateBenefits(program: Program, tier?: string): Benefit[] {
+  return templatesForTier(program, tier).map((t) => ({
+    id: randomUUID(),
+    scope: t.scope,
+    match: t.match ?? program.defaultMatch,
+    value: t.value,
+    source: "catalog" as const,
+    programId: program.id,
+  }));
+}
+
+/** A plain-language summary of what a program/tier brings (for the UI). */
+export function summariseBenefits(templates: BenefitTemplate[]): string[] {
+  const out: string[] = [];
+  for (const t of templates) {
+    const v = t.value;
+    if (v.kind === "percentDiscount" && v.percentOff) out.push(`${Math.round(v.percentOff * 100)}% off`);
+    else if (v.kind === "fixedDiscount" && v.amountOff) out.push(`${v.amountOff} off`);
+    else if (v.kind === "pointsEarn") out.push("Earns points/miles");
+    for (const p of v.perks ?? []) out.push(p);
+  }
+  return [...new Set(out)];
+}
