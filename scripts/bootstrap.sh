@@ -82,7 +82,13 @@ az ad sp show --id "$APP_ID" >/dev/null 2>&1 || az ad sp create --id "$APP_ID" -
 # single resource group keeps the blast radius to TrueRate's own resources.
 SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG"
 say "Granting the app Owner on $RG only"
-az role assignment create --assignee "$APP_ID" --role Owner --scope "$SCOPE" -o none 2>/dev/null || true
+# Use --assignee-object-id with the SP's object id (not the app id with --assignee,
+# which goes through Microsoft Graph and is racy against just-created SPs). Tolerate
+# only the idempotent "already exists" error; surface anything else.
+SP_OID="$(az ad sp show --id "$APP_ID" --query id -o tsv)"
+out=$(az role assignment create --assignee-object-id "$SP_OID" --assignee-principal-type ServicePrincipal --role Owner --scope "$SCOPE" --subscription "$SUBSCRIPTION_ID" -o none 2>&1) \
+  || echo "$out" | grep -qi 'already exists\|RoleAssignmentExists' \
+  || { echo "$out" >&2; die "Failed to grant Owner role on $RG. The deploy pipeline will not be able to log in. See error above."; }
 
 # Federated credentials: let GitHub Actions exchange its OIDC token for Azure
 # access, with no stored secret. The subject must match how the workflow runs.
