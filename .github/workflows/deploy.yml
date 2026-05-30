@@ -105,20 +105,16 @@ jobs:
             ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-web:${{ env.IMAGE_TAG }}
             ghcr.io/${{ steps.ns.outputs.owner_lc }}/truerate-web:latest
 
-      # Make the three packages public so Container Apps can pull anonymously.
-      # Idempotent: a 404 on the first run (package not yet visible to the API)
-      # is harmless because pkgs are inherited-from-repo-visibility on first push;
-      # the next run flips them. Hide all errors so a redeploy never fails here.
-      - name: Make ghcr packages public
-        run: |
-          set +e
-          for pkg in truerate-api truerate-mcp truerate-web; do
-            gh api -X PATCH "/user/packages/container/${pkg}" -f visibility=public >/dev/null 2>&1 \
-              && echo "  $pkg → public" \
-              || echo "::notice::Could not flip $pkg to public (likely first push, harmless; retry on next deploy)."
-          done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # NOTE: Container Apps pull anonymously from ghcr.io, so the three
+      # packages must be PUBLIC. GitHub does NOT expose a REST endpoint to
+      # flip visibility on user-owned packages — it's a one-time manual step
+      # done in the web UI by the package owner the first time the package
+      # appears:
+      #   https://github.com/users/<owner>/packages/container/truerate-<api|mcp|web>/settings
+      #   → Change visibility → Public
+      # If a package is private, the Bicep deploy below fails fast with
+      # 'UNAUTHORIZED: authentication required' from ghcr.io, identifying
+      # exactly which package is the problem.
 
       - name: Deploy Bicep with real image refs
         env:

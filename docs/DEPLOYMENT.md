@@ -89,10 +89,23 @@ deploy, add reviewers to the `production` environment (Settings → Environments
    `ghcr.io/<owner>/truerate-{api,mcp,web}:<sha>` (also tagged `:latest`).
    The web image bakes the API URL at build time — empty on the very first
    deploy, then real on every subsequent deploy.
-4. Flip the three packages to **public** visibility (idempotent;
-   `gh api PATCH /user/packages/container/<pkg>`).
-5. Deploy Bicep with the new image refs. Deployed URLs are written to the run
+4. Deploy Bicep with the new image refs. Deployed URLs are written to the run
    summary.
+
+### One-time step: make the three packages public
+
+Container Apps pull anonymously from ghcr.io, so the three packages must be
+public. GitHub does **not** expose a REST endpoint to flip visibility on
+user-owned packages — it's a one-time manual step in the web UI:
+
+- https://github.com/users/l-korous/packages/container/truerate-api/settings
+- https://github.com/users/l-korous/packages/container/truerate-mcp/settings
+- https://github.com/users/l-korous/packages/container/truerate-web/settings
+
+Open each → Change visibility → Public → type the package name to confirm.
+After this, every subsequent deploy works without intervention. (If you forget,
+the Bicep deploy fails with `UNAUTHORIZED: authentication required` from
+ghcr.io, naming the offending package.)
 
 ### Recommended: protect `main`
 

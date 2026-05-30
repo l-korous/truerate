@@ -46,14 +46,16 @@ docker buildx build --push --platform linux/amd64 \
   -t "ghcr.io/${OWNER_LC}/truerate-web:latest" \
   .
 
-echo "==> 2/3 Make ghcr packages public (so Container Apps can pull anonymously)"
-for pkg in truerate-api truerate-mcp truerate-web; do
-  gh api -X PATCH "/user/packages/container/${pkg}" -f visibility=public >/dev/null 2>&1 \
-    && echo "    $pkg → public" \
-    || echo "    WARNING: could not flip $pkg to public (check via the UI)."
-done
+# Container Apps pull anonymously from ghcr.io, so the three packages must be
+# PUBLIC. GitHub does not expose a REST endpoint for changing visibility on
+# user-owned packages — flip them once via the web UI the first time they
+# appear:
+#   https://github.com/users/${OWNER_LC}/packages/container/truerate-{api,mcp,web}/settings
+#   → Change visibility → Public
+# If a package is private, the Bicep deploy below fails with
+# 'UNAUTHORIZED: authentication required' from ghcr.io.
 
-echo "==> 3/3 Deploy Bicep (idempotent) pointing at the new images"
+echo "==> 2/2 Deploy Bicep (idempotent) pointing at the new images"
 az deployment group create \
   -g "$RG" \
   -f infra/main.bicep \
