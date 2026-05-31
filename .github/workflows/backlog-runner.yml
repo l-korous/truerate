@@ -4,17 +4,15 @@ name: Backlog runner
 #
 # On a schedule, IF no agent PR is already in flight, pick the next issue
 # labelled `agent-ready` (lowest number, not `blocked`, no existing claude/*
-# branch) and have Claude implement it as a pull request.
+# branch) and have Claude implement it on a branch + open a PR for review.
 #
-# - ONE issue at a time: the in-flight guard means it waits until you merge or
-#   close the current agent PR before starting the next.
-# - NO auto-merge: every PR is opened for review. Auto-merge is only enabled
-#   once the "auto-merge readiness gate" tracking issue is satisfied AND the
-#   repo can enforce required checks (GitHub Pro or public).
-# - The queue is the `agent-ready` label. Nothing runs until issues carry it.
-# - Cost: the model runs on the Max plan via CLAUDE_CODE_OAUTH_TOKEN (no API
-#   billing); only GitHub Actions minutes are consumed. Hourly + 1-in-flight
-#   keeps that small (skipped ticks cost seconds).
+# - ONE issue at a time (the in-flight guard waits for the current agent PR to
+#   be merged/closed before starting the next).
+# - NO auto-merge: every PR is for review until the "auto-merge readiness gate"
+#   (#159) is satisfied and the repo can enforce required checks.
+# - Queue = the `agent-ready` label. Nothing runs until issues carry it.
+# - Model runs on the Max plan via CLAUDE_CODE_OAUTH_TOKEN (no API billing);
+#   only GitHub Actions minutes are consumed.
 
 on:
   schedule:
@@ -45,9 +43,6 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-
-          # 1-in-flight guard: any open PR on a claude/* branch, or any active
-          # Claude Code run (the @claude path), means we wait.
           inflight=$(gh pr list --repo "$REPO" --state open --json headRefName \
             --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
           active=$(gh run list --repo "$REPO" --workflow "Claude Code" --json status \
@@ -56,41 +51,76 @@ jobs:
             echo "Agent work already in flight (open agent PRs=$inflight, active runs=$active). Skipping."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-
-          # Next ready issue: open, labelled agent-ready, not blocked, lowest number.
           next=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
             --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | (.[0].number // empty)')
           if [ -z "$next" ]; then
             echo "No agent-ready issues in the queue."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-
-          # Don't restart one that already has a branch (in-progress or abandoned).
           existing=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$next-" --jq 'length')
           if [ "$existing" -ge 1 ]; then
             echo "Branch claude/$next-* already exists; skipping (needs manual cleanup)."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-
           echo "Selected issue #$next."
           echo "should_run=true" >> "$GITHUB_OUTPUT"
           echo "issue=$next" >> "$GITHUB_OUTPUT"
+
+      # Give the agent a working toolchain so it can run typecheck/tests itself
+      # before opening a PR (CLAUDE.md requires verifying, not guessing).
+      - uses: pnpm/action-setup@v4
+        if: steps.pick.outputs.should_run == 'true'
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        if: steps.pick.outputs.should_run == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        if: steps.pick.outputs.should_run == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Implement the issue with Claude
         if: steps.pick.outputs.should_run == 'true'
         uses: anthropics/claude-code-action@v1
         with:
-          # Max-plan auth (no pay-as-you-go API billing).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Bound a single run so a stuck agent can't drain the whole Max window.
-          claude_args: "--max-turns 50"
+          # bypassPermissions: this is an ephemeral CI sandbox, the agent needs
+          # Edit/Write/Bash to implement, verify, commit and push. --max-turns
+          # bounds a single run so it can't drain the whole Max window.
+          claude_args: "--max-turns 60 --permission-mode bypassPermissions"
           prompt: |
-            Implement GitHub issue #${{ steps.pick.outputs.issue }} in this repository.
+            You are running headless in CI. Implement GitHub issue #${{ steps.pick.outputs.issue }}.
 
-            1. First read CLAUDE.md and issue #1 (the authoritative product model), then the issue itself.
-            2. Create a branch named claude/${{ steps.pick.outputs.issue }}-<short-slug>.
-            3. Implement the change WITH tests (unit / e2e / MCP as appropriate to the issue).
-            4. Open a pull request targeting `main` whose body contains "Closes #${{ steps.pick.outputs.issue }}" and checks off the issue's Definition of Done.
+            1. Read CLAUDE.md and issue #1 (the authoritative product model) and the issue itself.
+            2. Create a branch: git checkout -b claude/${{ steps.pick.outputs.issue }}-<short-slug>
+            3. Implement the change WITH tests (unit / e2e / MCP as appropriate).
+            4. VERIFY before finishing: run `pnpm typecheck` and `pnpm test` (and any package-
+               specific checks) and confirm they pass. Do not finish red.
+            5. Commit, then push the branch:  git push -u origin HEAD
+            6. Open a PR to main:
+               gh pr create --base main --head claude/${{ steps.pick.outputs.issue }}-<short-slug> \
+                 --title "<type>: <summary> (#${{ steps.pick.outputs.issue }})" \
+                 --body "Closes #${{ steps.pick.outputs.issue }}"
 
-            Hard rules: never push to `main`; never introduce price handling (see #1);
+            Hard rules: never push to main; never introduce price handling (see #1);
             keep Azure cost minimal; follow CLAUDE.md exactly.
+
+      # Safety net: if the agent pushed a branch but didn't open a PR, open it so
+      # CI (which also runs on pushes to claude/**) is visible for review.
+      - name: Ensure a PR exists
+        if: steps.pick.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ steps.pick.outputs.issue }}
+        run: |
+          set -uo pipefail
+          ref=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$ISSUE-" --jq '.[0].ref // empty' || true)
+          [ -z "$ref" ] && { echo "Agent created no branch for #$ISSUE; nothing to open."; exit 0; }
+          branch="${ref#refs/heads/}"
+          existing=$(gh pr list --repo "$REPO" --state open --head "$branch" --json number --jq 'length')
+          if [ "$existing" -ge 1 ]; then echo "PR already open for $branch."; exit 0; fi
+          gh pr create --repo "$REPO" --base main --head "$branch" \
+            --title "agent: implement #$ISSUE" --body "Closes #$ISSUE" || echo "Could not auto-open PR (open it manually)."

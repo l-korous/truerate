@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `claude/**` so an autonomous agent's branch push runs the gauntlet even
+    # before/independent of a PR being opened (the PR then shows these checks).
+    branches: [main, "claude/**"]
   pull_request:
     branches: [main]
 
