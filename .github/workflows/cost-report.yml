@@ -1,14 +1,11 @@
 name: Cost report
 
 # Daily month-to-date cost snapshot emailed to the maintainer.
-#
-# - Azure cost works via the existing OIDC login — NO new secret needed.
-# - Email delivery needs Gmail SMTP secrets MAIL_USERNAME + MAIL_PASSWORD
-#   (a Gmail App Password — accounts.google.com -> Security -> App passwords).
-# - GitHub Actions minutes need GH_BILLING_PAT (a PAT that can read the
-#   account's billing). Optional.
-# Until the email secrets exist, the report is written to the workflow RUN
-# SUMMARY (Actions tab) instead of emailed — the workflow never hard-fails.
+# - Azure cost: OIDC login + the SP's Cost Management Reader role (RG scope).
+# - Email: Gmail SMTP secrets MAIL_USERNAME + MAIL_PASSWORD (a Gmail App Password).
+# - GitHub Actions usage: GH_BILLING_PAT — shown ONLY if the API returns a sane
+#   figure; otherwise we state the guardrail facts instead of a wrong number.
+# Never hard-fails; if email isn't configured the report goes to the run summary.
 
 on:
   schedule:
@@ -44,49 +41,51 @@ jobs:
           az config set extension.use_dynamic_install=yes_without_prompt -o none || true
           az extension add --name costmanagement -o none 2>/dev/null || true
 
+          # ---- Azure month-to-date (RG scope) ----
           AZ_COST="unavailable"; AZ_CUR=""
           COST_JSON=$(az costmanagement query --type ActualCost --timeframe MonthToDate \
             --scope "/subscriptions/$SUB/resourceGroups/$RG" \
             --dataset-aggregation '{"totalCost":{"name":"PreTaxCost","function":"Sum"}}' \
             -o json 2>/dev/null || echo "")
-          if [ -n "$COST_JSON" ]; then
+          if [ -n "$COST_JSON" ] && echo "$COST_JSON" | jq -e '.properties.rows' >/dev/null 2>&1; then
             AZ_COST=$(echo "$COST_JSON" | jq -r '(([.properties.rows[]?[0]] | add) // 0)')
             AZ_CUR=$(echo "$COST_JSON" | jq -r '(.properties.rows[0][1]) // ""')
           fi
+          if [ "$AZ_COST" = "unavailable" ]; then
+            AZ_LINE="Azure (RG ${RG}): figure pending (Cost Management data lags up to ~24h / role just granted). HARD CAP: EUR 5/mo budget with email alerts at 50/90/100% + forecast, so it cannot exceed ~5 EUR without emailing you."
+          else
+            AZ_LINE="Azure (RG ${RG}): ${AZ_COST} ${AZ_CUR} month-to-date. HARD CAP: EUR 5/mo budget with email alerts at 50/90/100%."
+          fi
 
-          GH_LINE="GitHub Actions minutes: add a GH_BILLING_PAT secret to include this."
+          # ---- GitHub Actions (trust a figure only if it's sane; else guardrail) ----
+          GH_LINE="GitHub Actions: Free plan includes 2,000 private-repo minutes/mo; the overage spending limit defaults to \$0, so workflows PAUSE at the cap instead of billing. Exact usage: https://github.com/settings/billing"
           if [ -n "${GH_BILLING_PAT:-}" ]; then
-            GH_JSON=$(GH_TOKEN="$GH_BILLING_PAT" gh api "/users/$OWNER/settings/billing/actions" 2>/dev/null || echo "")
-            if [ -n "$GH_JSON" ]; then
-              used=$(echo "$GH_JSON" | jq -r '.total_minutes_used // 0')
-              inc=$(echo "$GH_JSON" | jq -r '.included_minutes // 0')
-              paid=$(echo "$GH_JSON" | jq -r '.total_paid_minutes_used // 0')
-              GH_LINE="GitHub Actions minutes (MTD): ${used} used / ${inc} included; paid minutes: ${paid}"
-            else
-              GH_LINE="GitHub Actions minutes: query failed (check GH_BILLING_PAT scope)."
+            GH_JSON=$(GH_TOKEN="$GH_BILLING_PAT" gh api "users/$OWNER/settings/billing/actions" 2>/dev/null || echo "")
+            inc=$(echo "$GH_JSON" | jq -r '.included_minutes // 0' 2>/dev/null || echo 0)
+            used=$(echo "$GH_JSON" | jq -r '.total_minutes_used // 0' 2>/dev/null || echo 0)
+            paid=$(echo "$GH_JSON" | jq -r '.total_paid_minutes_used // 0' 2>/dev/null || echo 0)
+            if [ "${inc:-0}" -gt 0 ] 2>/dev/null; then
+              GH_LINE="GitHub Actions (MTD): ${used} / ${inc} included minutes used; paid (billable) minutes: ${paid}. Overage spending limit defaults to \$0 (pauses, no surprise bill)."
             fi
           fi
 
           MONTH=$(date -u +%Y-%m)
           NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
-          if [ "$AZ_COST" = "unavailable" ]; then
-            AZ_LINE="Azure (resource group ${RG}): see Azure Budget alerts (emailed separately)"
-          else
-            AZ_LINE="Azure (resource group ${RG}): ${AZ_COST} ${AZ_CUR}"
-          fi
           {
-            echo "TrueRate — month-to-date costs (${MONTH}, as of ${NOW})"
+            echo "TrueRate cost snapshot — ${MONTH} (as of ${NOW})"
             echo ""
             echo "${AZ_LINE}"
+            echo ""
             echo "${GH_LINE}"
             echo ""
-            echo "Claude Max: flat subscription — agent runs draw from plan quota, not billed per run."
+            echo "Claude Max: flat subscription — agent runs draw from plan quota (rate-limited), never billed per run."
             echo ""
+            echo "BOTTOM LINE: with the EUR 5 Azure budget, GitHub's \$0 default overage limit, and Claude Max being flat-rate, a surprise bill is not possible unless you raise a limit yourself."
             echo "Actions: https://github.com/${OWNER}/truerate/actions"
           } > body.txt
           cat body.txt >> "$GITHUB_STEP_SUMMARY"
           echo "----- report -----"; cat body.txt
-          echo "subject=TrueRate costs MTD (${MONTH}): Azure ${AZ_COST} ${AZ_CUR}" >> "$GITHUB_OUTPUT"
+          echo "subject=TrueRate cost snapshot ${MONTH} (as of ${NOW})" >> "$GITHUB_OUTPUT"
 
       - name: Send email
         if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
@@ -104,4 +103,4 @@ jobs:
 
       - name: Note if email not configured
         if: ${{ env.MAIL_USERNAME == '' || env.MAIL_PASSWORD == '' }}
-        run: echo "::notice::Email not sent — add repo secrets MAIL_USERNAME + MAIL_PASSWORD (Gmail App Password) to enable delivery. The report is in the run summary above."
+        run: echo "::notice::Email not sent — add repo secrets MAIL_USERNAME + MAIL_PASSWORD (Gmail App Password)."
