@@ -89,21 +89,27 @@ jobs:
           # bypassPermissions: this is an ephemeral CI sandbox, the agent needs
           # Edit/Write/Bash to implement, verify, commit and push. --max-turns
           # bounds a single run so it can't drain the whole Max window.
-          claude_args: "--max-turns 60 --permission-mode bypassPermissions"
+          claude_args: "--max-turns 80 --permission-mode bypassPermissions"
           prompt: |
             You are running headless in CI. Implement GitHub issue #${{ steps.pick.outputs.issue }}.
 
             1. Read CLAUDE.md and issue #1 (the authoritative product model) and the issue itself.
-            2. Create a branch: git checkout -b claude/${{ steps.pick.outputs.issue }}-<short-slug>
-            3. Implement the change WITH tests (unit / e2e / MCP as appropriate).
-            4. VERIFY before finishing: run `pnpm typecheck` and `pnpm test` (and any package-
-               specific checks) and confirm they pass. Do not finish red.
-            5. Commit, then push the branch:  git push -u origin HEAD
-            6. Open a PR to main:
-               gh pr create --base main --head claude/${{ steps.pick.outputs.issue }}-<short-slug> \
-                 --title "<type>: <summary> (#${{ steps.pick.outputs.issue }})" \
-                 --body "Closes #${{ steps.pick.outputs.issue }}"
+            2. IMMEDIATELY create a branch, push it, and open a DRAFT PR — so partial
+               progress is never lost if you run out of turns:
+                 git checkout -b claude/${{ steps.pick.outputs.issue }}-<short-slug>
+                 git commit --allow-empty -m "start #${{ steps.pick.outputs.issue }}"
+                 git push -u origin HEAD
+                 gh pr create --draft --base main --head claude/${{ steps.pick.outputs.issue }}-<short-slug> \
+                   --title "agent: implement #${{ steps.pick.outputs.issue }}" \
+                   --body "Closes #${{ steps.pick.outputs.issue }}"
+            3. Implement the change WITH tests (unit / e2e / MCP as appropriate),
+               committing and pushing as you go.
+            4. VERIFY: run `pnpm typecheck` and `pnpm test` (and any package-specific
+               checks) and confirm they pass. Do not mark ready while red.
+            5. When done and green: gh pr ready claude/${{ steps.pick.outputs.issue }}-<short-slug>
 
+            If the issue is too large to finish this run, leave the draft PR with your
+            progress and a checklist of what remains. Do not force it.
             Hard rules: never push to main; never introduce price handling (see #1);
             keep Azure cost minimal; follow CLAUDE.md exactly.
 
