@@ -69,10 +69,15 @@ jobs:
 
           MONTH=$(date -u +%Y-%m)
           NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
+          if [ "$AZ_COST" = "unavailable" ]; then
+            AZ_LINE="Azure (resource group ${RG}): see Azure Budget alerts (emailed separately)"
+          else
+            AZ_LINE="Azure (resource group ${RG}): ${AZ_COST} ${AZ_CUR}"
+          fi
           {
             echo "TrueRate — month-to-date costs (${MONTH}, as of ${NOW})"
             echo ""
-            echo "Azure (resource group ${RG}): ${AZ_COST} ${AZ_CUR}"
+            echo "${AZ_LINE}"
             echo "${GH_LINE}"
             echo ""
             echo "Claude Max: flat subscription — agent runs draw from plan quota, not billed per run."
