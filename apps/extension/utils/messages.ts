@@ -27,6 +27,8 @@ export function isTrMessage(m: unknown): m is TrMessage {
 }
 
 /** Type-safe wrapper around browser.runtime.sendMessage. */
-export function sendTrMessage<M extends TrMessage>(message: M): Promise<TrResponseFor<M>> {
-  return browser.runtime.sendMessage(message) as Promise<TrResponseFor<M>>;
+export function sendTrMessage(message: Extract<TrMessage, { type: "TR_MATCH" }>): Promise<TrMatchResponse>;
+export function sendTrMessage(message: Extract<TrMessage, { type: "TR_AUTH_STATUS" }>): Promise<TrAuthStatusResponse>;
+export function sendTrMessage(message: TrMessage): Promise<TrMatchResponse | TrAuthStatusResponse> {
+  return browser.runtime.sendMessage(message) as Promise<TrMatchResponse | TrAuthStatusResponse>;
 }
