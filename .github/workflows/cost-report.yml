@@ -42,6 +42,7 @@ jobs:
         run: |
           set -uo pipefail
           az config set extension.use_dynamic_install=yes_without_prompt -o none || true
+          az extension add --name costmanagement -o none 2>/dev/null || true
 
           AZ_COST="unavailable"; AZ_CUR=""
           COST_JSON=$(az costmanagement query --type ActualCost --timeframe MonthToDate \
@@ -79,6 +80,7 @@ jobs:
             echo "Actions: https://github.com/${OWNER}/truerate/actions"
           } > body.txt
           cat body.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "----- report -----"; cat body.txt
           echo "subject=TrueRate costs MTD (${MONTH}): Azure ${AZ_COST} ${AZ_CUR}" >> "$GITHUB_OUTPUT"
 
       - name: Send email
