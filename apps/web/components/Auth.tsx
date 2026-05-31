@@ -113,6 +113,7 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
               className="btn-primary mt-6 w-full"
               onClick={submit}
               disabled={busy || !email || !password}
+              data-testid="auth-submit"
             >
               {busy ? "…" : mode === "register" ? "Create account" : "Sign in"}
             </button>

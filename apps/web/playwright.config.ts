@@ -21,7 +21,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
-      command: "cd ../.. && node --import tsx apps/api/src/index.ts",
+      command: "pnpm --filter @truerate/api exec node --import tsx src/index.ts",
       port: API_PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
