@@ -29,6 +29,10 @@ If anything here or in `AGENTS.md` conflicts with #1, **#1 wins**.
 - **Order of work:** the **`MVP — core loop`** milestone first → then **Phase 0** hardening before any
   public exposure → then later phases. Pick issues labelled `MVP` first.
 - **No price handling** may be (re)introduced (see #1).
+- **Verify before you claim done.** Before opening a PR or reporting completion, actually RUN the
+  relevant checks (`pnpm typecheck`, `pnpm test`, `pnpm --filter <pkg> typecheck`, e2e/MCP as
+  relevant) and confirm they pass. Never claim a fix works from reasoning alone — CI is the source
+  of truth, and a confidently-wrong "done" wastes a full agent cycle.
 
 ## Engineering invariants (still in force)
 - Secrets never leave encrypted; never log or return decrypted credentials; **never print secrets**.
