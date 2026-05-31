@@ -159,3 +159,44 @@ test("removing a membership drops it", async () => {
   const del = await app.request(`/memberships/${id}`, { method: "DELETE", headers: authed(token) });
   assert.equal((await del.json()).user.memberships.length, 0);
 });
+
+// --- CORS allowlist ---------------------------------------------------------
+
+test("CORS: allowed origin receives Access-Control-Allow-Origin header", async () => {
+  const app = await getApp();
+  // Default dev allowlist includes http://localhost:3000
+  const res = await app.request("/health", { headers: { Origin: "http://localhost:3000" } });
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000");
+});
+
+test("CORS: disallowed origin does not receive Access-Control-Allow-Origin header", async () => {
+  const app = await getApp();
+  const res = await app.request("/health", { headers: { Origin: "https://evil.example.com" } });
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+});
+
+test("CORS: preflight (OPTIONS) for allowed origin returns 204 with correct headers", async () => {
+  const app = await getApp();
+  const res = await app.request("/health", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://localhost:3000",
+      "Access-Control-Request-Method": "GET",
+      "Access-Control-Request-Headers": "Authorization",
+    },
+  });
+  assert.ok([200, 204].includes(res.status), `Expected 200 or 204, got ${res.status}`);
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000");
+});
+
+test("CORS: preflight for disallowed origin does not allow it", async () => {
+  const app = await getApp();
+  const res = await app.request("/health", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://evil.example.com",
+      "Access-Control-Request-Method": "GET",
+    },
+  });
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+});
