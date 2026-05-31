@@ -30,6 +30,7 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  actions: read # the pick step queries workflow runs (1-in-flight guard)
 
 jobs:
   run:
