@@ -6,8 +6,9 @@ name: Backlog runner
 # labelled `agent-ready` (lowest number, not `blocked`, no existing claude/*
 # branch) and have Claude implement it on a branch + open a PR for review.
 #
-# - ONE issue at a time (the in-flight guard waits for the current agent PR to
-#   be merged/closed before starting the next).
+# - Up to MAX_INFLIGHT agent PRs open at once (default 6), one new per hourly
+#   run, serialized by `concurrency`. This lets the backlog keep flowing while
+#   no one is around to merge (there is no auto-merge); PRs queue for review.
 # - NO auto-merge: every PR is for review until the "auto-merge readiness gate"
 #   (#159) is satisfied and the repo can enforce required checks.
 # - Queue = the `agent-ready` label. Nothing runs until issues carry it.
@@ -47,8 +48,9 @@ jobs:
             --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
           active=$(gh run list --repo "$REPO" --workflow "Claude Code" --json status \
             --jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length')
-          if [ "$inflight" -ge 1 ] || [ "$active" -ge 1 ]; then
-            echo "Agent work already in flight (open agent PRs=$inflight, active runs=$active). Skipping."
+          MAX_INFLIGHT=6
+          if [ "$inflight" -ge "$MAX_INFLIGHT" ] || [ "$active" -ge 1 ]; then
+            echo "At capacity (open agent PRs=$inflight/$MAX_INFLIGHT, active runs=$active). Skipping."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           next=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \

@@ -1,0 +1,100 @@
+name: Cost report
+
+# Daily month-to-date cost snapshot emailed to the maintainer.
+#
+# - Azure cost works via the existing OIDC login — NO new secret needed.
+# - Email delivery needs Gmail SMTP secrets MAIL_USERNAME + MAIL_PASSWORD
+#   (a Gmail App Password — accounts.google.com -> Security -> App passwords).
+# - GitHub Actions minutes need GH_BILLING_PAT (a PAT that can read the
+#   account's billing). Optional.
+# Until the email secrets exist, the report is written to the workflow RUN
+# SUMMARY (Actions tab) instead of emailed — the workflow never hard-fails.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # OIDC for azure/login
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+      GH_BILLING_PAT: ${{ secrets.GH_BILLING_PAT }}
+      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
+      SUB: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build cost report
+        id: report
+        run: |
+          set -uo pipefail
+          az config set extension.use_dynamic_install=yes_without_prompt -o none || true
+
+          AZ_COST="unavailable"; AZ_CUR=""
+          COST_JSON=$(az costmanagement query --type ActualCost --timeframe MonthToDate \
+            --scope "/subscriptions/$SUB/resourceGroups/$RG" \
+            --dataset-aggregation '{"totalCost":{"name":"PreTaxCost","function":"Sum"}}' \
+            -o json 2>/dev/null || echo "")
+          if [ -n "$COST_JSON" ]; then
+            AZ_COST=$(echo "$COST_JSON" | jq -r '(([.properties.rows[]?[0]] | add) // 0)')
+            AZ_CUR=$(echo "$COST_JSON" | jq -r '(.properties.rows[0][1]) // ""')
+          fi
+
+          GH_LINE="GitHub Actions minutes: add a GH_BILLING_PAT secret to include this."
+          if [ -n "${GH_BILLING_PAT:-}" ]; then
+            GH_JSON=$(GH_TOKEN="$GH_BILLING_PAT" gh api "/users/$OWNER/settings/billing/actions" 2>/dev/null || echo "")
+            if [ -n "$GH_JSON" ]; then
+              used=$(echo "$GH_JSON" | jq -r '.total_minutes_used // 0')
+              inc=$(echo "$GH_JSON" | jq -r '.included_minutes // 0')
+              paid=$(echo "$GH_JSON" | jq -r '.total_paid_minutes_used // 0')
+              GH_LINE="GitHub Actions minutes (MTD): ${used} used / ${inc} included; paid minutes: ${paid}"
+            else
+              GH_LINE="GitHub Actions minutes: query failed (check GH_BILLING_PAT scope)."
+            fi
+          fi
+
+          MONTH=$(date -u +%Y-%m)
+          NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
+          {
+            echo "TrueRate — month-to-date costs (${MONTH}, as of ${NOW})"
+            echo ""
+            echo "Azure (resource group ${RG}): ${AZ_COST} ${AZ_CUR}"
+            echo "${GH_LINE}"
+            echo ""
+            echo "Claude Max: flat subscription — agent runs draw from plan quota, not billed per run."
+            echo ""
+            echo "Actions: https://github.com/${OWNER}/truerate/actions"
+          } > body.txt
+          cat body.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "subject=TrueRate costs MTD (${MONTH}): Azure ${AZ_COST} ${AZ_CUR}" >> "$GITHUB_OUTPUT"
+
+      - name: Send email
+        if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ steps.report.outputs.subject }}
+          to: lukas.korous@gmail.com
+          from: TrueRate Cost Bot <${{ secrets.MAIL_USERNAME }}>
+          body: file://body.txt
+
+      - name: Note if email not configured
+        if: ${{ env.MAIL_USERNAME == '' || env.MAIL_PASSWORD == '' }}
+        run: echo "::notice::Email not sent — add repo secrets MAIL_USERNAME + MAIL_PASSWORD (Gmail App Password) to enable delivery. The report is in the run summary above."
