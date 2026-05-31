@@ -22,7 +22,32 @@ import { issueToken, requireAuth } from "./auth.js";
 export const app = new Hono();
 export const engine = new EnrichmentEngine();
 
-app.use("*", cors({ origin: (o) => o ?? "*", credentials: true }));
+/**
+ * Build the CORS origin allowlist from environment variables.
+ *
+ * CORS_ALLOWED_ORIGINS – comma-separated list of web origins (e.g. "http://localhost:3000,https://truerate.app").
+ *                         Defaults to "http://localhost:3000" when unset (local dev only).
+ * CORS_EXTENSION_ID    – Chrome extension ID; when set, adds "chrome-extension://<id>" to the allowlist.
+ */
+function buildAllowedOrigins(): Set<string> {
+  const origins = new Set<string>();
+  const raw = process.env.CORS_ALLOWED_ORIGINS;
+  if (raw) {
+    for (const o of raw.split(",")) {
+      const trimmed = o.trim();
+      if (trimmed) origins.add(trimmed);
+    }
+  } else {
+    origins.add("http://localhost:3000");
+  }
+  const extId = process.env.CORS_EXTENSION_ID?.trim();
+  if (extId) origins.add(`chrome-extension://${extId}`);
+  return origins;
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
+app.use("*", cors({ origin: (o) => (allowedOrigins.has(o) ? o : null), credentials: true }));
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 
