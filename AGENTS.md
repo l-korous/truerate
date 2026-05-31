@@ -1,5 +1,14 @@
 # AGENTS.md — TrueRate
 
+> **⚠️ Product model corrected (2026-05) — read `CLAUDE.md` and GitHub issue #1 first; they are authoritative.**
+> TrueRate handles **no prices**: it never fetches hotel prices and never returns a post-discount /
+> "final" / "indicative" price. It surfaces the applicable **discounts, perks, and conditions**, plus an
+> **estimated perk value**; the consumer (AI assistant or user) does any price math. Passages below about
+> an "indicative member price", applying a % to a scraped public price, `/benefits/match` returning a
+> member price, or cross-provider **price** comparison are **superseded** — read them as "surface the
+> applicable discount/perk/condition and an estimated perk value", not "compute a price". The strategic
+> framing and engineering invariants below remain valid.
+
 Context for any agent (or human) extending this codebase. Read this before
 making product or architecture decisions. The code tells you *how* things work;
 this file tells you *why*, and what not to break.
