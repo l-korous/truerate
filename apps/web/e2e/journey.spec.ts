@@ -10,7 +10,7 @@ async function register(page: any) {
   await page.goto("/");
   await page.getByPlaceholder("you@example.com").fill(uniqueEmail());
   await page.getByPlaceholder("••••••••").fill("pw123456");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByTestId("auth-submit").click();
   await expect(page.getByRole("heading", { name: "Your memberships" })).toBeVisible();
 }
 

@@ -10,7 +10,7 @@ import { isTrMessage } from "../utils/messages";
 // we don't recognise leaves them for any other listener.
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener(async (rawMsg) => {
+  browser.runtime.onMessage.addListener(async (rawMsg: unknown) => {
     if (!isTrMessage(rawMsg)) return;
     if (rawMsg.type === "TR_MATCH") {
       try {
