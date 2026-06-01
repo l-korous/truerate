@@ -1,7 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { verify } from "hono/jwt";
+import { createLogger, generateCorrelationId } from "@truerate/core";
 import { buildServer, engine } from "./server.js";
+
+const startupLog = createLogger({ service: "mcp" });
 
 // TrueRate MCP server — HTTP wiring.
 //
@@ -47,18 +50,27 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     return;
   }
 
+  const correlationId = (Array.isArray(req.headers["x-correlation-id"])
+    ? req.headers["x-correlation-id"][0]
+    : req.headers["x-correlation-id"]) ?? generateCorrelationId();
+
+  const reqLog = startupLog.child({ correlationId });
+
   const userId = await userIdFromRequest(req);
   if (!userId) {
+    reqLog.warn("mcp request rejected: missing or invalid bearer token");
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Connect TrueRate with a valid bearer token." }));
     return;
   }
 
+  reqLog.info("mcp request", { method: req.method });
+
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
 
-  const server = buildServer(userId);
+  const server = buildServer(userId, correlationId);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
     transport.close();
@@ -66,30 +78,25 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, body);
+  res.setHeader("x-correlation-id", correlationId);
 });
 
 httpServer.listen(port, async () => {
-  console.log(`[mcp] TrueRate MCP on :${port}/mcp (enrichment mode: ${engine.mode})`);
+  startupLog.info("server started", { port, enrichmentMode: engine.mode, endpoint: `/mcp` });
 
   // Dev-only: seed dummy data into this process's store and print a ready token.
   if (process.env.TRUERATE_DEV_SEED === "true") {
     try {
       const { seedDevUser } = await import("./seed.js");
       const token = await seedDevUser();
-      const line = "─".repeat(72);
-      console.log(
-        `\n${line}\n` +
-          ` TrueRate MCP — dev seed loaded (demo@truerate.dev)\n` +
-          ` Memberships: Booking Genius L3, Marriott Platinum, Hilton Gold,\n` +
-          `              Revolut Metal, Hotel PECR (15% negotiated)\n` +
-          `${line}\n` +
-          ` Bearer token (paste into your Claude Desktop config):\n\n` +
-          ` ${token}\n\n` +
-          ` Endpoint: http://localhost:${port}/mcp\n` +
-          `${line}\n`,
-      );
+      startupLog.info("dev seed loaded", {
+        user: "demo@truerate.dev",
+        memberships: ["Booking Genius L3", "Marriott Platinum", "Hilton Gold", "Revolut Metal", "Hotel PECR 15%"],
+        endpoint: `http://localhost:${port}/mcp`,
+        bearerToken: token,
+      });
     } catch (err) {
-      console.error("[mcp] dev seed failed:", err);
+      startupLog.error("dev seed failed", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 });

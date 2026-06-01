@@ -4,5 +4,6 @@ export * from "./match.js";
 export * from "./crypto.js";
 export * from "./db.js";
 export * from "./enrichment.js";
+export * from "./logger.js";
 export { BookingProvider } from "./providers/booking.js";
 export type { HotelProvider, ProviderProperty } from "./providers/types.js";
