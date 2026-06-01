@@ -7,11 +7,16 @@ import {
   createLogger,
   generateCorrelationId,
   hashUserId,
+  HotelSearchQuerySchema,
   type EnrichmentResult,
   type Membership,
 } from "@truerate/core";
 
 export const engine = new EnrichmentEngine();
+
+// Extract the raw Zod shape from the shared core schema, then add .describe()
+// annotations for MCP tool documentation.
+const { location, checkIn, checkOut, adults, rooms, currency, limit } = HotelSearchQuerySchema.shape;
 
 export function buildServer(userId: string, correlationId: string = generateCorrelationId()): McpServer {
   const log = createLogger({ service: "mcp", correlationId, userIdHash: hashUserId(userId) });
@@ -27,13 +32,13 @@ export function buildServer(userId: string, correlationId: string = generateCorr
       "compare hotels. Note: member prices are indicative estimates from the " +
       "user's declared benefits unless marked otherwise.",
     {
-      location: z.string().describe("City or area, e.g. 'Vienna' or 'Prague Old Town'"),
-      checkIn: z.string().describe("Check-in date, ISO YYYY-MM-DD"),
-      checkOut: z.string().describe("Check-out date, ISO YYYY-MM-DD"),
-      adults: z.number().int().min(1).default(2),
-      rooms: z.number().int().min(1).default(1),
-      currency: z.string().optional(),
-      limit: z.number().int().min(1).max(20).default(6),
+      location: location.describe("City or area, e.g. 'Vienna' or 'Prague Old Town'"),
+      checkIn: checkIn.describe("Check-in date, ISO YYYY-MM-DD"),
+      checkOut: checkOut.describe("Check-out date, ISO YYYY-MM-DD"),
+      adults: adults.default(2).describe("Number of adults (default 2)"),
+      rooms: rooms.default(1).describe("Number of rooms (default 1)"),
+      currency: currency.describe("Currency code, e.g. EUR"),
+      limit: limit.default(6).describe("Max results to return (1–20, default 6)"),
     },
     async (args) => {
       const toolLog = log.child({ tool: "search_hotels" });

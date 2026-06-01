@@ -19,7 +19,7 @@ async function registerUser(app: any) {
   const res = await app.request("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "pw12345", market: "cz" }),
+    body: JSON.stringify({ email, password: "pw123456", market: "cz" }),
   });
   assert.equal(res.status, 200);
   const { token } = await res.json();
