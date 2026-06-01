@@ -200,6 +200,32 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           image: apiImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat(cosmosEnv, secretEnv, [ { name: 'API_PORT', value: '8787' } ])
+          probes: [
+            {
+              type: 'Startup'
+              httpGet: { path: '/health', port: 8787, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 5
+              failureThreshold: 24
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/health', port: 8787, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: '/health', port: 8787, scheme: 'HTTP' }
+              initialDelaySeconds: 30
+              periodSeconds: 30
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+          ]
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
@@ -226,6 +252,32 @@ resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
           image: mcpImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat(cosmosEnv, secretEnv, [ { name: 'MCP_PORT', value: '8788' } ])
+          probes: [
+            {
+              type: 'Startup'
+              httpGet: { path: '/health', port: 8788, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 5
+              failureThreshold: 24
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/health', port: 8788, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: '/health', port: 8788, scheme: 'HTTP' }
+              initialDelaySeconds: 30
+              periodSeconds: 30
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+          ]
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
@@ -251,6 +303,32 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
           image: webImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
           // NEXT_PUBLIC_* is baked at build time; set it as a build arg in CI.
+          probes: [
+            {
+              type: 'Startup'
+              httpGet: { path: '/api/health', port: 3000, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 5
+              failureThreshold: 30
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/api/health', port: 3000, scheme: 'HTTP' }
+              initialDelaySeconds: 0
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: '/api/health', port: 3000, scheme: 'HTTP' }
+              initialDelaySeconds: 30
+              periodSeconds: 30
+              failureThreshold: 3
+              timeoutSeconds: 3
+            }
+          ]
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
