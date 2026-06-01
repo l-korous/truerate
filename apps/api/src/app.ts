@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import bcrypt from "bcryptjs";
 import { v4 as uuid } from "uuid";
+import { z } from "zod";
 import {
   EnrichmentEngine,
   encryptCredential,
@@ -14,12 +15,13 @@ import {
   createLogger,
   generateCorrelationId,
   hashUserId,
+  HotelSearchQuerySchema,
+  PageContextSchema,
+  ClientErrorReportSchema,
+  BenefitInputSchema,
   type Logger,
   type Benefit,
-  type ClientErrorReport,
-  type HotelSearchQuery,
   type Membership,
-  type PageContext,
   type User,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
@@ -83,11 +85,38 @@ app.get("/programs", (c) =>
   }),
 );
 
+// --- Validation helpers ------------------------------------------------------
+
+/** Parse and validate a request body; return structured 400 on failure. */
+async function parseBody<T>(schema: z.ZodType<T>, c: { req: { json(): Promise<unknown> } }): Promise<T | Response> {
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return Response.json(
+      { error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+      { status: 400 },
+    );
+  }
+  return result.data;
+}
+
 // --- Auth -------------------------------------------------------------------
 
+const RegisterSchema = z.object({
+  email: z.string().email("invalid email"),
+  password: z.string().min(8, "password must be at least 8 characters"),
+  market: z.string().optional(),
+});
+
+const LoginSchema = z.object({
+  email: z.string().email("invalid email"),
+  password: z.string().min(1, "password required"),
+});
+
 app.post("/auth/register", async (c) => {
-  const { email, password, market } = await c.req.json<{ email: string; password: string; market?: string }>();
-  if (!email || !password) throw new HTTPException(400, { message: "email and password required" });
+  const parsed = await parseBody(RegisterSchema, c);
+  if (parsed instanceof Response) return parsed;
+  const { email, password, market } = parsed;
   const { getUserRepo } = await import("@truerate/core");
   const repo = await getUserRepo();
   if (await repo.getByEmail(email)) throw new HTTPException(409, { message: "Account already exists" });
@@ -107,11 +136,13 @@ app.post("/auth/register", async (c) => {
 });
 
 app.post("/auth/login", async (c) => {
-  const { email, password } = await c.req.json<{ email: string; password: string }>();
+  const parsed = await parseBody(LoginSchema, c);
+  if (parsed instanceof Response) return parsed;
+  const { email, password } = parsed;
   const { getUserRepo } = await import("@truerate/core");
   const repo = await getUserRepo();
-  const user = await repo.getByEmail(email ?? "");
-  if (!user || !(await bcrypt.compare(password ?? "", user.passwordHash))) {
+  const user = await repo.getByEmail(email);
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     c.get("logger").warn("login failed");
     throw new HTTPException(401, { message: "Invalid credentials" });
   }
@@ -126,57 +157,66 @@ app.get("/me", requireAuth, async (c) => {
   return c.json({ user: publicUser(user) });
 });
 
-// Add a membership. Two shapes:
+// Two valid shapes for adding a membership:
 //   catalog: { programId, tier?, attributes? }  -> benefits instantiated from the catalog
-//   custom : { label, benefits: Benefit-like[] } -> user-declared benefits
+//   custom : { label, benefits: BenefitInput[] } -> user-declared benefits
+const CatalogMembershipSchema = z.object({
+  programId: z.string().min(1),
+  tier: z.string().optional(),
+  attributes: z.record(z.string()).optional(),
+});
+
+const CustomMembershipSchema = z.object({
+  label: z.string().min(1, "label is required"),
+  benefits: z.array(BenefitInputSchema).min(1, "at least one benefit required"),
+});
+
+const AddMembershipSchema = z.union([CatalogMembershipSchema, CustomMembershipSchema]);
+
 app.post("/memberships", requireAuth, async (c) => {
-  const body = await c.req.json<any>();
+  const parsed = await parseBody(AddMembershipSchema, c);
+  if (parsed instanceof Response) return parsed;
+
   const user = await loadUser(c.get("userId"));
   let membership: Membership;
 
-  if (body.programId) {
-    const program = getProgram(body.programId);
+  if ("programId" in parsed) {
+    const program = getProgram(parsed.programId);
     if (!program) throw new HTTPException(400, { message: "Unknown program" });
 
     const secretKeys = new Set(program.fields.filter((f) => f.secret).map((f) => f.key));
     const attributes: Record<string, string> = {};
     const secrets: Record<string, string> = {};
-    for (const [k, v] of Object.entries(body.attributes ?? {})) {
+    for (const [k, v] of Object.entries(parsed.attributes ?? {})) {
       (secretKeys.has(k) ? secrets : attributes)[k] = String(v);
     }
     membership = {
       id: uuid(),
-      label: body.tier ? `${program.name} - ${body.tier}` : program.name,
+      label: parsed.tier ? `${program.name} - ${parsed.tier}` : program.name,
       programId: program.id,
-      tier: body.tier,
+      tier: parsed.tier,
       attributes,
       encryptedCredential: Object.keys(secrets).length ? encryptCredential(secrets) : undefined,
-      benefits: instantiateBenefits(program, body.tier),
+      benefits: instantiateBenefits(program, parsed.tier),
       addedAt: new Date().toISOString(),
       status: program.requiresCredential ? "unverified" : "active",
     };
-  } else if (body.label && Array.isArray(body.benefits)) {
-    // Custom, user-declared benefits (e.g. Hotel PECR -> 15% on pecr.cz).
-    const benefits: Benefit[] = body.benefits.map((b: any) => ({
+  } else {
+    const benefits: Benefit[] = parsed.benefits.map((b) => ({
       id: uuid(),
-      scope: b.scope ?? "property",
+      scope: b.scope,
       match: b.match ?? {},
       value: b.value,
       source: "user-declared" as const,
     }));
-    if (!benefits.length || benefits.some((b) => !b.value)) {
-      throw new HTTPException(400, { message: "Each custom benefit needs a value" });
-    }
     membership = {
       id: uuid(),
-      label: String(body.label),
+      label: parsed.label,
       attributes: {},
       benefits,
       addedAt: new Date().toISOString(),
       status: "active",
     };
-  } else {
-    throw new HTTPException(400, { message: "Provide programId, or label + benefits" });
   }
 
   user.memberships.push(membership);
@@ -194,21 +234,26 @@ app.delete("/memberships/:id", requireAuth, async (c) => {
 // --- Enrichment + page matching ---------------------------------------------
 
 app.post("/search/hotels", requireAuth, async (c) => {
-  const query = await c.req.json<HotelSearchQuery>();
-  validateQuery(query);
+  const parsed = await parseBody(HotelSearchQuerySchema, c);
+  if (parsed instanceof Response) return parsed;
   const user = await loadUser(c.get("userId"));
-  const result = await engine.enrich({ ...query, currency: query.currency ?? user.currency }, user.memberships);
+  const result = await engine.enrich({
+    location: parsed.location,
+    checkIn: parsed.checkIn,
+    checkOut: parsed.checkOut,
+    adults: parsed.adults ?? 2,
+    rooms: parsed.rooms ?? 1,
+    currency: parsed.currency ?? user.currency,
+    limit: parsed.limit,
+  }, user.memberships);
   return c.json(result);
 });
 
-// The extension posts the page it is looking at (domain + optional property and
-// public price). We return which of the user's benefits apply, the perks, and -
-// if a price was supplied and a discount applies - an indicative member price.
 app.post("/benefits/match", requireAuth, async (c) => {
-  const context = await c.req.json<PageContext>();
-  if (!context?.domain) throw new HTTPException(400, { message: "domain required" });
+  const parsed = await parseBody(PageContextSchema, c);
+  if (parsed instanceof Response) return parsed;
   const user = await loadUser(c.get("userId"));
-  return c.json(engine.matchPage(context, user.memberships));
+  return c.json(engine.matchPage(parsed, user.memberships));
 });
 
 // --- Client-side error reporting (unauthenticated, fire-and-forget) ----------
@@ -222,22 +267,24 @@ export function scrubContext(ctx: Record<string, unknown>): Record<string, unkno
   );
 }
 
-const VALID_SOURCES = new Set(["web", "extension-background", "extension-content", "extension-popup"]);
-
 app.post("/client-errors", async (c) => {
-  const body = await c.req.json<Partial<ClientErrorReport>>().catch(() => null);
-  if (!body || !body.source || !VALID_SOURCES.has(body.source) || !body.message) {
+  const raw = await c.req.json<unknown>().catch(() => null);
+  const result = ClientErrorReportSchema.safeParse(raw);
+  if (!result.success) {
     return c.json({ error: "invalid payload" }, 400);
   }
-  const report: ClientErrorReport = {
-    source: body.source as ClientErrorReport["source"],
-    message: String(body.message).slice(0, 500),
-    stack: body.stack ? String(body.stack).slice(0, 2000) : undefined,
-    url: body.url ? String(body.url).slice(0, 300) : undefined,
-    correlationId: body.correlationId ? String(body.correlationId).slice(0, 50) : undefined,
-    context: body.context && typeof body.context === "object" ? scrubContext(body.context as Record<string, unknown>) : undefined,
-  };
-  c.get("logger").error("client error", { clientSource: report.source, clientMessage: report.message, clientStack: report.stack, clientUrl: report.url, clientCorrelationId: report.correlationId, clientContext: report.context });
+  const report = result.data;
+  const safeContext = report.context && typeof report.context === "object"
+    ? scrubContext(report.context as Record<string, unknown>)
+    : undefined;
+  c.get("logger").error("client error", {
+    clientSource: report.source,
+    clientMessage: report.message.slice(0, 500),
+    clientStack: report.stack ? report.stack.slice(0, 2000) : undefined,
+    clientUrl: report.url ? report.url.slice(0, 300) : undefined,
+    clientCorrelationId: report.correlationId ? report.correlationId.slice(0, 50) : undefined,
+    clientContext: safeContext,
+  });
   return c.body(null, 204);
 });
 
@@ -256,12 +303,6 @@ async function saveUser(user: User): Promise<void> {
   await repo.update(user);
 }
 
-function validateQuery(q: HotelSearchQuery) {
-  if (!q?.location || !q.checkIn || !q.checkOut) {
-    throw new HTTPException(400, { message: "location, checkIn, checkOut required" });
-  }
-}
-
 /** Strip secrets and password hash before sending a user to the client. */
 function publicUser(user: User) {
   return {
@@ -276,7 +317,7 @@ function publicUser(user: User) {
       programId: m.programId,
       tier: m.tier,
       attributes: m.attributes,
-      benefits: m.benefits, // not secret; safe to expose
+      benefits: m.benefits,
       hasCredential: Boolean(m.encryptedCredential),
       status: m.status,
       addedAt: m.addedAt,
