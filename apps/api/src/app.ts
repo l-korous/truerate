@@ -231,6 +231,64 @@ app.delete("/memberships/:id", requireAuth, async (c) => {
   return c.json({ user: publicUser(user) });
 });
 
+const EditMembershipSchema = z.object({
+  tier: z.string().optional(),
+  attributes: z.record(z.string()).optional(),
+  label: z.string().min(1, "label must not be empty").optional(),
+  benefits: z.array(BenefitInputSchema).min(1).optional(),
+});
+
+app.patch("/memberships/:id", requireAuth, async (c) => {
+  const parsed = await parseBody(EditMembershipSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const user = await loadUser(c.get("userId"));
+  const membership = user.memberships.find((m) => m.id === c.req.param("id"));
+  if (!membership) throw new HTTPException(404, { message: "Membership not found" });
+
+  if (membership.programId) {
+    const program = getProgram(membership.programId);
+    if (!program) throw new HTTPException(400, { message: "Unknown program" });
+
+    if (parsed.tier !== undefined) {
+      membership.tier = parsed.tier;
+      membership.label = parsed.tier ? `${program.name} - ${parsed.tier}` : program.name;
+      membership.benefits = instantiateBenefits(program, parsed.tier);
+    }
+
+    if (parsed.attributes !== undefined) {
+      const secretKeys = new Set(program.fields.filter((f) => f.secret).map((f) => f.key));
+      const newAttributes: Record<string, string> = {};
+      const newSecrets: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.attributes)) {
+        if (secretKeys.has(k)) {
+          if (v) newSecrets[k] = String(v);
+        } else {
+          newAttributes[k] = String(v);
+        }
+      }
+      membership.attributes = newAttributes;
+      if (Object.keys(newSecrets).length) {
+        membership.encryptedCredential = encryptCredential(newSecrets);
+      }
+    }
+  } else {
+    if (parsed.label !== undefined) membership.label = parsed.label;
+    if (parsed.benefits !== undefined) {
+      membership.benefits = parsed.benefits.map((b) => ({
+        id: uuid(),
+        scope: b.scope,
+        match: b.match ?? {},
+        value: b.value,
+        source: "user-declared" as const,
+      }));
+    }
+  }
+
+  await saveUser(user);
+  return c.json({ user: publicUser(user) });
+});
+
 // --- Enrichment + page matching ---------------------------------------------
 
 app.post("/search/hotels", requireAuth, async (c) => {

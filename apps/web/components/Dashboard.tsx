@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, clearToken, type Benefit, type Program, type PublicUser } from "@/lib/api";
 import { AddMembership } from "./AddMembership";
+import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
 
@@ -24,8 +25,11 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
   const [programsError, setProgramsError] = useState(false);
   const [programsLoading, setProgramsLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [tab, setTab] = useState<"memberships" | "try">("memberships");
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   useEffect(() => {
     setProgramsLoading(true);
@@ -35,9 +39,16 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
       .finally(() => setProgramsLoading(false));
   }, []);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
+
   async function remove(id: string) {
     setUser(await api.removeMembership(id));
+    setConfirmRemoveId(null);
     if (selectedMembershipId === id) setSelectedMembershipId(null);
+    showToast("Membership removed");
   }
 
   const selectedMembership = selectedMembershipId
@@ -46,6 +57,14 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
 
   const selectedProgram = selectedMembership?.programId
     ? programs.find((p) => p.id === selectedMembership.programId)
+    : undefined;
+
+  const editingMembership = editingMembershipId
+    ? user.memberships.find((m) => m.id === editingMembershipId) ?? null
+    : null;
+
+  const editingProgram = editingMembership?.programId
+    ? programs.find((p) => p.id === editingMembership.programId)
     : undefined;
 
   return (
@@ -81,6 +100,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             program={selectedProgram}
             onBack={() => setSelectedMembershipId(null)}
             onRemove={() => remove(selectedMembership.id)}
+            onEdit={() => setEditingMembershipId(selectedMembership.id)}
           />
         ) : tab === "memberships" ? (
           <section>
@@ -132,12 +152,31 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
                           {m.hasCredential ? " · credential stored (encrypted)" : ""}
                         </p>
                       </div>
-                      <button
-                        className="text-sm text-ink-muted hover:text-red-600"
-                        onClick={(e) => { e.stopPropagation(); remove(m.id); }}
-                      >
-                        Remove
-                      </button>
+                      {confirmRemoveId === m.id ? (
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="text-sm font-medium text-red-600 hover:text-red-700"
+                            data-testid={`list-remove-confirm-${m.id}`}
+                            onClick={() => remove(m.id)}
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            className="text-sm text-ink-muted hover:text-ink"
+                            onClick={() => setConfirmRemoveId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="text-sm text-ink-muted hover:text-red-600"
+                          data-testid={`list-remove-${m.id}`}
+                          onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(m.id); }}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </li>
                   );
                 })}
@@ -163,7 +202,25 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
 
       {adding && (
         <AddMembership programs={programs} onClose={() => setAdding(false)}
-          onAdded={(u) => { setUser(u); setAdding(false); }} />
+          onAdded={(u) => { setUser(u); setAdding(false); showToast("Membership added"); }} />
+      )}
+
+      {editingMembership && (
+        <EditMembership
+          membership={editingMembership}
+          program={editingProgram}
+          onClose={() => setEditingMembershipId(null)}
+          onSaved={(u) => { setUser(u); setEditingMembershipId(null); showToast("Membership updated"); }}
+        />
+      )}
+
+      {toast && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-ink px-5 py-3 text-sm font-medium text-paper shadow-lg"
+          data-testid="toast"
+        >
+          {toast}
+        </div>
       )}
     </div>
   );

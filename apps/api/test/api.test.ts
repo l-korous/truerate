@@ -160,6 +160,56 @@ test("removing a membership drops it", async () => {
   assert.equal((await del.json()).user.memberships.length, 0);
 });
 
+test("PATCH /memberships/:id updates catalog tier and re-instantiates benefits", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const add = await app.request("/memberships", { method: "POST", headers: authed(token),
+    body: JSON.stringify({ programId: "booking_genius", tier: "Level 1", attributes: {} }) });
+  const { user: addedUser } = await add.json();
+  const id = addedUser.memberships[0].id;
+  assert.equal(addedUser.memberships[0].tier, "Level 1");
+
+  const patch = await app.request(`/memberships/${id}`, { method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ tier: "Level 3" }) });
+  assert.equal(patch.status, 200);
+  const { user: patchedUser } = await patch.json();
+  const updated = patchedUser.memberships[0];
+  assert.equal(updated.tier, "Level 3");
+  assert.ok(updated.label.includes("Level 3"), "label updated");
+  assert.ok(updated.benefits.length > 0, "benefits re-instantiated");
+});
+
+test("PATCH /memberships/:id updates custom membership label and benefits", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const add = await app.request("/memberships", { method: "POST", headers: authed(token),
+    body: JSON.stringify({
+      label: "Old Name",
+      benefits: [{ scope: "property", match: { propertyNames: ["Old Name"] }, value: { kind: "percentDiscount", percentOff: 0.10 } }],
+    }) });
+  const { user: addedUser } = await add.json();
+  const id = addedUser.memberships[0].id;
+
+  const patch = await app.request(`/memberships/${id}`, { method: "PATCH", headers: authed(token),
+    body: JSON.stringify({
+      label: "New Name",
+      benefits: [{ scope: "property", match: { propertyNames: ["New Name"] }, value: { kind: "percentDiscount", percentOff: 0.20 } }],
+    }) });
+  assert.equal(patch.status, 200);
+  const { user: patchedUser } = await patch.json();
+  const updated = patchedUser.memberships[0];
+  assert.equal(updated.label, "New Name");
+  assert.equal(updated.benefits[0].value.percentOff, 0.20);
+});
+
+test("PATCH /memberships/:id returns 404 for unknown membership", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const patch = await app.request("/memberships/nonexistent-id", { method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ tier: "Gold" }) });
+  assert.equal(patch.status, 404);
+});
+
 // --- Correlation ID ---------------------------------------------------------
 
 test("generates X-Correlation-ID response header when none provided", async () => {
