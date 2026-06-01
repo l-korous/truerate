@@ -210,7 +210,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
           membership={editingMembership}
           program={editingProgram}
           onClose={() => setEditingMembershipId(null)}
-          onSaved={(u) => { setUser(u); setEditingMembershipId(null); showToast("Membership updated"); }}
+          onSaved={(u) => { setUser(u); setEditingMembershipId(null); setSelectedMembershipId(null); showToast("Membership updated"); }}
         />
       )}
 
