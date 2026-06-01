@@ -1,0 +1,73 @@
+name: E2E coverage
+
+# Every 4 hours: run the FULL test suite + a coverage baseline, then have an
+# agent assess END-TO-END coverage across ALL components (core, api, mcp, web,
+# extension) and add FOCUSED, high-value e2e tests for genuine gaps.
+# Hard rule: quality over quantity — NO overtesting. If coverage is already
+# good, it opens NO PR and just records its assessment on the gate issue #159.
+# Any PR it does open flows through CI + the same human review/merge as others.
+
+on:
+  schedule:
+    - cron: "37 */4 * * *" # every 4 hours, at :37 (off-peak minute)
+  workflow_dispatch: {}
+
+concurrency:
+  group: e2e-coverage
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full suite + coverage baseline
+        run: |
+          set -uo pipefail
+          pnpm --filter @truerate/core build || true
+          echo "===== unit/integration (with c8 coverage) =====" | tee coverage.txt
+          npx --yes c8 --reporter=text-summary --reporter=text pnpm test 2>&1 | tee -a coverage.txt | tail -60 || true
+          echo "===== e2e (Playwright journey) =====" | tee -a coverage.txt
+          pnpm --filter @truerate/web exec playwright install --with-deps chromium || true
+          pnpm test:e2e 2>&1 | tee -a coverage.txt | tail -30 || true
+
+      - name: Assess & improve e2e coverage with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--max-turns 80 --permission-mode bypassPermissions"
+          prompt: |
+            Read CLAUDE.md, issue #1 (product model) and issue #159 (auto-merge readiness gate / e2e backbone) FIRST.
+
+            GOAL: improve END-TO-END test coverage across ALL components — focused and high-value, NOT overtesting.
+            A `coverage.txt` baseline (unit/integration c8 summary + the e2e run) sits in the repo root.
+
+            1. Assess current e2e / integration coverage PER COMPONENT:
+               - core (enrichment / match / perk-value, end-to-end), api (every route, real auth+membership+match flows),
+                 mcp (every tool, exercised via a real MCP client), web (Playwright user journeys), extension (content-script behaviour).
+            2. Pick the SINGLE highest-value e2e GAP — a real per-component or cross-component journey that is currently untested.
+               Prefer building toward the synthetic-user harness (#4 cluster): drive the real web app + real MCP + extension as a user.
+            3. Add FOCUSED e2e test(s) for exactly that gap. RULES: test real journeys / observable behaviour, not implementation
+               detail; do NOT duplicate existing unit tests; do NOT add trivial or redundant cases; a few strong tests beat many weak ones.
+            4. If overall e2e coverage of all components is ALREADY good, DO NOT open a PR — post a short assessment comment on issue #159 and STOP.
+            5. Otherwise: run `pnpm typecheck` and `pnpm test` (and the e2e if you touched it) and confirm GREEN before finishing.
+               Then create branch claude/e2e-coverage-${{ github.run_id }}, commit, push, and open a PR titled
+               "test(e2e): <what you covered>" whose body explains the gap closed and references #159.
+            Never push to main. Never introduce price handling (#1).
