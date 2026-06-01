@@ -1,20 +1,35 @@
 "use client";
 
-import { type PublicUser } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, type PublicUser, type PerkEstimates } from "@/lib/api";
 
 function pretty(id: string) { return id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
 
-export function MemberPerks({ user }: { user: PublicUser }) {
-  const allPerks = user.memberships.flatMap((m) =>
-    m.benefits.flatMap((b) => {
-      const lines: string[] = [];
-      const v = b.value;
-      if (v.kind === "percentDiscount" && v.percentOff) lines.push(`${Math.round(v.percentOff * 100)}% off`);
-      for (const p of v.perks ?? []) lines.push(p);
-      if (v.conditions) lines.push(`Conditions: ${v.conditions}`);
-      return lines.map((line) => ({ membership: m.label, line, scope: b.scope }));
-    })
+function PerkEstimateTag({ perkType, estimates }: { perkType: string; estimates: PerkEstimates | null }) {
+  if (!estimates) return null;
+  const bands = estimates[perkType];
+  if (!bands) return null;
+
+  const parts: string[] = [];
+  if (bands[3].estimatedUsd > 0) parts.push(`$${bands[3].estimatedUsd} (3★)`);
+  if (bands[4].estimatedUsd > 0) parts.push(`$${bands[4].estimatedUsd} (4★)`);
+  if (bands[5].estimatedUsd > 0) parts.push(`$${bands[5].estimatedUsd} (5★)`);
+
+  if (parts.length === 0) return null;
+
+  return (
+    <span className="ml-2 text-xs text-ink-muted" title="Estimated value — not a price">
+      ≈ {parts.join(" / ")}
+    </span>
   );
+}
+
+export function MemberPerks({ user }: { user: PublicUser }) {
+  const [estimates, setEstimates] = useState<PerkEstimates | null>(null);
+
+  useEffect(() => {
+    api.perkEstimates().then(setEstimates).catch(() => null);
+  }, []);
 
   if (user.memberships.length === 0) {
     return (
@@ -30,25 +45,37 @@ export function MemberPerks({ user }: { user: PublicUser }) {
   return (
     <div className="space-y-4">
       {user.memberships.map((m) => {
-        const benefits = m.benefits.flatMap((b) => {
-          const lines: string[] = [];
+        const benefitRows: { line: string; perkType?: string; scope: string }[] = m.benefits.flatMap((b) => {
+          const rows: { line: string; perkType?: string; scope: string }[] = [];
           const v = b.value;
-          if (v.kind === "percentDiscount" && v.percentOff) lines.push(`${Math.round(v.percentOff * 100)}% off`);
-          for (const p of v.perks ?? []) lines.push(p);
-          if (v.conditions) lines.push(`Conditions: ${v.conditions}`);
-          return lines.map((line) => ({ line, scope: b.scope }));
+          if (v.kind === "percentDiscount" && v.percentOff) {
+            rows.push({ line: `${Math.round(v.percentOff * 100)}% off`, scope: b.scope });
+          }
+          // Prefer structuredPerks when available for richer display
+          if (v.structuredPerks && v.structuredPerks.length > 0) {
+            for (const sp of v.structuredPerks) {
+              rows.push({ line: sp.label, perkType: sp.type, scope: b.scope });
+            }
+          } else {
+            for (const p of v.perks ?? []) {
+              rows.push({ line: p, scope: b.scope });
+            }
+          }
+          if (v.conditions) rows.push({ line: `Conditions: ${v.conditions}`, scope: b.scope });
+          return rows;
         });
 
         return (
           <div key={m.id} className="rounded-xl2 border border-line bg-card p-5" data-testid="perk-card">
             <p className="font-medium text-ink">{m.label}</p>
             {m.programId && <p className="text-xs text-ink-muted">{pretty(m.programId)}</p>}
-            {benefits.length > 0 ? (
+            {benefitRows.length > 0 ? (
               <ul className="mt-3 space-y-1">
-                {benefits.map((b, i) => (
+                {benefitRows.map((b, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
                     <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-save" />
                     <span className="text-ink">{b.line}</span>
+                    {b.perkType && <PerkEstimateTag perkType={b.perkType} estimates={estimates} />}
                     {b.scope !== "global" && <span className="text-xs text-ink-muted">({b.scope})</span>}
                   </li>
                 ))}
@@ -60,7 +87,7 @@ export function MemberPerks({ user }: { user: PublicUser }) {
         );
       })}
       <p className="mt-4 text-xs text-ink-muted" data-testid="perks-note">
-        Discounts (%) and perks shown are exact from your membership catalog. Connect the MCP server or browser extension to apply these automatically when searching hotels.
+        Discounts (%) and perks shown are exact from your membership catalog. Estimated perk values (≈) are illustrative and not prices. Connect the MCP server or browser extension to apply these automatically when searching hotels.
       </p>
     </div>
   );
