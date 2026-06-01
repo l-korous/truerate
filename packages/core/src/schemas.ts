@@ -53,9 +53,6 @@ export const PageContextSchema = z.object({
     .object({
       name: z.string(),
       brand: z.string().optional(),
-      publicNightly: z.number().positive().optional(),
-      publicTotal: z.number().positive().optional(),
-      currency: z.string().optional(),
     })
     .optional(),
 });

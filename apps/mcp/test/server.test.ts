@@ -16,7 +16,6 @@ const sample: EnrichmentResult = {
   currency: "EUR",
   mode: "mock",
   generatedAt: new Date().toISOString(),
-  totalSavings: 40,
   programsApplied: ["booking_genius"],
   properties: [
     {
@@ -25,24 +24,33 @@ const sample: EnrichmentResult = {
       brand: "Marriott",
       area: "City Center",
       publicOffer: { source: "public", label: "Public rate", nightlyAmount: 100, totalAmount: 200, currency: "EUR" },
-      memberOffers: [],
-      bestOffer: { source: "booking_genius", label: "Booking.com Genius - Level 3", nightlyAmount: 80, totalAmount: 160, currency: "EUR", perks: [], indicative: true },
+      matches: [
+        {
+          benefit: {
+            id: "b1",
+            scope: "category",
+            match: { categories: ["hotel"] },
+            value: { kind: "percentDiscount", percentOff: 0.2 },
+            source: "catalog",
+            programId: "booking_genius",
+          },
+          membershipId: "m1",
+          membershipLabel: "Booking.com Genius - Level 3",
+        },
+      ],
       perks: ["Free breakfast"],
-      savingsAmount: 40,
-      savingsPercent: 20,
-      indicative: true,
     },
   ],
 };
 
-test("formatResult surfaces indicative savings, brand and perks", () => {
+test("formatResult surfaces discounts, brand and perks (no member price)", () => {
   const text = formatResult(sample);
-  assert.match(text, /Indicative member savings up to 40 EUR/);
   assert.match(text, /Sheraton Grand \[Marriott\]/);
-  assert.match(text, /member \(est\.\): 160 EUR/);
+  assert.match(text, /20% off via Booking\.com Genius - Level 3/);
   assert.match(text, /perks: Free breakfast/);
+  assert.doesNotMatch(text, /member.*price|indicative|savings/i);
 });
 
 test("formatResult handles an empty result", () => {
-  assert.match(formatResult({ ...sample, properties: [], totalSavings: 0 }), /No properties found/);
+  assert.match(formatResult({ ...sample, properties: [] }), /No properties found/);
 });
