@@ -70,6 +70,84 @@ test("Marriott Platinum shows perks with no discount and no prices", async ({ pa
   await expect(page.getByText(/save \d/i)).not.toBeVisible();
 });
 
+test("membership list shows tier and clicking opens detail view", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-marriott_bonvoy").click();
+  await page.locator("select").selectOption("Platinum");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  // List shows tier label.
+  await expect(page.getByTestId("membership-list")).toContainText("Platinum");
+
+  // Click the membership row to open detail view.
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+
+  // Detail shows tier and status badge.
+  await expect(page.getByTestId("membership-detail")).toContainText("Platinum");
+  await expect(page.getByTestId("membership-detail")).toContainText(/active|unverified/);
+
+  // Tabs are hidden while in detail view.
+  await expect(page.getByTestId("tab-memberships")).not.toBeVisible();
+
+  // Detail shows benefits.
+  await expect(page.getByTestId("detail-benefits")).toBeVisible();
+
+  // No prices in detail view.
+  await expect(page.getByText(/indicative member savings/i)).not.toBeVisible();
+  await expect(page.getByText(/member price/i)).not.toBeVisible();
+});
+
+test("membership detail back button returns to list", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 3");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  // Open detail.
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+
+  // Go back.
+  await page.getByTestId("membership-detail-back").click();
+  await expect(page.getByTestId("membership-list")).toBeVisible();
+  await expect(page.getByTestId("membership-detail")).not.toBeVisible();
+  // Tabs should be visible again.
+  await expect(page.getByTestId("tab-memberships")).toBeVisible();
+});
+
+test("remove from detail view returns to list without the removed membership", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 1");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  // Open detail.
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+
+  // Remove membership from detail view.
+  await page.getByTestId("detail-remove").click();
+
+  // Should return to list which is now empty.
+  await expect(page.getByTestId("membership-detail")).not.toBeVisible();
+  await expect(page.getByText("Nothing here yet")).toBeVisible();
+});
+
+test("membership detail view shows empty/loading/error states correctly", async ({ page }) => {
+  await register(page);
+
+  // Empty state is shown when no memberships.
+  await expect(page.getByText("Nothing here yet")).toBeVisible();
+  await expect(page.getByTestId("membership-detail")).not.toBeVisible();
+});
+
 test("no price UI is present anywhere in the web app", async ({ page }) => {
   await register(page);
 
