@@ -1,5 +1,6 @@
 import type { PageContext, PageMatchResult } from "@truerate/core";
 import { sendTrMessage } from "../utils/messages";
+import { installWindowHandlers } from "../utils/error-reporter";
 
 // Content script for Booking.com.
 //
@@ -17,6 +18,7 @@ export default defineContentScript({
   matches: ["https://*.booking.com/searchresults*", "https://*.booking.com/hotel/*"],
   runAt: "document_idle",
   async main() {
+    installWindowHandlers("extension-content");
     const context = buildContext();
     const status = await sendTrMessage({ type: "TR_AUTH_STATUS" });
     const shadow = mountHost();

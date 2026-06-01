@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
+import { ErrorReporter } from "../components/ErrorReporter";
 
 const display = Fraunces({
   subsets: ["latin"],
@@ -23,7 +24,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <ErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,4 +1,7 @@
 import { clearToken, getToken, login } from "../../utils/api";
+import { installWindowHandlers } from "../../utils/error-reporter";
+
+installWindowHandlers("extension-popup");
 
 const app = document.getElementById("app")!;
 document.head.appendChild(stylesheet());

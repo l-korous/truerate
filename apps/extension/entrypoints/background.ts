@@ -1,5 +1,6 @@
 import { getToken, matchPage } from "../utils/api";
 import { isTrMessage } from "../utils/messages";
+import { installServiceWorkerHandlers } from "../utils/error-reporter";
 
 // The background worker is the only place that holds the token; content scripts
 // post a page context and get back the benefit matches.
@@ -10,6 +11,8 @@ import { isTrMessage } from "../utils/messages";
 // we don't recognise leaves them for any other listener.
 
 export default defineBackground(() => {
+  installServiceWorkerHandlers();
+
   browser.runtime.onMessage.addListener(async (rawMsg: unknown) => {
     if (!isTrMessage(rawMsg)) return;
     if (rawMsg.type === "TR_MATCH") {
