@@ -11,6 +11,10 @@ import {
   PROGRAMS,
   summariseBenefits,
   templatesForTier,
+  createLogger,
+  generateCorrelationId,
+  hashUserId,
+  type Logger,
   type Benefit,
   type HotelSearchQuery,
   type Membership,
@@ -19,7 +23,9 @@ import {
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 
-export const app = new Hono();
+type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
+
+export const app = new Hono<{ Variables: AppVariables }>();
 export const engine = new EnrichmentEngine();
 
 /**
@@ -48,6 +54,18 @@ function buildAllowedOrigins(): Set<string> {
 const allowedOrigins = buildAllowedOrigins();
 
 app.use("*", cors({ origin: (o) => (allowedOrigins.has(o) ? o : null), credentials: true }));
+
+// Correlation ID: accept from inbound header or generate; attach to every log line.
+app.use("*", async (c, next) => {
+  const correlationId = c.req.header("x-correlation-id") ?? generateCorrelationId();
+  const reqLogger = createLogger({ correlationId, route: new URL(c.req.url).pathname });
+  c.set("correlationId", correlationId);
+  c.set("logger", reqLogger);
+  reqLogger.info("request", { method: c.req.method });
+  await next();
+  c.header("x-correlation-id", correlationId);
+  reqLogger.info("response", { status: c.res.status });
+});
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 
@@ -83,6 +101,7 @@ app.post("/auth/register", async (c) => {
     currency: mkt === "us" ? "USD" : "EUR",
   };
   await repo.create(user);
+  c.get("logger").info("user registered", { userIdHash: hashUserId(user.id), market: mkt });
   return c.json({ token: await issueToken(user.id, user.email), user: publicUser(user) });
 });
 
@@ -92,8 +111,10 @@ app.post("/auth/login", async (c) => {
   const repo = await getUserRepo();
   const user = await repo.getByEmail(email ?? "");
   if (!user || !(await bcrypt.compare(password ?? "", user.passwordHash))) {
+    c.get("logger").warn("login failed");
     throw new HTTPException(401, { message: "Invalid credentials" });
   }
+  c.get("logger").info("user logged in", { userIdHash: hashUserId(user.id) });
   return c.json({ token: await issueToken(user.id, user.email), user: publicUser(user) });
 });
 

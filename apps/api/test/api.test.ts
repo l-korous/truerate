@@ -160,6 +160,32 @@ test("removing a membership drops it", async () => {
   assert.equal((await del.json()).user.memberships.length, 0);
 });
 
+// --- Correlation ID ---------------------------------------------------------
+
+test("generates X-Correlation-ID response header when none provided", async () => {
+  const app = await getApp();
+  const res = await app.request("/health");
+  const id = res.headers.get("x-correlation-id");
+  assert.ok(id, "correlation ID header present");
+  assert.match(id!, /^[0-9a-f-]{36}$/, "looks like a UUID");
+});
+
+test("echoes back provided X-Correlation-ID in response", async () => {
+  const app = await getApp();
+  const correlationId = "test-corr-id-abc123";
+  const res = await app.request("/health", { headers: { "x-correlation-id": correlationId } });
+  assert.equal(res.headers.get("x-correlation-id"), correlationId);
+});
+
+test("each request gets a distinct correlation ID when none provided", async () => {
+  const app = await getApp();
+  const [r1, r2] = await Promise.all([app.request("/health"), app.request("/health")]);
+  const id1 = r1.headers.get("x-correlation-id");
+  const id2 = r2.headers.get("x-correlation-id");
+  assert.ok(id1 && id2, "both have correlation IDs");
+  assert.notEqual(id1, id2, "IDs are unique per request");
+});
+
 // --- CORS allowlist ---------------------------------------------------------
 
 test("CORS: allowed origin receives Access-Control-Allow-Origin header", async () => {

@@ -4,13 +4,17 @@ import {
   EnrichmentEngine,
   getUserRepo,
   summariseBenefits,
+  createLogger,
+  generateCorrelationId,
+  hashUserId,
   type EnrichmentResult,
   type Membership,
 } from "@truerate/core";
 
 export const engine = new EnrichmentEngine();
 
-export function buildServer(userId: string): McpServer {
+export function buildServer(userId: string, correlationId: string = generateCorrelationId()): McpServer {
+  const log = createLogger({ service: "mcp", correlationId, userIdHash: hashUserId(userId) });
   const server = new McpServer({ name: "truerate", version: "0.1.0" });
 
   server.tool(
@@ -32,6 +36,8 @@ export function buildServer(userId: string): McpServer {
       limit: z.number().int().min(1).max(20).default(6),
     },
     async (args) => {
+      const toolLog = log.child({ tool: "search_hotels" });
+      toolLog.info("tool invoked", { location: args.location, checkIn: args.checkIn, checkOut: args.checkOut });
       const repo = await getUserRepo();
       const user = await repo.getById(userId);
       const memberships: Membership[] = user?.memberships ?? [];
@@ -39,6 +45,7 @@ export function buildServer(userId: string): McpServer {
         { location: args.location, checkIn: args.checkIn, checkOut: args.checkOut, adults: args.adults, rooms: args.rooms, currency: args.currency ?? user?.currency, limit: args.limit },
         memberships,
       );
+      toolLog.info("tool complete", { resultCount: result.properties.length, programsApplied: result.programsApplied });
       return {
         content: [{ type: "text", text: formatResult(result) }],
         structuredContent: result as unknown as Record<string, unknown>,
@@ -53,12 +60,15 @@ export function buildServer(userId: string): McpServer {
       "calling other tools/providers on their behalf.",
     {},
     async () => {
+      const toolLog = log.child({ tool: "get_membership_summary" });
+      toolLog.info("tool invoked");
       const repo = await getUserRepo();
       const user = await repo.getById(userId);
       const lines = (user?.memberships ?? []).map((m) => {
         const summary = summariseBenefits(m.benefits.map((b) => ({ scope: b.scope, match: b.match, value: b.value })));
         return `- ${m.label}${summary.length ? `: ${summary.join(", ")}` : ""}`;
       });
+      toolLog.info("tool complete", { membershipCount: lines.length });
       return {
         content: [
           {

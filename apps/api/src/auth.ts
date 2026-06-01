@@ -1,6 +1,7 @@
 import { sign, verify } from "hono/jwt";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import { createLogger, generateCorrelationId } from "@truerate/core";
 
 // Stateless JWT auth — no session store, which keeps us off Redis. The same
 // secret signs tokens in the API and verifies them in the MCP server. For
@@ -33,8 +34,11 @@ export async function verifyToken(token: string): Promise<TokenPayload> {
 export const requireAuth = createMiddleware<{
   Variables: { userId: string; email: string };
 }>(async (c, next) => {
+  const correlationId = c.req.header("x-correlation-id") ?? generateCorrelationId();
+  const log = createLogger({ correlationId, route: "auth" });
   const header = c.req.header("Authorization");
   if (!header?.startsWith("Bearer ")) {
+    log.warn("auth rejected: missing bearer token");
     throw new HTTPException(401, { message: "Missing bearer token" });
   }
   try {
@@ -42,6 +46,7 @@ export const requireAuth = createMiddleware<{
     c.set("userId", payload.sub);
     c.set("email", payload.email);
   } catch {
+    log.warn("auth rejected: invalid or expired token");
     throw new HTTPException(401, { message: "Invalid or expired token" });
   }
   await next();
