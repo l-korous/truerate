@@ -22,6 +22,93 @@ export type ProgramCategory =
   | "card"
   | "subscription";
 
+// ---------------------------------------------------------------------------
+// Perk taxonomy
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical, stable identifiers for perk kinds.
+ *
+ * New identifiers must be added here (not invented on the fly) so that the
+ * catalog, UI, and MCP surface speak the same language. Use "other" only
+ * when a perk genuinely falls outside every existing category.
+ *
+ * No prices, amounts, or currency — those live in BenefitValue.
+ */
+export type PerkType =
+  | "early_check_in"       // Priority / complimentary early check-in
+  | "late_check_out"       // Priority / guaranteed late check-out
+  | "free_breakfast"       // Complimentary breakfast (daily or per stay)
+  | "room_upgrade"         // Room category upgrade (space-available or guaranteed)
+  | "suite_upgrade"        // Suite upgrade (space-available or guaranteed)
+  | "lounge_access"        // Executive lounge / club lounge access
+  | "welcome_amenity"      // Welcome gift / amenity on arrival
+  | "free_wifi"            // Complimentary Wi-Fi
+  | "airport_transfer"     // Complimentary or discounted airport transfer
+  | "parking"              // Complimentary or discounted on-site parking
+  | "spa_credit"           // Spa / F&B / on-property credit
+  | "guaranteed_availability" // Guaranteed room availability (even on sold-out nights)
+  | "points_bonus"         // Bonus points / miles multiplier
+  | "priority_support"     // Dedicated or priority customer service
+  | "other";               // Catch-all for perks outside this taxonomy
+
+// ---------------------------------------------------------------------------
+// Conditions model
+// ---------------------------------------------------------------------------
+
+/**
+ * Booking channel via which the perk or benefit is redeemable.
+ */
+export type BookingChannel = "direct" | "ota" | "phone" | "agent";
+
+/**
+ * Structured conditions that qualify when a perk or discount applies.
+ *
+ * All fields are optional — include only the constraints that apply.
+ * Omitted fields mean "no restriction on that dimension".
+ *
+ * No prices or currency here; see BenefitValue for discount amounts.
+ */
+export interface PerkConditions {
+  /** Minimum tier name required within the program, e.g. "Gold". */
+  tierRequired?: string;
+  /** Minimum length of stay (nights) for the perk to apply. */
+  minNights?: number;
+  /** Restricted to specific booking channels. */
+  bookingChannel?: BookingChannel[];
+  /**
+   * ISO-8601 date strings (YYYY-MM-DD) or date ranges ("YYYY-MM-DD/YYYY-MM-DD")
+   * during which the perk does NOT apply.
+   */
+  blackoutDates?: string[];
+  /**
+   * True when the perk is offered on a space-available / capacity basis
+   * (i.e. not guaranteed). Distinct from a hard eligibility condition.
+   */
+  subjectToAvailability?: boolean;
+  /** True when explicit program enrolment or registration is required. */
+  enrollmentRequired?: boolean;
+  /** Free-text note for conditions that cannot be expressed structurally. */
+  notes?: string;
+}
+
+/**
+ * A single perk expressed in the canonical taxonomy, with optional
+ * structured conditions.
+ *
+ * This is the structured counterpart to the free-text strings in
+ * BenefitValue.perks. Both coexist during migration; new catalog entries
+ * should prefer StructuredPerk.
+ */
+export interface StructuredPerk {
+  /** Canonical perk identifier from the taxonomy. */
+  type: PerkType;
+  /** Short human-readable label, e.g. "Free breakfast daily". */
+  label: string;
+  /** Structured conditions qualifying when the perk applies. */
+  conditions?: PerkConditions;
+}
+
 /** What a benefit gives the user. */
 export type BenefitKind = "percentDiscount" | "fixedDiscount" | "perk" | "pointsEarn";
 
@@ -34,6 +121,12 @@ export interface BenefitValue {
   currency?: string;
   /** perk: free-text perks, e.g. ["Free breakfast", "Late checkout"]. */
   perks?: string[];
+  /**
+   * Structured perks expressed via the canonical perk taxonomy.
+   * Preferred for new catalog entries; coexists with free-text `perks`
+   * during migration.
+   */
+  structuredPerks?: StructuredPerk[];
   /** pointsEarn: points/miles per currency unit spent. */
   pointsPerUnit?: number;
   /** Conditions/caveats shown to the user, e.g. "direct booking only". */
