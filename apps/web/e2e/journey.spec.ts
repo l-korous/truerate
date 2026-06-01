@@ -244,4 +244,77 @@ test("no price UI is present anywhere in the web app", async ({ page }) => {
   await expect(page.getByText(/reveal my rates/i)).not.toBeVisible();
   await expect(page.getByText(/member price/i)).not.toBeVisible();
   await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+
+  // Perk inventory tab — no prices.
+  await page.getByTestId("tab-inventory").click();
+  await expect(page.getByText(/indicative member savings/i)).not.toBeVisible();
+  await expect(page.getByText(/reveal my rates/i)).not.toBeVisible();
+  await expect(page.getByText(/member price/i)).not.toBeVisible();
+  await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+});
+
+test("perk inventory tab: empty state when no memberships", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("tab-inventory").click();
+  await expect(page.getByTestId("inventory-empty")).toBeVisible();
+  await expect(page.getByTestId("perk-inventory")).not.toBeVisible();
+});
+
+test("perk inventory tab: shows perks with estimated values labeled as estimated", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 3");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("tab-inventory").click();
+  await expect(page.getByTestId("perk-inventory")).toBeVisible();
+  await expect(page.getByTestId("inventory-item").first()).toBeVisible();
+
+  // Estimated values are labeled "Estimated value", not "price".
+  await expect(page.getByText(/estimated value/i).first()).toBeVisible();
+  await expect(page.getByText(/member price/i)).not.toBeVisible();
+  await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+
+  // Disclaimer is visible.
+  await expect(page.getByTestId("inventory-disclaimer")).toBeVisible();
+  await expect(page.getByTestId("inventory-disclaimer")).toContainText(/not prices/i);
+});
+
+test("perk inventory tab: group by perk type switch works", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 3");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("tab-inventory").click();
+  await expect(page.getByTestId("perk-inventory")).toBeVisible();
+
+  // Default grouping is by program — group header is membership name.
+  await expect(page.getByTestId("group-by-program")).toBeVisible();
+
+  // Switch to group by perk type.
+  await page.getByTestId("group-by-type").click();
+  await expect(page.getByTestId("inventory-groups")).toBeVisible();
+  // Item membership label is shown when grouped by type.
+  await expect(page.getByText(/booking.com genius/i).first()).toBeVisible();
+});
+
+test("perk inventory tab: conditions are shown on structured perks", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 2");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("tab-inventory").click();
+  await expect(page.getByTestId("perk-inventory")).toBeVisible();
+
+  // Booking Genius Level 2 perks have subjectToAvailability + bookingChannel=ota.
+  await expect(page.getByText(/subject to availability/i).first()).toBeVisible();
 });

@@ -6,6 +6,7 @@ import { AddMembership } from "./AddMembership";
 import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
+import { PerkInventory } from "./PerkInventory";
 
 function benefitLines(benefits: Benefit[]): string[] {
   const out: string[] = [];
@@ -26,7 +27,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
   const [programsLoading, setProgramsLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"memberships" | "try">("memberships");
+  const [tab, setTab] = useState<"memberships" | "try" | "inventory">("memberships");
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         {/* Tabs — hidden when viewing a detail */}
         {!selectedMembership && (
           <div className="mb-8 flex gap-1 rounded-xl bg-white p-1 shadow-sm" style={{ width: "fit-content" }}>
-            {([["memberships", "Memberships"], ["try", "Try it"]] as const).map(([k, label]) => (
+            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["try", "Try it"]] as const).map(([k, label]) => (
               <button key={k} data-testid={`tab-${k}`} onClick={() => setTab(k)}
                 className={`rounded-lg px-5 py-2 text-sm font-medium transition ${tab === k ? "bg-ink text-paper" : "text-ink-muted"}`}>
                 {label}
@@ -102,6 +103,16 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             onRemove={() => remove(selectedMembership.id)}
             onEdit={() => setEditingMembershipId(selectedMembership.id)}
           />
+        ) : tab === "inventory" ? (
+          <section>
+            <div className="mb-6">
+              <h1 className="font-display text-3xl text-ink">Perk Inventory</h1>
+              <p className="mt-1 text-ink-muted">
+                All perks across your memberships — with conditions and estimated values. No prices.
+              </p>
+            </div>
+            <PerkInventory user={user} />
+          </section>
         ) : tab === "memberships" ? (
           <section>
             <div className="mb-6 flex items-end justify-between">
