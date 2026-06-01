@@ -135,10 +135,8 @@ stops for the day, so a misbehaving container can't surprise-bill you.
 
 ## Rotating secrets
 
-```bash
-printf "%s" "$(openssl rand -base64 32)" | gh secret set TRUERATE_JWT_SECRET --repo l-korous/truerate
-printf "%s" "$(openssl rand -base64 32)" | gh secret set TRUERATE_CRED_KEY   --repo l-korous/truerate
-```
+See **[`docs/RUNBOOK-secret-rotation.md`](./RUNBOOK-secret-rotation.md)** for the full procedure.
 
-Rotating `TRUERATE_CRED_KEY` invalidates already-encrypted credentials; rotating
-`TRUERATE_JWT_SECRET` invalidates existing sessions.
+> ⚠️ Rotating `TRUERATE_CRED_KEY` without re-encrypting existing records orphans
+> already-encrypted `Membership.encryptedCredential` fields in Cosmos DB.
+> Follow the key-versioning and migration steps in the runbook before rotating in production.
