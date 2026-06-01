@@ -17,7 +17,7 @@ name: Backlog runner
 
 on:
   schedule:
-    - cron: "17 * * * *" # hourly, at :17
+    - cron: "*/5 * * * *" # every 5 minutes (concurrency serializes; long runs queue)
   workflow_dispatch: {}
 
 concurrency:
@@ -53,20 +53,23 @@ jobs:
             echo "At capacity (open agent PRs=$inflight/$MAX_INFLIGHT, active runs=$active). Skipping."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          next=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
-            --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | (.[0].number // empty)')
-          if [ -z "$next" ]; then
-            echo "No agent-ready issues in the queue."
+          # Lowest-numbered agent-ready issue that has NO claude/<n>-* branch yet.
+          # Skip-and-CONTINUE past issues already in progress / done-awaiting-merge,
+          # so one completed-but-unmerged issue can't wedge the whole queue.
+          CANDIDATES=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
+            --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | .[].number')
+          PICK=""
+          for n in $CANDIDATES; do
+            br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
+            if [ "${br:-0}" -eq 0 ]; then PICK="$n"; break; fi
+          done
+          if [ -z "$PICK" ]; then
+            echo "No eligible agent-ready issue (remaining ones already have branches/PRs)."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          existing=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$next-" --jq 'length')
-          if [ "$existing" -ge 1 ]; then
-            echo "Branch claude/$next-* already exists; skipping (needs manual cleanup)."
-            echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          echo "Selected issue #$next."
+          echo "Selected issue #$PICK."
           echo "should_run=true" >> "$GITHUB_OUTPUT"
-          echo "issue=$next" >> "$GITHUB_OUTPUT"
+          echo "issue=$PICK" >> "$GITHUB_OUTPUT"
 
       # Give the agent a working toolchain so it can run typecheck/tests itself
       # before opening a PR (CLAUDE.md requires verifying, not guessing).
