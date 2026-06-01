@@ -53,35 +53,6 @@ export interface Program {
   summaryByTier: Record<string, string[]>;
 }
 
-export interface RateOffer {
-  source: string;
-  label: string;
-  nightlyAmount: number;
-  totalAmount: number;
-  currency: string;
-  perks?: string[];
-  indicative?: boolean;
-}
-export interface EnrichedProperty {
-  propertyId: string;
-  name: string;
-  brand?: string;
-  area?: string;
-  rating?: number;
-  publicOffer: RateOffer;
-  bestOffer: RateOffer;
-  perks: string[];
-  savingsAmount: number;
-  savingsPercent: number;
-  indicative: boolean;
-}
-export interface EnrichmentResult {
-  currency: string;
-  properties: EnrichedProperty[];
-  totalSavings: number;
-  programsApplied: string[];
-  mode: "live" | "mock";
-}
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -139,6 +110,4 @@ export const api = {
     req<{ user: PublicUser }>("/memberships", { method: "POST", body: JSON.stringify(body) }).then((r) => r.user),
   removeMembership: (id: string) =>
     req<{ user: PublicUser }>(`/memberships/${id}`, { method: "DELETE" }).then((r) => r.user),
-  searchHotels: (q: { location: string; checkIn: string; checkOut: string; adults: number; rooms: number }) =>
-    req<EnrichmentResult>("/search/hotels", { method: "POST", body: JSON.stringify(q) }),
 };

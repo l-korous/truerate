@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, clearToken, type Benefit, type Program, type PublicUser } from "@/lib/api";
 import { AddMembership } from "./AddMembership";
-import { DemoSearch } from "./DemoSearch";
+import { MemberPerks } from "./DemoSearch";
 
 function benefitLines(benefits: Benefit[]): string[] {
   const out: string[] = [];
@@ -97,13 +97,12 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         ) : (
           <section>
             <div className="mb-6">
-              <h1 className="font-display text-3xl text-ink">See it in action</h1>
+              <h1 className="font-display text-3xl text-ink">Your perks &amp; discounts</h1>
               <p className="mt-1 text-ink-muted">
-                Search a stay and TrueRate reveals the gap between the anonymous price and what your memberships unlock —
-                discounts where you have them, perks everywhere else.
+                Discounts and perks that apply from your memberships — connect the MCP server or browser extension to use them automatically.
               </p>
             </div>
-            <DemoSearch />
+            <MemberPerks user={user} />
           </section>
         )}
       </main>
