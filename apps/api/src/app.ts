@@ -12,6 +12,7 @@ import {
   PROGRAMS,
   summariseBenefits,
   templatesForTier,
+  estimatePerkValueAllBands,
   createLogger,
   generateCorrelationId,
   hashUserId,
@@ -23,6 +24,7 @@ import {
   type Benefit,
   type Membership,
   type User,
+  type PerkType,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 
@@ -84,6 +86,22 @@ app.get("/programs", (c) =>
     })),
   }),
 );
+
+// Perk-value estimation table — public, no auth required.
+// Returns estimated monetary value (USD) for each canonical perk type across
+// 3★/4★/5★ hotel bands. Values are estimates, never prices (see issue #1).
+app.get("/perks/estimates", (c) => {
+  const perkTypes: PerkType[] = [
+    "early_check_in", "late_check_out", "free_breakfast", "room_upgrade",
+    "suite_upgrade", "lounge_access", "welcome_amenity", "free_wifi",
+    "airport_transfer", "parking", "spa_credit", "guaranteed_availability",
+    "points_bonus", "priority_support", "other",
+  ];
+  const estimates = Object.fromEntries(
+    perkTypes.map((pt) => [pt, estimatePerkValueAllBands(pt)]),
+  );
+  return c.json({ estimates });
+});
 
 // --- Validation helpers ------------------------------------------------------
 

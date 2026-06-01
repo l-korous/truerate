@@ -42,11 +42,32 @@ export const PROGRAMS: Program[] = [
       "Level 1": [{ scope: "domain", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "on participating properties when booking via Booking.com" } }],
       "Level 2": [
         { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.15, conditions: "participating properties" } },
-        { scope: "domain", value: { kind: "perk", perks: ["Free breakfast at select properties", "Free room upgrade at select properties"] } },
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast at select properties", "Free room upgrade at select properties"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast at select properties", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+              { type: "room_upgrade", label: "Free room upgrade at select properties", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+            ],
+          },
+        },
       ],
       "Level 3": [
         { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.2, conditions: "participating properties" } },
-        { scope: "domain", value: { kind: "perk", perks: ["Free breakfast at select properties", "Free room upgrade at select properties", "Priority support"] } },
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast at select properties", "Free room upgrade at select properties", "Priority support"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast at select properties", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+              { type: "room_upgrade", label: "Free room upgrade at select properties", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+              { type: "priority_support", label: "Priority customer support" },
+            ],
+          },
+        },
       ],
     },
   },

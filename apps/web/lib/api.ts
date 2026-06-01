@@ -3,11 +3,18 @@
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
 const TOKEN_KEY = "truerate_token";
 
+export interface StructuredPerk {
+  type: string;
+  label: string;
+  conditions?: Record<string, unknown>;
+}
+
 export interface BenefitValue {
   kind: "percentDiscount" | "fixedDiscount" | "perk" | "pointsEarn";
   percentOff?: number;
   amountOff?: number;
   perks?: string[];
+  structuredPerks?: StructuredPerk[];
   conditions?: string;
 }
 export interface Benefit {
@@ -82,6 +89,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface PerkBandEstimate {
+  perkType: string;
+  starBand: 3 | 4 | 5;
+  estimatedUsd: number;
+  isEstimate: true;
+}
+
+export interface PerkEstimates {
+  [perkType: string]: { 3: PerkBandEstimate; 4: PerkBandEstimate; 5: PerkBandEstimate };
+}
+
 export interface CustomBenefitInput {
   label: string;
   benefits: { scope: string; match: Record<string, string[]>; value: BenefitValue }[];
@@ -119,4 +137,6 @@ export const api = {
     req<{ user: PublicUser }>(`/memberships/${id}`, { method: "DELETE" }).then((r) => r.user),
   editMembership: (id: string, body: EditMembershipInput) =>
     req<{ user: PublicUser }>(`/memberships/${id}`, { method: "PATCH", body: JSON.stringify(body) }).then((r) => r.user),
+  perkEstimates: () =>
+    req<{ estimates: PerkEstimates }>("/perks/estimates").then((r) => r.estimates),
 };
