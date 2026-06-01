@@ -87,6 +87,13 @@ export interface CustomBenefitInput {
   benefits: { scope: string; match: Record<string, string[]>; value: BenefitValue }[];
 }
 
+export interface EditMembershipInput {
+  tier?: string;
+  attributes?: Record<string, string>;
+  label?: string;
+  benefits?: { scope: string; match: Record<string, string[]>; value: BenefitValue }[];
+}
+
 export const api = {
   async register(email: string, password: string, market: string) {
     const r = await req<{ token: string; user: PublicUser }>("/auth/register", {
@@ -110,4 +117,6 @@ export const api = {
     req<{ user: PublicUser }>("/memberships", { method: "POST", body: JSON.stringify(body) }).then((r) => r.user),
   removeMembership: (id: string) =>
     req<{ user: PublicUser }>(`/memberships/${id}`, { method: "DELETE" }).then((r) => r.user),
+  editMembership: (id: string, body: EditMembershipInput) =>
+    req<{ user: PublicUser }>(`/memberships/${id}`, { method: "PATCH", body: JSON.stringify(body) }).then((r) => r.user),
 };

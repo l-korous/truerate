@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Benefit, BenefitValue, Program, PublicMembership } from "@/lib/api";
 
 function StatusBadge({ status }: { status: PublicMembership["status"] }) {
@@ -56,12 +57,15 @@ export function MembershipDetail({
   program,
   onBack,
   onRemove,
+  onEdit,
 }: {
   membership: PublicMembership;
   program?: Program;
   onBack: () => void;
   onRemove: () => void;
+  onEdit: () => void;
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const isCustom = !membership.programId;
   const secretKeys = new Set(program?.fields.filter((f) => f.secret).map((f) => f.key) ?? []);
 
@@ -138,15 +142,42 @@ export function MembershipDetail({
           </section>
         )}
 
-        {/* Danger zone */}
-        <div className="flex justify-end pt-2">
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-2">
           <button
-            className="text-sm text-ink-muted hover:text-red-600"
-            data-testid="detail-remove"
-            onClick={onRemove}
+            className="btn-ghost"
+            data-testid="detail-edit"
+            onClick={onEdit}
           >
-            Remove membership
+            Edit
           </button>
+          {confirmRemove ? (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-ink-muted">Remove this membership?</span>
+              <button
+                className="text-sm font-medium text-red-600 hover:text-red-700"
+                data-testid="detail-remove-confirm"
+                onClick={onRemove}
+              >
+                Yes, remove
+              </button>
+              <button
+                className="text-sm text-ink-muted hover:text-ink"
+                data-testid="detail-remove-cancel"
+                onClick={() => setConfirmRemove(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="text-sm text-ink-muted hover:text-red-600"
+              data-testid="detail-remove"
+              onClick={() => setConfirmRemove(true)}
+            >
+              Remove membership
+            </button>
+          )}
         </div>
       </div>
     </div>

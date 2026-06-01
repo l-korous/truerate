@@ -120,7 +120,7 @@ test("membership detail back button returns to list", async ({ page }) => {
   await expect(page.getByTestId("tab-memberships")).toBeVisible();
 });
 
-test("remove from detail view returns to list without the removed membership", async ({ page }) => {
+test("remove from detail view shows confirmation then removes membership", async ({ page }) => {
   await register(page);
 
   await page.getByTestId("add-membership").click();
@@ -132,12 +132,93 @@ test("remove from detail view returns to list without the removed membership", a
   await page.getByTestId("membership-list").locator("li").first().click();
   await expect(page.getByTestId("membership-detail")).toBeVisible();
 
-  // Remove membership from detail view.
+  // Click remove — confirmation appears.
   await page.getByTestId("detail-remove").click();
+  await expect(page.getByTestId("detail-remove-confirm")).toBeVisible();
+  await expect(page.getByTestId("detail-remove-cancel")).toBeVisible();
+
+  // Confirm removal.
+  await page.getByTestId("detail-remove-confirm").click();
 
   // Should return to list which is now empty.
   await expect(page.getByTestId("membership-detail")).not.toBeVisible();
   await expect(page.getByText("Nothing here yet")).toBeVisible();
+  // Toast shown.
+  await expect(page.getByTestId("toast")).toBeVisible();
+});
+
+test("remove confirmation can be cancelled", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 1");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+
+  // Click remove then cancel.
+  await page.getByTestId("detail-remove").click();
+  await page.getByTestId("detail-remove-cancel").click();
+
+  // Membership should still be visible.
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+  await expect(page.getByTestId("detail-remove-confirm")).not.toBeVisible();
+});
+
+test("edit catalog membership tier from detail view", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 1");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  // List shows Level 1.
+  await expect(page.getByTestId("membership-list")).toContainText("Level 1");
+
+  // Open detail and click Edit.
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await expect(page.getByTestId("membership-detail")).toBeVisible();
+  await page.getByTestId("detail-edit").click();
+
+  // Edit modal appears; change tier to Level 3.
+  await page.locator("[data-testid='benefit-summary-edit']").waitFor();
+  await page.locator("select").selectOption("Level 3");
+  await expect(page.getByTestId("benefit-summary-edit")).toContainText("20% off");
+
+  await page.getByTestId("edit-save").click();
+
+  // List now shows Level 3.
+  await expect(page.getByTestId("membership-list")).toContainText("Level 3");
+  // Toast shown.
+  await expect(page.getByTestId("toast")).toBeVisible();
+});
+
+test("edit custom membership name from detail view", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("add-custom").click();
+  await page.getByPlaceholder("Hotel PECR").fill("Old Hotel Name");
+  await page.getByRole("button", { name: "Add benefit" }).click();
+
+  await expect(page.getByTestId("membership-list")).toContainText("Old Hotel Name");
+
+  // Open detail and edit.
+  await page.getByTestId("membership-list").locator("li").first().click();
+  await page.getByTestId("detail-edit").click();
+
+  // Change name.
+  await page.getByTestId("edit-custom-name").clear();
+  await page.getByTestId("edit-custom-name").fill("New Hotel Name");
+  await page.getByTestId("edit-save").click();
+
+  // List reflects updated name.
+  await expect(page.getByTestId("membership-list")).toContainText("New Hotel Name");
+  await expect(page.getByTestId("membership-list")).not.toContainText("Old Hotel Name");
+  await expect(page.getByTestId("toast")).toBeVisible();
 });
 
 test("membership detail view shows empty/loading/error states correctly", async ({ page }) => {
