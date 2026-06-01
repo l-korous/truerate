@@ -230,3 +230,28 @@ export interface PageMatchResult {
   indicativeOffer?: RateOffer;
   publicOffer?: RateOffer;
 }
+
+// --- Client-side error reporting ---------------------------------------------
+
+export type ClientErrorSource =
+  | "web"
+  | "extension-background"
+  | "extension-content"
+  | "extension-popup";
+
+/**
+ * Payload sent from browser clients (web, extension) to POST /client-errors.
+ * Must never contain prices, secrets, tokens, or raw PII — the API scrubs
+ * before logging, but senders should pre-scrub context as well.
+ */
+export interface ClientErrorReport {
+  source: ClientErrorSource;
+  message: string;
+  stack?: string;
+  /** Page URL or extension page identifier. */
+  url?: string;
+  /** Propagated correlation ID when available. */
+  correlationId?: string;
+  /** Arbitrary structured context; scrubbed server-side. */
+  context?: Record<string, unknown>;
+}

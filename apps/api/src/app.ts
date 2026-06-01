@@ -16,6 +16,7 @@ import {
   hashUserId,
   type Logger,
   type Benefit,
+  type ClientErrorReport,
   type HotelSearchQuery,
   type Membership,
   type PageContext,
@@ -208,6 +209,36 @@ app.post("/benefits/match", requireAuth, async (c) => {
   if (!context?.domain) throw new HTTPException(400, { message: "domain required" });
   const user = await loadUser(c.get("userId"));
   return c.json(engine.matchPage(context, user.memberships));
+});
+
+// --- Client-side error reporting (unauthenticated, fire-and-forget) ----------
+
+/** Field names that must never appear in logged error context. */
+const SCRUB_PATTERN = /password|token|secret|key|email|price|amount|nightly|total|credit|card|auth/i;
+
+export function scrubContext(ctx: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(ctx).filter(([k]) => !SCRUB_PATTERN.test(k)),
+  );
+}
+
+const VALID_SOURCES = new Set(["web", "extension-background", "extension-content", "extension-popup"]);
+
+app.post("/client-errors", async (c) => {
+  const body = await c.req.json<Partial<ClientErrorReport>>().catch(() => null);
+  if (!body || !body.source || !VALID_SOURCES.has(body.source) || !body.message) {
+    return c.json({ error: "invalid payload" }, 400);
+  }
+  const report: ClientErrorReport = {
+    source: body.source as ClientErrorReport["source"],
+    message: String(body.message).slice(0, 500),
+    stack: body.stack ? String(body.stack).slice(0, 2000) : undefined,
+    url: body.url ? String(body.url).slice(0, 300) : undefined,
+    correlationId: body.correlationId ? String(body.correlationId).slice(0, 50) : undefined,
+    context: body.context && typeof body.context === "object" ? scrubContext(body.context as Record<string, unknown>) : undefined,
+  };
+  c.get("logger").error("client error", { clientSource: report.source, clientMessage: report.message, clientStack: report.stack, clientUrl: report.url, clientCorrelationId: report.correlationId, clientContext: report.context });
+  return c.body(null, 204);
 });
 
 // --- helpers ----------------------------------------------------------------
