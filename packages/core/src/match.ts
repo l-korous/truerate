@@ -3,7 +3,6 @@ import type {
   BenefitValue,
   MatchTarget,
   Membership,
-  RateOffer,
 } from "./types.js";
 
 // Pure matching logic: given the benefits a user holds and a target (a page or
@@ -60,31 +59,6 @@ export function matchBenefits(
   return out;
 }
 
-/** The best price-reducing discount among matched benefits (% or fixed). */
-export function bestDiscount(
-  values: BenefitValue[],
-  publicNightly: number,
-): { nightly: number; pct: number; label: BenefitValue | null } {
-  let best = publicNightly;
-  let winner: BenefitValue | null = null;
-  for (const v of values) {
-    let candidate = publicNightly;
-    if (v.kind === "percentDiscount" && v.percentOff) {
-      candidate = publicNightly * (1 - v.percentOff);
-    } else if (v.kind === "fixedDiscount" && v.amountOff) {
-      candidate = Math.max(0, publicNightly - v.amountOff);
-    } else {
-      continue;
-    }
-    if (candidate < best) {
-      best = candidate;
-      winner = v;
-    }
-  }
-  const pct = publicNightly > 0 ? Math.round(((publicNightly - best) / publicNightly) * 1000) / 10 : 0;
-  return { nightly: round2(best), pct, label: winner };
-}
-
 /** Collect perks (price-neutral benefits) from matched benefit values. */
 export function collectPerks(values: BenefitValue[]): string[] {
   const perks = new Set<string>();
@@ -92,39 +66,3 @@ export function collectPerks(values: BenefitValue[]): string[] {
   return [...perks];
 }
 
-/**
- * Apply matched benefits to a public nightly/total price, producing an
- * indicative member offer when a discount applies. Perks attach to the offer.
- */
-export function applyBenefitsToPrice(
-  matched: { benefit: Benefit; membershipLabel: string }[],
-  publicNightly: number,
-  nights: number,
-  currency: string,
-): { memberOffer: RateOffer | null; perks: string[] } {
-  const values = matched.map((m) => m.benefit.value);
-  const perks = collectPerks(values);
-  const disc = bestDiscount(values, publicNightly);
-
-  if (!disc.label) {
-    return { memberOffer: null, perks };
-  }
-  // Find which membership produced the winning discount for the label.
-  const winner = matched.find((m) => m.benefit.value === disc.label);
-  return {
-    memberOffer: {
-      source: winner?.benefit.programId ?? winner?.benefit.id ?? "benefit",
-      label: winner ? winner.membershipLabel : "Member rate",
-      nightlyAmount: disc.nightly,
-      totalAmount: round2(disc.nightly * nights),
-      currency,
-      perks,
-      indicative: true, // declared discounts are estimates until verified live
-    },
-    perks,
-  };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}

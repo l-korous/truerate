@@ -267,8 +267,6 @@ export interface RateOffer {
   perks?: string[];
   pointsEarned?: number;
   pointsValue?: number;
-  /** True when the price is an estimate from a user-declared discount. */
-  indicative?: boolean;
 }
 
 export interface EnrichedProperty {
@@ -279,22 +277,18 @@ export interface EnrichedProperty {
   rating?: number;
   stars?: number;
   thumbnail?: string;
+  /** Raw public rate from the third-party provider (passed through, not computed). */
   publicOffer: RateOffer;
-  memberOffers: RateOffer[];
-  bestOffer: RateOffer;
-  /** Perks that apply but carry no price change (e.g. free breakfast). */
+  /** Benefits from the user's memberships that apply to this property. */
+  matches: MatchedBenefit[];
+  /** Perks (no price change) that apply, e.g. "Free breakfast". */
   perks: string[];
-  savingsAmount: number;
-  savingsPercent: number;
-  /** True when bestOffer is an indicative (estimated) price. */
-  indicative: boolean;
 }
 
 export interface EnrichmentResult {
   query: HotelSearchQuery;
   currency: string;
   properties: EnrichedProperty[];
-  totalSavings: number;
   programsApplied: string[];
   generatedAt: string;
   mode: "live" | "mock";
@@ -306,22 +300,15 @@ export interface PageContext {
   property?: {
     name: string;
     brand?: string;
-    /** Public price visible on the page, if any. */
-    publicNightly?: number;
-    publicTotal?: number;
-    currency?: string;
   };
 }
 
 export interface PageMatchResult {
   domain: string;
-  /** Benefits active on this page/property, with indicative pricing applied. */
+  /** Benefits from the user's memberships that apply to this page/property. */
   matches: MatchedBenefit[];
   /** Perks (no price change) applicable here. */
   perks: string[];
-  /** If a public price was supplied and a discount applies, the estimate. */
-  indicativeOffer?: RateOffer;
-  publicOffer?: RateOffer;
 }
 
 // --- Client-side error reporting ---------------------------------------------
