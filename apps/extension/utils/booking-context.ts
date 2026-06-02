@@ -57,3 +57,26 @@ export function buildPageContext(url: string, doc: DocLike): PageContext {
   const name = extractHotelName(doc);
   return name ? { domain, property: { name } } : { domain };
 }
+
+// DOM signals that indicate Booking.com's Genius tier is active for the
+// current user. We read only element presence — no cookies, sessions, or
+// prices are accessed (per product rule #1).
+const GENIUS_DOM_SIGNALS = [
+  '[data-testid="genius-logo"]',
+  '[data-testid="header-genius-logo"]',
+  '[data-testid="genius-banner"]',
+  '[data-testid="web-genius-banner"]',
+  '[data-component="genius-badge"]',
+  ".bui-header__action-link--genius",
+] as const;
+
+/**
+ * Returns true when any known Genius-tier DOM signal is present on the page.
+ * Uses only element presence checks — never reads session state or cookies.
+ */
+export function detectGeniusActive(doc: DocLike): boolean {
+  for (const selector of GENIUS_DOM_SIGNALS) {
+    if (doc.querySelector(selector) !== null) return true;
+  }
+  return false;
+}
