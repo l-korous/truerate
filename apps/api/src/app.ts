@@ -23,6 +23,12 @@ import {
   PageContextSchema,
   ClientErrorReportSchema,
   BenefitInputSchema,
+  getCatalogRepo,
+  getCatalogCache,
+  resetCatalogCache,
+  catalogEntryToProgram,
+  programToCatalogInput,
+  type CatalogCache,
   type Logger,
   type Benefit,
   type Membership,
@@ -37,6 +43,24 @@ type AppVariables = { userId: string; email: string; correlationId: string; logg
 
 export const app = new Hono<{ Variables: AppVariables }>();
 export const engine = new EnrichmentEngine();
+
+// Catalog cache singleton — seeded from the static PROGRAMS catalog on first
+// use (idempotent via seedIfEmpty). Shared across all requests in this process.
+let _catalogCache: CatalogCache | null = null;
+
+async function getAppCatalogCache(): Promise<CatalogCache> {
+  if (_catalogCache) return _catalogCache;
+  const repo = await getCatalogRepo();
+  await repo.seedIfEmpty(PROGRAMS.map(programToCatalogInput));
+  _catalogCache = await getCatalogCache();
+  return _catalogCache;
+}
+
+/** Reset catalog state — for tests only. */
+export function resetAppCatalog(): void {
+  _catalogCache = null;
+  resetCatalogCache();
+}
 
 /**
  * Build the CORS origin allowlist from environment variables.
@@ -107,6 +131,51 @@ app.get("/perks/estimates", (c) => {
     perkTypes.map((pt) => [pt, estimatePerkValueAllBands(pt)]),
   );
   return c.json({ estimates });
+});
+
+// --- Catalog read endpoints --------------------------------------------------
+// Backed by CatalogRepo + TTL cache. Returns perks/discounts/conditions + perk
+// value estimates only — never prices (product rule #1 / issue #1).
+
+// GET /catalog/programs — list all published catalog entries.
+// Optional ?region=CZ to filter by ISO-3166 region code (Global entries always included).
+app.get("/catalog/programs", async (c) => {
+  const region = c.req.query("region") || undefined;
+  const cache = await getAppCatalogCache();
+  const entries = await cache.listPublished(region);
+  return c.json({
+    programs: entries.map((e) => ({
+      ...e,
+      summaryByTier: Object.fromEntries(
+        (e.tiers ?? ["*"]).map((t) => [
+          t,
+          summariseBenefits(templatesForTier(catalogEntryToProgram(e), t === "*" ? undefined : t)),
+        ]),
+      ),
+    })),
+    region: region ?? null,
+  });
+});
+
+// GET /catalog/programs/:id — current published entry for a specific program.
+app.get("/catalog/programs/:id", async (c) => {
+  const programId = c.req.param("id");
+  const cache = await getAppCatalogCache();
+  const entry = await cache.getCurrent(programId);
+  if (!entry || entry.status !== "published") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  return c.json({
+    program: {
+      ...entry,
+      summaryByTier: Object.fromEntries(
+        (entry.tiers ?? ["*"]).map((t) => [
+          t,
+          summariseBenefits(templatesForTier(catalogEntryToProgram(entry), t === "*" ? undefined : t)),
+        ]),
+      ),
+    },
+  });
 });
 
 // --- Validation helpers ------------------------------------------------------
@@ -250,7 +319,9 @@ app.post("/memberships", requireAuth, async (c) => {
   let membership: Membership;
 
   if ("programId" in parsed) {
-    const program = getProgram(parsed.programId);
+    const cache = await getAppCatalogCache();
+    const catalogEntry = await cache.getCurrent(parsed.programId);
+    const program = catalogEntry ? catalogEntryToProgram(catalogEntry) : getProgram(parsed.programId);
     if (!program) throw new HTTPException(400, { message: "Unknown program" });
 
     const secretKeys = new Set(program.fields.filter((f) => f.secret).map((f) => f.key));
@@ -318,7 +389,9 @@ app.patch("/memberships/:id", requireAuth, async (c) => {
   if (!membership) throw new HTTPException(404, { message: "Membership not found" });
 
   if (membership.programId) {
-    const program = getProgram(membership.programId);
+    const cache = await getAppCatalogCache();
+    const catalogEntry = await cache.getCurrent(membership.programId);
+    const program = catalogEntry ? catalogEntryToProgram(catalogEntry) : getProgram(membership.programId);
     if (!program) throw new HTTPException(400, { message: "Unknown program" });
 
     if (parsed.tier !== undefined) {

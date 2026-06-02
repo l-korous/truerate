@@ -8,6 +8,26 @@ import type {
   Program,
 } from "./types.js";
 
+/**
+ * Convert a published CatalogEntryDoc to the Program shape expected by
+ * instantiateBenefits / templatesForTier / summariseBenefits.
+ */
+export function catalogEntryToProgram(entry: CatalogEntryDoc): Program {
+  return {
+    id: entry.programId,
+    name: entry.name,
+    category: entry.category,
+    defaultMatch: entry.defaultMatch,
+    tiers: entry.tiers,
+    fields: entry.fields,
+    requiresCredential: entry.requiresCredential,
+    benefits: entry.benefits,
+    sourceUrl: entry.provenance.sourceUrl,
+    asOf: entry.provenance.asOf,
+    region: entry.region,
+  };
+}
+
 // CatalogRepo — versioned, provenance-tracked store for the loyalty-program
 // catalog.  Two backends share one interface, mirroring the UserRepo pattern:
 //   • CosmosCatalogRepo   — production / Azure (catalog container)
