@@ -1,0 +1,109 @@
+{
+  "extName": {
+    "message": "TrueRate",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Uvidíte sazby, které vám skutečně odemykají věrnostní členství — přímo na stránce vyhledávání.",
+    "description": "Extension description"
+  },
+
+  "popupSignInSub": {
+    "message": "Přihlaste se a zobrazte si své členské sazby na Booking.com.",
+    "description": "Popup subtitle shown when signed out"
+  },
+  "popupEmailPlaceholder": {
+    "message": "E-mail",
+    "description": "Email input placeholder"
+  },
+  "popupPasswordPlaceholder": {
+    "message": "Heslo",
+    "description": "Password input placeholder"
+  },
+  "popupSignInButton": {
+    "message": "Přihlásit se",
+    "description": "Sign in button label"
+  },
+  "popupSignedInSub": {
+    "message": "Připojeno. Otevřete vyhledávání na Booking.com a uvidíte své sazby.",
+    "description": "Popup subtitle shown when signed in"
+  },
+  "popupSignOutButton": {
+    "message": "Odhlásit se",
+    "description": "Sign out button label"
+  },
+  "popupOptionsLink": {
+    "message": "Nastavení",
+    "description": "Link to options page"
+  },
+
+  "panelSignInPrompt": {
+    "message": "Přihlaste se a zobrazte si výhody, které zde máte.",
+    "description": "Content panel message when user is not signed in"
+  },
+  "panelOpenTrueRate": {
+    "message": "Otevřít TrueRate",
+    "description": "Link text to open the TrueRate web app"
+  },
+  "panelLoading": {
+    "message": "Kontroluji vaše výhody…",
+    "description": "Content panel loading message"
+  },
+  "panelNoBenefits": {
+    "message": "Pro tento web zatím nemáme žádné výhody.",
+    "description": "Content panel message when no benefits are available"
+  },
+  "panelPerkEstimatesHeader": {
+    "message": "Odhadovaná hodnota výhody",
+    "description": "Header for the perk estimates section"
+  },
+  "panelPerkEstimatesNote": {
+    "message": "(orientační, není to cena)",
+    "description": "Note clarifying perk estimates are not prices"
+  },
+  "panelActivePrefix": {
+    "message": "Aktivní zde:",
+    "description": "Prefix shown before the list of active memberships"
+  },
+  "panelDisclaimer": {
+    "message": "Slevy a výhody pocházejí z vašich deklarovaných členství. Slevy uplatňujte na zobrazenou cenu.",
+    "description": "Footer disclaimer in the content panel"
+  },
+  "panelCloseAriaLabel": {
+    "message": "Zavřít",
+    "description": "Aria label for the panel close button"
+  },
+
+  "optionsTitle": {
+    "message": "Nastavení TrueRate",
+    "description": "Options page title"
+  },
+  "optionsAccountHeading": {
+    "message": "Účet",
+    "description": "Account section heading on options page"
+  },
+  "optionsSignedIn": {
+    "message": "Přihlášen/a",
+    "description": "Account status when signed in"
+  },
+  "optionsNotSignedIn": {
+    "message": "Nepřihlášen/a",
+    "description": "Account status when not signed in"
+  },
+  "optionsSignOutButton": {
+    "message": "Odhlásit se",
+    "description": "Sign out button on options page"
+  },
+  "optionsSignInLink": {
+    "message": "Přihlásit se přes TrueRate",
+    "description": "Link to sign in via the web app"
+  },
+  "optionsPreferencesHeading": {
+    "message": "Předvolby",
+    "description": "Preferences section heading on options page"
+  },
+  "optionsShowPanelLabel": {
+    "message": "Zobrazit panel výhod na Booking.com",
+    "description": "Toggle label for showing the benefits panel"
+  }
+}
