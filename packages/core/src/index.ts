@@ -7,6 +7,7 @@ export * from "./crypto.js";
 export * from "./db.js";
 export * from "./mcp-token.js";
 export * from "./catalog-db.js";
+export * from "./catalog-cache.js";
 export * from "./enrichment.js";
 export * from "./logger.js";
 export * from "./perk-value.js";
