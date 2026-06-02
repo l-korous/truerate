@@ -1,48 +1,100 @@
 import type { PageContext, PageMatchResult } from "@truerate/core";
+import { detectPageType, extractHotelName } from "../utils/booking-context";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
 import { esc, perkEstimateRow } from "../utils/render-helpers";
 
 // Content script for Booking.com.
 //
-// Builds a PageContext from what's on screen and asks the background worker to
-// match the user's benefits against it. Returns the applicable discount % and
-// perks — no member prices are computed (per product rule #1).
-// We surface our value in a self-contained Shadow-DOM panel. Selectors are
-// best-effort and will need maintenance as Booking's markup changes.
+// Handles both search-results and property-detail pages, plus Booking's SPA
+// navigation (URL changes without full page reload). No member prices are
+// computed (per product rule #1).
 
 export default defineContentScript({
   matches: ["https://*.booking.com/searchresults*", "https://*.booking.com/hotel/*"],
   runAt: "document_idle",
   async main() {
     installWindowHandlers("extension-content");
-    const context = buildContext();
-    const status = await sendTrMessage({ type: "TR_AUTH_STATUS" });
-    const shadow = mountHost();
-    if (!status.signedIn) return renderSignedOut(shadow);
-
-    renderLoading(shadow);
-    const resp = await sendTrMessage({ type: "TR_MATCH", context });
-    if (!resp.ok) return renderError(shadow, resp.error ?? "Could not load benefits");
-    renderResult(shadow, resp.result);
+    await runPanel();
+    observeNavigation(() => runPanel());
   },
 });
 
-// --- Build context from the page --------------------------------------------
+// --- SPA navigation ----------------------------------------------------------
 
-function buildContext(): PageContext {
-  const domain = "booking.com";
-  if (!location.pathname.startsWith("/hotel/")) return { domain };
+// Intercept pushState/replaceState and listen to popstate so we re-render the
+// panel whenever Booking's SPA transitions between pages.
+function observeNavigation(onNavigate: () => void): void {
+  let lastHref = location.href;
 
-  const name =
-    document.querySelector("h2.pp-header__title")?.textContent?.trim() ||
-    document.querySelector('[data-testid="title"]')?.textContent?.trim() ||
-    document.title.split(" - ")[0]?.trim();
-
-  return {
-    domain,
-    property: name ? { name } : undefined,
+  const check = () => {
+    if (location.href !== lastHref) {
+      lastHref = location.href;
+      onNavigate();
+    }
   };
+
+  for (const method of ["pushState", "replaceState"] as const) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const original = history[method].bind(history) as (...a: any[]) => void;
+    history[method] = function (this: History, ...args: Parameters<(typeof history)[typeof method]>) {
+      original(...args);
+      check();
+    };
+  }
+  window.addEventListener("popstate", check);
+}
+
+// --- Panel lifecycle ---------------------------------------------------------
+
+async function runPanel(): Promise<void> {
+  const pageType = detectPageType(location.href);
+  if (pageType === "unknown") {
+    document.getElementById("truerate-root")?.remove();
+    return;
+  }
+
+  const shadow = mountHost();
+  const status = await sendTrMessage({ type: "TR_AUTH_STATUS" });
+  if (!status.signedIn) return renderSignedOut(shadow);
+
+  renderLoading(shadow);
+  const context = await buildContext(pageType);
+  const resp = await sendTrMessage({ type: "TR_MATCH", context });
+  if (!resp.ok) return renderError(shadow, resp.error ?? "Could not load benefits");
+  renderResult(shadow, resp.result);
+}
+
+// --- Context builder ---------------------------------------------------------
+
+async function buildContext(pageType: "search" | "detail"): Promise<PageContext> {
+  const domain = "booking.com";
+  if (pageType !== "detail") return { domain };
+  const name = await waitForHotelName();
+  return { domain, property: name ? { name } : undefined };
+}
+
+function waitForHotelName(timeout = 3000): Promise<string | undefined> {
+  const immediate = extractHotelName(document);
+  if (immediate) return Promise.resolve(immediate);
+
+  return new Promise((resolve) => {
+    const deadline = setTimeout(() => {
+      observer.disconnect();
+      resolve(extractHotelName(document));
+    }, timeout);
+
+    const observer = new MutationObserver(() => {
+      const name = extractHotelName(document);
+      if (name) {
+        clearTimeout(deadline);
+        observer.disconnect();
+        resolve(name);
+      }
+    });
+
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
 }
 
 // --- UI (Shadow DOM) ---------------------------------------------------------
