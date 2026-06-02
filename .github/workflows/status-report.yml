@@ -1,0 +1,126 @@
+name: Backlog status report
+
+# Periodic health/progress digest emailed to the maintainer so a stalled
+# autonomous loop is noticed quickly (the failure mode that prompted this:
+# the runner silently idles when the agent-ready queue empties).
+#
+# Reuses the same Gmail SMTP secrets as the cost report (MAIL_USERNAME +
+# MAIL_PASSWORD, a Gmail App Password). Never hard-fails; if email isn't
+# configured the digest goes to the run summary instead.
+
+on:
+  schedule:
+    - cron: "0 */4 * * *" # every 4 hours
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+    steps:
+      - name: Build status digest
+        id: report
+        run: |
+          set -uo pipefail
+          NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
+          SINCE=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+
+          # ---- Issues ----
+          OPEN_ISSUES=$(gh issue list --repo "$REPO" --state open --limit 1000 --json number --jq 'length' || echo "?")
+          READY=$(gh issue list --repo "$REPO" --state open --label agent-ready --limit 1000 \
+                    --json number,labels \
+                    --jq '[ .[] | select((.labels|map(.name)|index("blocked"))|not) ] | length' || echo "?")
+          BLOCKED=$(gh issue list --repo "$REPO" --state open --label blocked --limit 1000 --json number --jq 'length' || echo "?")
+          CLOSED_24H=$(gh issue list --repo "$REPO" --state closed --limit 200 --search "closed:>=$SINCE" --json number --jq 'length' || echo "?")
+
+          # Next eligible queue: agent-ready, not blocked, no claude/<n>- branch yet.
+          QUEUE=""
+          CANDS=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,title,labels \
+                    --jq '[ .[] | select((.labels|map(.name)|index("blocked"))|not) ] | sort_by(.number) | .[] | "\(.number)\t\(.title)"' || true)
+          while IFS=$'\t' read -r n title; do
+            [ -z "${n:-}" ] && continue
+            br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
+            if [ "${br:-0}" -eq 0 ]; then QUEUE="${QUEUE}  #${n} ${title}"$'\n'; fi
+          done <<< "$CANDS"
+          [ -z "$QUEUE" ] && QUEUE="  (none — the runner has no eligible work; label issues 'agent-ready' to feed it)"$'\n'
+
+          # ---- Pull requests ----
+          PRJSON=$(gh pr list --repo "$REPO" --state open --base main --limit 200 \
+                     --json number,headRefName,isDraft,statusCheckRollup || echo '[]')
+          AGENT=$(echo "$PRJSON" | jq '[ .[] | select(.headRefName|startswith("claude/")) ]')
+          PR_TOTAL=$(echo "$AGENT" | jq 'length')
+          PR_DRAFT=$(echo "$AGENT" | jq '[ .[] | select(.isDraft) ] | length')
+          PR_FAIL=$(echo "$AGENT" | jq '[ .[] | select(.isDraft|not) | select([.statusCheckRollup[]?|select(.conclusion=="FAILURE" or .conclusion=="TIMED_OUT" or .conclusion=="CANCELLED")]|length > 0) ] | length')
+          PR_GREEN=$(echo "$AGENT" | jq '[ .[] | select(.isDraft|not) | select([.statusCheckRollup[]?|select(.conclusion=="FAILURE" or .conclusion=="TIMED_OUT" or .conclusion=="CANCELLED")]|length == 0) ] | length')
+          PR_LIST=$(echo "$AGENT" | jq -r '.[] | "  #\(.number) [\(if .isDraft then "draft" else "ready" end)] \(.headRefName)"' || true)
+          [ -z "$PR_LIST" ] && PR_LIST="  (none)"
+
+          MERGED_24H=$(gh pr list --repo "$REPO" --state merged --limit 200 --search "merged:>=$SINCE" --json number,title --jq 'length' || echo "?")
+          MERGED_LIST=$(gh pr list --repo "$REPO" --state merged --limit 200 --search "merged:>=$SINCE" --json number,title --jq '.[] | "  #\(.number) \(.title)"' || true)
+          [ -z "$MERGED_LIST" ] && MERGED_LIST="  (none in the last 24h)"
+
+          # ---- Activity / runner health ----
+          COMMITS_24H=$(gh api "repos/$REPO/commits?sha=main&since=$SINCE&per_page=100" --jq 'length' 2>/dev/null || echo "?")
+          LAST_RUNNER=$(gh run list --repo "$REPO" --workflow "Backlog runner" --limit 1 \
+                          --json createdAt,status,conclusion \
+                          --jq '.[0] | "\(.createdAt) (\(.status)/\(.conclusion))"' 2>/dev/null || echo "unknown")
+          LAST_MERGE=$(gh run list --repo "$REPO" --workflow "Auto-merge agent PRs" --limit 1 \
+                          --json createdAt,status,conclusion \
+                          --jq '.[0] | "\(.createdAt) (\(.status)/\(.conclusion))"' 2>/dev/null || echo "n/a")
+
+          {
+            echo "TrueRate backlog status — ${NOW}"
+            echo "Repo: https://github.com/${REPO}"
+            echo ""
+            echo "ISSUES"
+            echo "  Open: ${OPEN_ISSUES}   Agent-ready (queued): ${READY}   Blocked: ${BLOCKED}   Closed (24h): ${CLOSED_24H}"
+            echo ""
+            echo "NEXT IN QUEUE (agent-ready, no branch yet):"
+            printf '%s' "$QUEUE"
+            echo ""
+            echo "AGENT PULL REQUESTS (open, claude/*)"
+            echo "  Total: ${PR_TOTAL}   Ready+green: ${PR_GREEN}   Ready+failing: ${PR_FAIL}   Draft: ${PR_DRAFT}"
+            printf '%s\n' "$PR_LIST"
+            echo ""
+            echo "MERGED IN LAST 24h: ${MERGED_24H}"
+            printf '%s\n' "$MERGED_LIST"
+            echo ""
+            echo "ACTIVITY"
+            echo "  Commits to main (24h): ${COMMITS_24H}"
+            echo "  Last backlog-runner run: ${LAST_RUNNER}"
+            echo "  Last auto-merge run:     ${LAST_MERGE}"
+            echo ""
+            echo "Actions: https://github.com/${REPO}/actions"
+          } > body.txt
+
+          cat body.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "----- digest -----"; cat body.txt
+          echo "subject=TrueRate backlog status — open:${OPEN_ISSUES} ready:${READY} merged24h:${MERGED_24H} (${NOW})" >> "$GITHUB_OUTPUT"
+
+      - name: Send email
+        if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ steps.report.outputs.subject }}
+          to: lukas.korous@gmail.com
+          from: TrueRate Status Bot <${{ secrets.MAIL_USERNAME }}>
+          body: file://body.txt
+
+      - name: Note if email not configured
+        if: ${{ env.MAIL_USERNAME == '' || env.MAIL_PASSWORD == '' }}
+        run: echo "::notice::Email not sent — add repo secrets MAIL_USERNAME + MAIL_PASSWORD (Gmail App Password)."

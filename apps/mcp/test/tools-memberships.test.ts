@@ -66,33 +66,31 @@ test("get_membership_summary: lists Genius Level 3 with 20% discount (not empty 
   }
 });
 
-test("search_hotels: Genius Level 3 discount appears in matched properties and programsApplied", async () => {
+test("search_hotels: Genius Level 3 discount appears in matched benefits and programsApplied", async () => {
   const { client, server } = await wire(GENIUS_USER_ID);
   try {
     const result = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Vienna", checkIn: "2026-07-10", checkOut: "2026-07-12" },
+      arguments: { domain: "booking.com", location: "Vienna" },
     });
     assert.ok(!result.isError, `tool errored: ${JSON.stringify(result)}`);
 
+    // search_hotels returns an McpBenefitResult (membership-intelligence, no
+    // prices/properties): the applicable memberships' discounts + perks.
     const sc = result.structuredContent as {
-      properties: Array<{
-        matches: Array<{ benefit: { value: { kind: string; percentOff?: number } }; membershipLabel: string }>;
-      }>;
+      matches: Array<{ discount?: { percentOff: number }; membershipLabel: string }>;
       programsApplied: string[];
     };
 
-    // All mock properties come from booking.com so the domain match fires on every one.
-    const hasGenius = sc.properties.some((p) =>
-      p.matches.some(
-        (m) =>
-          m.benefit.value.kind === "percentDiscount" &&
-          Math.round((m.benefit.value.percentOff ?? 0) * 100) === 20,
-      ),
+    const hasGenius = sc.matches.some(
+      (m) => m.discount !== undefined && Math.round(m.discount.percentOff * 100) === 20,
     );
-    assert.ok(hasGenius, "at least one property must carry the Genius 20% discount");
+    assert.ok(hasGenius, "at least one match must carry the Genius 20% discount");
 
-    assert.ok(sc.programsApplied.length > 0, "programsApplied must not be empty when a matching membership exists");
+    assert.ok(
+      sc.programsApplied.includes("booking_genius"),
+      "programsApplied must include booking_genius when a matching membership exists",
+    );
 
     // The formatted text output must also surface the discount label.
     const text = (result.content[0] as { type: "text"; text: string }).text;
