@@ -135,6 +135,41 @@ resource usersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/cont
   }
 }
 
+// catalog container — versioned loyalty-program entries.
+// Partition key: /programId (all versions of a program on one logical partition).
+// Document id: "{programId}#v{version}" (unique; allows point reads by version).
+// Composite indexes speed up the common (isCurrent, status) and
+// (isCurrent, region) query patterns used by CatalogRepo.listPublished().
+resource catalogContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDb
+  name: 'catalog'
+  properties: {
+    resource: {
+      id: 'catalog'
+      partitionKey: { paths: [ '/programId' ], kind: 'Hash' }
+      indexingPolicy: {
+        automatic: true
+        includedPaths: [ { path: '/*' } ]
+        excludedPaths: [ { path: '/"_etag"/?' } ]
+        compositeIndexes: [
+          [
+            { path: '/isCurrent', order: 'ascending' }
+            { path: '/status', order: 'ascending' }
+          ]
+          [
+            { path: '/isCurrent', order: 'ascending' }
+            { path: '/region', order: 'ascending' }
+          ]
+          [
+            { path: '/programId', order: 'ascending' }
+            { path: '/version', order: 'descending' }
+          ]
+        ]
+      }
+    }
+  }
+}
+
 // Cosmos built-in Data Contributor role for the identity (data-plane).
 resource cosmosDataRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
   parent: cosmos
