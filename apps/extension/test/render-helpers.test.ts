@@ -25,6 +25,10 @@ const baseEstimate: MatchedPerkEstimate = {
   estimatedUsd: { 3: 15, 4: 25, 5: 50 },
   membershipLabel: "Booking.com Genius - Level 3",
   isEstimate: true,
+  termProvenance: "catalog",
+  termConfidence: "verified",
+  estimateProvenance: "default-estimate",
+  estimateConfidence: "estimated",
 };
 
 test("perkEstimateRow renders perk label", () => {
