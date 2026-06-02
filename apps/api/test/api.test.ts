@@ -258,6 +258,74 @@ test("PATCH /memberships/:id returns 404 for unknown membership", async () => {
   assert.equal(patch.status, 404);
 });
 
+// --- User settings ----------------------------------------------------------
+
+test("PATCH /user/settings updates market and currency", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ market: "de", currency: "EUR" }),
+  });
+  assert.equal(res.status, 200);
+  const { user } = await res.json();
+  assert.equal(user.market, "de");
+  assert.equal(user.currency, "EUR");
+});
+
+test("PATCH /user/settings updates market only", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ market: "pl" }),
+  });
+  assert.equal(res.status, 200);
+  const { user } = await res.json();
+  assert.equal(user.market, "pl");
+});
+
+test("PATCH /user/settings rejects unknown market", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ market: "xx" }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test("PATCH /user/settings rejects unknown currency", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ currency: "GBP" }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test("PATCH /user/settings requires auth", async () => {
+  const app = await getApp();
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ market: "cz" }),
+  });
+  assert.equal(res.status, 401);
+});
+
+test("PATCH /user/settings response contains no price fields", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  const res = await app.request("/user/settings", {
+    method: "PATCH", headers: authed(token),
+    body: JSON.stringify({ currency: "USD" }),
+  });
+  const raw = JSON.stringify(await res.json());
+  assert.ok(!raw.includes("finalPrice"), "no finalPrice");
+  assert.ok(!raw.includes("memberPrice"), "no memberPrice");
+});
+
 // --- Correlation ID ---------------------------------------------------------
 
 test("generates X-Correlation-ID response header when none provided", async () => {

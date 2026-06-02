@@ -226,6 +226,24 @@ app.delete("/me/mcp-url", requireAuth, async (c) => {
   return c.body(null, 204);
 });
 
+// --- User settings ----------------------------------------------------------
+
+const UpdateSettingsSchema = z.object({
+  market: z.enum(["cz", "us", "de", "pl", "at", "sk", "hu"]).optional(),
+  currency: z.enum(["EUR", "USD", "CZK", "PLN", "HUF"]).optional(),
+});
+
+app.patch("/user/settings", requireAuth, async (c) => {
+  const parsed = await parseBody(UpdateSettingsSchema, c);
+  if (parsed instanceof Response) return parsed;
+  const user = await loadUser(c.get("userId"));
+  if (parsed.market !== undefined) user.market = parsed.market;
+  if (parsed.currency !== undefined) user.currency = parsed.currency;
+  await saveUser(user);
+  c.get("logger").info("settings updated", { userIdHash: hashUserId(user.id) });
+  return c.json({ user: publicUser(user) });
+});
+
 // Two valid shapes for adding a membership:
 //   catalog: { programId, tier?, attributes? }  -> benefits instantiated from the catalog
 //   custom : { label, benefits: BenefitInput[] } -> user-declared benefits
