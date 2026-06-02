@@ -59,8 +59,11 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build core
-        run: pnpm --filter @truerate/core build
+      - name: Build packages (core, harness)
+        # harness (@truerate/harness) is consumed by web + e2e and exposes types
+        # from dist/, so it must be built like core or `next build`/Playwright
+        # can't resolve it ("Cannot find module '@truerate/harness'").
+        run: pnpm --filter @truerate/core build && pnpm --filter @truerate/harness build
       - name: Build web
         # NEXT_PUBLIC_API_BASE_URL is baked at build time; the real value is
         # injected during deploy. A placeholder is fine for the CI build check.
@@ -82,8 +85,11 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build core
-        run: pnpm --filter @truerate/core build
+      - name: Build packages (core, harness)
+        # harness (@truerate/harness) is consumed by web + e2e and exposes types
+        # from dist/, so it must be built like core or `next build`/Playwright
+        # can't resolve it ("Cannot find module '@truerate/harness'").
+        run: pnpm --filter @truerate/core build && pnpm --filter @truerate/harness build
       - name: Install Playwright browser
         run: pnpm --filter @truerate/web exec playwright install --with-deps chromium
       - name: Run end-to-end journey
