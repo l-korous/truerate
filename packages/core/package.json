@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "seed:catalog": "node --import tsx scripts/seed-catalog.ts"
   },
   "dependencies": {
     "@azure/cosmos": "^4.1.1",
