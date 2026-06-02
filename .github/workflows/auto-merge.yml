@@ -36,7 +36,9 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # close issues referenced by a merged PR (keyword auto-close)
   checks: read
+  actions: write # re-dispatch CI on a branch after update-branch
 
 jobs:
   sweep:
@@ -72,7 +74,14 @@ jobs:
             behind=$(gh api "repos/$REPO/compare/$br...main" --jq '.ahead_by' 2>/dev/null || echo 0)
             if [ "${behind:-0}" -gt 0 ]; then
               echo "#$num: $behind commit(s) behind main — updating branch to re-test against latest main; will merge a later sweep if green."
-              gh pr update-branch "$num" --repo "$REPO" 2>&1 || echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              if gh pr update-branch "$num" --repo "$REPO" 2>&1; then
+                # update-branch commits as GITHUB_TOKEN, which does NOT fire
+                # push/pull_request CI (recursion guard). Dispatch CI explicitly
+                # so the freshly-merged head gets check runs to gate on.
+                gh workflow run CI --repo "$REPO" --ref "$br" 2>&1 || echo "#$num: could not dispatch CI (will retry next sweep)."
+              else
+                echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              fi
               continue
             fi
 
@@ -89,8 +98,20 @@ jobs:
             fi
 
             echo "#$num: ready, no conflicts, all $total checks green — squash-merging."
+            body=$(gh pr view "$num" --repo "$REPO" --json body --jq '.body // ""')
             if gh pr merge "$num" --repo "$REPO" --squash --delete-branch; then
               echo "#$num: merged."
+              # A GITHUB_TOKEN squash-merge does NOT run keyword auto-close, so an
+              # issue referenced by "Closes #N" stays open and the backlog runner
+              # re-picks already-done work. Close those issues explicitly.
+              echo "$body" \
+                | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' \
+                | grep -oE '[0-9]+' | sort -u \
+                | while read -r iss; do
+                    echo "#$num: closing referenced issue #$iss."
+                    gh issue close "$iss" --repo "$REPO" --reason completed \
+                      --comment "Implemented by #$num (merged automatically)." 2>&1 || true
+                  done
             else
               echo "#$num: merge call failed — will retry next sweep."
             fi
