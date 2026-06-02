@@ -102,3 +102,46 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
           if-no-files-found: ignore
+
+  images:
+    name: Build container images
+    # CI used to verify only typecheck/test/web-build, never the production
+    # Docker images. Three integration breaks (duplicate catalog store; a new
+    # workspace package the mcp/web Dockerfiles didn't copy) reached main green
+    # and broke the deploy. This job closes that gap: it builds all three
+    # images on every PR (build only, no push). See #217.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: truerate-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build mcp image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp/Dockerfile
+          push: false
+          tags: truerate-mcp:ci
+          cache-from: type=gha,scope=mcp
+          cache-to: type=gha,mode=max,scope=mcp
+      # NEXT_PUBLIC_* is inlined at build time; the real API URL is injected at
+      # deploy. A placeholder is fine for the build check.
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: truerate-web:ci
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=https://example.invalid
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
