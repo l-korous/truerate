@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./schemas.js";
 export * from "./programs.js";
 export * from "./match.js";
+export * from "./confidence.js";
 export * from "./crypto.js";
 export * from "./db.js";
 export * from "./enrichment.js";

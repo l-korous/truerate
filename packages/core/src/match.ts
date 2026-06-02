@@ -3,7 +3,10 @@ import type {
   BenefitValue,
   MatchTarget,
   Membership,
+  Program,
 } from "./types.js";
+import { computeConfidence } from "./confidence.js";
+import type { ConfidenceScore } from "./confidence.js";
 
 // Pure matching logic: given the benefits a user holds and a target (a page or
 // a search-result property), decide which benefits apply and what price/perks
@@ -46,13 +49,31 @@ export function benefitMatches(benefit: Benefit, target: MatchTarget): boolean {
 export function matchBenefits(
   memberships: Membership[],
   target: MatchTarget,
-): { benefit: Benefit; membershipId: string; membershipLabel: string }[] {
-  const out: { benefit: Benefit; membershipId: string; membershipLabel: string }[] = [];
+  options?: {
+    /**
+     * Map of programId → Program used to derive confidence scores.
+     * When provided, each matched benefit receives a `confidence` field
+     * derived from the program's `asOf`, `category`, and `sourceUrl`.
+     * No price data is used.
+     */
+    programs?: Map<string, Program>;
+    /** Override "now" for deterministic testing. */
+    now?: Date;
+  },
+): { benefit: Benefit; membershipId: string; membershipLabel: string; confidence?: ConfidenceScore }[] {
+  const out: { benefit: Benefit; membershipId: string; membershipLabel: string; confidence?: ConfidenceScore }[] = [];
   for (const ms of memberships) {
     if (ms.status === "invalid") continue;
     for (const b of ms.benefits) {
       if (benefitMatches(b, target)) {
-        out.push({ benefit: b, membershipId: ms.id, membershipLabel: ms.label });
+        let confidence: ConfidenceScore | undefined;
+        if (options?.programs && b.programId) {
+          const prog = options.programs.get(b.programId);
+          if (prog) {
+            confidence = computeConfidence(prog.asOf, prog.category, prog.sourceUrl, options.now);
+          }
+        }
+        out.push({ benefit: b, membershipId: ms.id, membershipLabel: ms.label, confidence });
       }
     }
   }
