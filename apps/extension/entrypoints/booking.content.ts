@@ -1,6 +1,7 @@
 import type { PageContext, PageMatchResult } from "@truerate/core";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
+import { esc, perkEstimateRow } from "../utils/render-helpers";
 
 // Content script for Booking.com.
 //
@@ -80,14 +81,28 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
 
   const discounts = r.matches
     .filter((m) => m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff)
-    .map((m) => `${Math.round((m.benefit.value.percentOff ?? 0) * 100)}% off — ${esc(m.membershipLabel)}`);
+    .map((m) => {
+      const pct = `${Math.round((m.benefit.value.percentOff ?? 0) * 100)}% off`;
+      const cond = m.benefit.value.conditions ? ` <span class="tr-cond">(${esc(m.benefit.value.conditions)})</span>` : "";
+      return `<span>${pct} — ${esc(m.membershipLabel)}${cond}</span>`;
+    });
 
   const discountHtml = discounts.length
-    ? `<div class="tr-discounts">${discounts.map((d) => `<span>${d}</span>`).join("")}</div>`
+    ? `<div class="tr-discounts">${discounts.join("")}</div>`
     : "";
 
-  const perks = r.perks.length
-    ? `<div class="tr-perks">${r.perks.map(esc).map((p) => `<span>${p}</span>`).join("")}</div>`
+  // Free-text perks (from benefits without structuredPerks, or as fallback)
+  const estimatedPerkTypes = new Set(r.perkEstimates.map((e) => e.label));
+  const freeTextPerks = r.perks.filter((p) => !estimatedPerkTypes.has(p));
+  const perksHtml = freeTextPerks.length
+    ? `<div class="tr-perks">${freeTextPerks.map(esc).map((p) => `<span>${p}</span>`).join("")}</div>`
+    : "";
+
+  const estimatesHtml = r.perkEstimates.length
+    ? `<div class="tr-estimates">
+        <p class="tr-est-head">Estimated perk value <span class="tr-est-note">(indicative, not a price)</span></p>
+        ${r.perkEstimates.map((e) => perkEstimateRow(e)).join("")}
+      </div>`
     : "";
 
   const active = r.matches.length
@@ -96,9 +111,10 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
 
   panel(s).innerHTML = head(true) + `<div class="tr-body">
       ${discountHtml}
-      ${perks}
+      ${perksHtml}
+      ${estimatesHtml}
       ${active}
-      <p class="tr-foot">Discounts are from your declared benefits. Apply them to the price you see.</p>
+      <p class="tr-foot">Discounts and perks are from your declared memberships. Apply discounts to the price you see.</p>
     </div>`;
   wireClose(s);
 }
@@ -109,9 +125,6 @@ function head(closable = false): string {
 }
 function wireClose(s: ShadowRoot) {
   s.querySelector(".tr-close")?.addEventListener("click", () => document.getElementById("truerate-root")?.remove());
-}
-function esc(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 function styleEl(): HTMLStyleElement {
   const s = document.createElement("style");
@@ -130,6 +143,14 @@ function styleEl(): HTMLStyleElement {
     .tr-active{font-size:12px;color:#0c1b2e;margin:6px 0 0}
     .tr-muted{color:#8a8aa0;font-size:13px;margin:0}
     .tr-foot{color:#a0a0b5;font-size:10px;margin:10px 0 0}
-    .tr-btn{display:inline-block;margin-top:8px;background:#0c1b2e;color:#fff;text-decoration:none;padding:8px 14px;border-radius:9px;font-size:13px;font-weight:600}`;
+    .tr-btn{display:inline-block;margin-top:8px;background:#0c1b2e;color:#fff;text-decoration:none;padding:8px 14px;border-radius:9px;font-size:13px;font-weight:600}
+    .tr-cond{font-weight:400;font-size:10px;opacity:.75}
+    .tr-estimates{margin:8px 0 4px;border-top:1px solid #eeeef5;padding-top:8px}
+    .tr-est-head{font-size:11px;font-weight:600;color:#0c1b2e;margin:0 0 6px}
+    .tr-est-note{font-weight:400;color:#8a8aa0}
+    .tr-est-row{margin-bottom:6px}
+    .tr-est-label{display:block;font-size:11px;color:#0c1b2e;font-weight:600}
+    .tr-est-value{display:block;font-size:11px;color:#0f8a5f;font-weight:500}
+    .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}`;
   return s;
 }
