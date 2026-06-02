@@ -28,7 +28,11 @@ import {
   resetCatalogCache,
   catalogEntryToProgram,
   programToCatalogInput,
+  CatalogEntryInputSchema,
+  CATALOG_FORBIDDEN_PRICE_FIELDS,
   type CatalogCache,
+  type CatalogEntryInput,
+  type CatalogStatus,
   type Logger,
   type Benefit,
   type Membership,
@@ -538,6 +542,158 @@ app.get("/admin/funnel/activation", async (c) => {
   const repo = await getUserRepo();
   const counts = await repo.funnelCounts();
   return c.json({ funnel: counts, generatedAt: new Date().toISOString() });
+});
+
+// ─── Admin catalog CRUD ─────────────────────────────────────────────────────
+// All /admin/catalog/* routes require the x-admin-secret header.
+// Provenance is recorded on every write; submittedBy is set server-side.
+// No price fields are accepted — CatalogEntryInputSchema enforces this.
+
+const VALID_CATALOG_STATUSES: CatalogStatus[] = ["draft", "in-review", "published", "archived"];
+
+function isValidCatalogStatus(s: string): s is CatalogStatus {
+  return (VALID_CATALOG_STATUSES as string[]).includes(s);
+}
+
+function adminSecretOk(header: string | undefined): boolean {
+  const secret = process.env.ADMIN_SECRET;
+  return Boolean(secret && header === secret);
+}
+
+// GET /admin/catalog/programs?status=<status>
+// Lists all entries for a given status (or all entries when status is omitted).
+app.get("/admin/catalog/programs", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const statusParam = c.req.query("status");
+  const repo = await getCatalogRepo();
+  if (statusParam !== undefined) {
+    if (!isValidCatalogStatus(statusParam)) {
+      return c.json(
+        { error: "validation_failed", issues: [{ path: ["status"], message: "status must be draft, in-review, published, or archived" }] },
+        400,
+      );
+    }
+    const entries = await repo.listByStatus(statusParam);
+    return c.json({ entries, status: statusParam });
+  }
+  const [drafts, inReview, published, archived] = await Promise.all([
+    repo.listByStatus("draft"),
+    repo.listByStatus("in-review"),
+    repo.listByStatus("published"),
+    repo.listByStatus("archived"),
+  ]);
+  return c.json({ entries: [...drafts, ...inReview, ...published, ...archived] });
+});
+
+// GET /admin/catalog/programs/:id — current entry + full history for a program.
+app.get("/admin/catalog/programs/:id", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+  const [current, history] = await Promise.all([repo.getCurrent(programId), repo.getHistory(programId)]);
+  if (history.length === 0) return c.json({ error: "not_found" }, 404);
+  return c.json({ current, history });
+});
+
+// GET /admin/catalog/programs/:id/versions/:version — specific version.
+app.get("/admin/catalog/programs/:id/versions/:version", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const programId = c.req.param("id");
+  const versionNum = Number(c.req.param("version"));
+  if (!Number.isInteger(versionNum) || versionNum < 1) {
+    return c.json({ error: "validation_failed", issues: [{ path: ["version"], message: "version must be a positive integer" }] }, 400);
+  }
+  const repo = await getCatalogRepo();
+  const entry = await repo.getVersion(programId, versionNum);
+  if (!entry) return c.json({ error: "not_found" }, 404);
+  return c.json({ entry });
+});
+
+/**
+ * Read and validate an admin catalog entry body.
+ * Checks the raw JSON for forbidden price fields BEFORE Zod parses it,
+ * because Zod strips unknown keys before superRefine can see them.
+ */
+async function parseAdminCatalogBody(
+  c: { req: { json(): Promise<unknown> } },
+): Promise<z.infer<typeof CatalogEntryInputSchema> | Response> {
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const serialized = JSON.stringify(raw);
+  for (const field of CATALOG_FORBIDDEN_PRICE_FIELDS) {
+    if (serialized.includes(`"${field}"`)) {
+      return Response.json(
+        { error: "validation_failed", issues: [{ path: ["body"], message: `Price field '${field}' is not allowed in catalog entries (issue #1)` }] },
+        { status: 400 },
+      );
+    }
+  }
+  const result = CatalogEntryInputSchema.safeParse(raw);
+  if (!result.success) {
+    return Response.json(
+      { error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+      { status: 400 },
+    );
+  }
+  return result.data;
+}
+
+// POST /admin/catalog/programs — create (or update) draft for a program.
+app.post("/admin/catalog/programs", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const parsed = await parseAdminCatalogBody(c);
+  if (parsed instanceof Response) return parsed;
+  const repo = await getCatalogRepo();
+  const input: CatalogEntryInput = {
+    ...parsed,
+    provenance: { ...parsed.provenance, submittedBy: "admin" },
+  };
+  const entry = await repo.upsertDraft(input);
+  return c.json({ entry }, 201);
+});
+
+// PUT /admin/catalog/programs/:id — update the existing draft for a program.
+app.put("/admin/catalog/programs/:id", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const programId = c.req.param("id");
+  const parsed = await parseAdminCatalogBody(c);
+  if (parsed instanceof Response) return parsed;
+  if (parsed.programId !== programId) {
+    return c.json({ error: "validation_failed", issues: [{ path: ["programId"], message: "programId in body must match the URL" }] }, 400);
+  }
+  const repo = await getCatalogRepo();
+  const input: CatalogEntryInput = {
+    ...parsed,
+    provenance: { ...parsed.provenance, submittedBy: "admin" },
+  };
+  const entry = await repo.upsertDraft(input);
+  return c.json({ entry });
+});
+
+// POST /admin/catalog/programs/:id/publish — promote the draft to published.
+app.post("/admin/catalog/programs/:id/publish", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+  try {
+    const entry = await repo.publish(programId);
+    _catalogCache?.invalidate(programId);
+    return c.json({ entry });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "publish failed";
+    return c.json({ error: "publish_failed", message }, 409);
+  }
+});
+
+// POST /admin/catalog/programs/:id/archive — retire the current published entry.
+app.post("/admin/catalog/programs/:id/archive", async (c) => {
+  if (!adminSecretOk(c.req.header("x-admin-secret"))) return c.json({ error: "unauthorized" }, 401);
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+  const current = await repo.getCurrent(programId);
+  if (!current) return c.json({ error: "not_found" }, 404);
+  await repo.archive(programId);
+  _catalogCache?.invalidate(programId);
+  return c.body(null, 204);
 });
 
 // --- helpers ----------------------------------------------------------------

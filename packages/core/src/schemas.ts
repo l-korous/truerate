@@ -72,3 +72,90 @@ export const ClientErrorReportSchema = z.object({
   correlationId: z.string().optional(),
   context: z.record(z.unknown()).optional(),
 });
+
+// ── Perk taxonomy schemas ────────────────────────────────────────────────────
+
+export const PerkTypeSchema = z.enum([
+  "early_check_in", "late_check_out", "free_breakfast", "room_upgrade",
+  "suite_upgrade", "lounge_access", "welcome_amenity", "free_wifi",
+  "airport_transfer", "parking", "spa_credit", "guaranteed_availability",
+  "points_bonus", "priority_support", "other",
+]);
+
+export const BookingChannelSchema = z.enum(["direct", "ota", "phone", "agent"]);
+
+export const PerkConditionsSchema = z.object({
+  tierRequired: z.string().optional(),
+  minNights: z.number().int().min(1).optional(),
+  bookingChannel: z.array(BookingChannelSchema).optional(),
+  blackoutDates: z.array(z.string()).optional(),
+  subjectToAvailability: z.boolean().optional(),
+  enrollmentRequired: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
+export const TermProvenanceSchema = z.enum(["catalog", "user-declared", "default-estimate"]);
+export const TermConfidenceSchema = z.enum(["verified", "declared", "estimated"]);
+
+export const StructuredPerkSchema = z.object({
+  type: PerkTypeSchema,
+  label: z.string().min(1),
+  conditions: PerkConditionsSchema.optional(),
+  provenance: TermProvenanceSchema.optional(),
+  confidence: TermConfidenceSchema.optional(),
+});
+
+// ── Catalog admin entry schema ───────────────────────────────────────────────
+
+const ProgramFieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(["text", "select", "secret"]),
+  options: z.array(z.string()).optional(),
+  placeholder: z.string().optional(),
+  secret: z.boolean().optional(),
+});
+
+const BenefitValueWithStructuredPerksSchema = BenefitValueSchema.extend({
+  structuredPerks: z.array(StructuredPerkSchema).optional(),
+});
+
+const BenefitTemplateSchema = z.object({
+  scope: BenefitScopeSchema,
+  match: BenefitMatchSchema.optional(),
+  value: BenefitValueWithStructuredPerksSchema,
+});
+
+/**
+ * Hotel-price field names that must never appear in a catalog entry payload.
+ * The route handler checks the raw JSON body against this list before parsing,
+ * since Zod strips unknown keys before superRefine can see them.
+ */
+export const CATALOG_FORBIDDEN_PRICE_FIELDS = [
+  "nightlyAmount", "totalAmount", "memberPrice", "finalPrice", "roomPrice", "indicativePrice",
+] as const;
+
+/**
+ * Zod schema for admin catalog entry create/update payload.
+ * Validates structural shape only; hotel price-field rejection is enforced
+ * by the route handler on the raw JSON (see CATALOG_FORBIDDEN_PRICE_FIELDS).
+ * The `submittedBy` provenance field is set server-side.
+ */
+export const CatalogEntryInputSchema = z.object({
+  programId: z.string().min(1),
+  provenance: z.object({
+    source: z.enum(["manual-seed", "scrape-proposal", "partner-submission"]),
+    sourceUrl: z.string().url().optional(),
+    asOf: z.string().regex(/^\d{4}-\d{2}$/, "asOf must be YYYY-MM"),
+    scrapedAt: z.string().optional(),
+    notes: z.string().optional(),
+  }),
+  region: z.string().min(1),
+  name: z.string().min(1),
+  category: ProgramCategorySchema,
+  defaultMatch: BenefitMatchSchema,
+  tiers: z.array(z.string()).optional(),
+  requiresCredential: z.boolean(),
+  fields: z.array(ProgramFieldSchema),
+  benefits: z.record(z.array(BenefitTemplateSchema)),
+});
