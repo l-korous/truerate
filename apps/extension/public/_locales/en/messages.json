@@ -73,6 +73,10 @@
     "message": "Close",
     "description": "Aria label for the panel close button"
   },
+  "panelGeniusActiveNote": {
+    "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
+    "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
+  },
 
   "optionsTitle": {
     "message": "TrueRate Settings",
