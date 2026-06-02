@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./schemas.js";
 export * from "./programs.js";
+export * from "./catalog-repo.js";
 export * from "./match.js";
 export * from "./confidence.js";
 export * from "./crypto.js";
