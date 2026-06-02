@@ -1,6 +1,6 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
 import { DefaultAzureCredential } from "@azure/identity";
-import type { User } from "./types.js";
+import type { ActivationEventName, ActivationMilestones, User } from "./types.js";
 
 // Data access for TrueRate. The store is Azure Cosmos DB (NoSQL, serverless):
 // fully managed, scales with usage, no servers or Redis to operate. Users are
@@ -17,6 +17,30 @@ export interface UserRepo {
   getByEmail(email: string): Promise<User | null>;
   create(user: User): Promise<User>;
   update(user: User): Promise<User>;
+  /** Count users that have reached each activation milestone. Admin / observability use only. */
+  funnelCounts(): Promise<Record<ActivationEventName, number>>;
+}
+
+// ─── Shared helpers ─────────────────────────────────────────────────────────
+
+const ACTIVATION_EVENTS: ActivationEventName[] = [
+  "signup",
+  "membership_added",
+  "mcp_url_obtained",
+  "extension_connected",
+];
+
+function tallyMilestones(
+  milestones: (ActivationMilestones | undefined)[],
+): Record<ActivationEventName, number> {
+  const counts = Object.fromEntries(ACTIVATION_EVENTS.map((e) => [e, 0])) as Record<ActivationEventName, number>;
+  for (const m of milestones) {
+    if (!m) continue;
+    for (const event of ACTIVATION_EVENTS) {
+      if (m[event]) counts[event]++;
+    }
+  }
+  return counts;
 }
 
 // ─── Cosmos backend ─────────────────────────────────────────────────────────
@@ -73,6 +97,13 @@ class CosmosUserRepo implements UserRepo {
     const { resource } = await this.container.item(user.id, user.id).replace<User>(user);
     return resource as User;
   }
+
+  async funnelCounts(): Promise<Record<ActivationEventName, number>> {
+    const { resources } = await this.container.items
+      .query<Pick<User, "activationMilestones">>({ query: "SELECT c.activationMilestones FROM c" })
+      .fetchAll();
+    return tallyMilestones(resources.map((r) => r.activationMilestones));
+  }
 }
 
 // ─── In-memory backend (local dev / demos) ──────────────────────────────────
@@ -100,6 +131,10 @@ class MemoryUserRepo implements UserRepo {
   async update(user: User): Promise<User> {
     this.byId.set(user.id, user);
     return user;
+  }
+
+  async funnelCounts(): Promise<Record<ActivationEventName, number>> {
+    return tallyMilestones([...this.byId.values()].map((u) => u.activationMilestones));
   }
 }
 

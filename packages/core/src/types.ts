@@ -221,6 +221,31 @@ export interface Membership {
   status: "active" | "unverified" | "invalid";
 }
 
+// ---------------------------------------------------------------------------
+// Activation tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical onboarding funnel steps. Never contains prices or PII beyond
+ * the user ID (stored on the User document, not in a separate collection).
+ */
+export type ActivationEventName =
+  | "signup"
+  | "membership_added"
+  | "mcp_url_obtained"
+  | "extension_connected";
+
+/**
+ * Per-user record of when each activation milestone was first reached.
+ * All values are ISO-8601 timestamps set once and never overwritten.
+ */
+export interface ActivationMilestones {
+  signup?: string;
+  membership_added?: string;
+  mcp_url_obtained?: string;
+  extension_connected?: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -229,6 +254,8 @@ export interface User {
   createdAt: string;
   market: string;
   currency: string;
+  /** Onboarding funnel milestones; absent on legacy documents (treat as all unset). */
+  activationMilestones?: ActivationMilestones;
 }
 
 // --- Matching + enrichment I/O -----------------------------------------------
