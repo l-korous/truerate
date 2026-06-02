@@ -37,6 +37,7 @@ permissions:
   contents: write
   pull-requests: write
   checks: read
+  actions: write # re-dispatch CI on a branch after update-branch
 
 jobs:
   sweep:
@@ -72,7 +73,14 @@ jobs:
             behind=$(gh api "repos/$REPO/compare/$br...main" --jq '.ahead_by' 2>/dev/null || echo 0)
             if [ "${behind:-0}" -gt 0 ]; then
               echo "#$num: $behind commit(s) behind main — updating branch to re-test against latest main; will merge a later sweep if green."
-              gh pr update-branch "$num" --repo "$REPO" 2>&1 || echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              if gh pr update-branch "$num" --repo "$REPO" 2>&1; then
+                # update-branch commits as GITHUB_TOKEN, which does NOT fire
+                # push/pull_request CI (recursion guard). Dispatch CI explicitly
+                # so the freshly-merged head gets check runs to gate on.
+                gh workflow run CI --repo "$REPO" --ref "$br" 2>&1 || echo "#$num: could not dispatch CI (will retry next sweep)."
+              else
+                echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              fi
               continue
             fi
 

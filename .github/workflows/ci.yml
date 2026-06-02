@@ -7,6 +7,11 @@ on:
     branches: [main, "claude/**"]
   pull_request:
     branches: [main]
+  # Lets the auto-merge sweeper re-trigger CI on a branch after it updates it to
+  # the latest main. A branch update done with GITHUB_TOKEN does not itself fire
+  # push/pull_request CI (recursion guard), so the checks would otherwise be
+  # missing and the PR could never satisfy the merge gate.
+  workflow_dispatch: {}
 
 # Cancel superseded runs on the same ref.
 concurrency:
