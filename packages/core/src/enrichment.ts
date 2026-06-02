@@ -1,4 +1,4 @@
-import { applyBenefitsToPrice, matchBenefits } from "./match.js";
+import { collectPerks, matchBenefits } from "./match.js";
 import { BookingProvider } from "./providers/booking.js";
 import type { HotelProvider } from "./providers/types.js";
 import type {
@@ -8,18 +8,17 @@ import type {
   Membership,
   PageContext,
   PageMatchResult,
-  RateOffer,
 } from "./types.js";
 
-// The enrichment engine layers the user's BENEFITS over public rates. For each
-// property it builds a match target (the provider's domain + the property's
-// brand/name + category "hotel"), finds which of the user's benefits apply, and
-// produces:
-//   - an indicative member price when a % or fixed discount applies, and/or
-//   - perks (free breakfast, upgrades) that apply with no price change.
-// This is the whole "no integration needed" model: rule from the benefit,
-// public price from the provider, combined here. Discounts are flagged
-// `indicative` because a user-declared rule is an estimate until verified live.
+// The enrichment engine layers the user's BENEFITS over provider results. For
+// each property it builds a match target (the provider's domain + the
+// property's brand/name + category "hotel"), finds which of the user's benefits
+// apply, and produces:
+//   - the matched benefits (discounts as % from the catalog)
+//   - perks (free breakfast, upgrades, etc.)
+// Per product rule #1 TrueRate never returns post-discount/member prices.
+// The consumer (AI assistant or channel) applies any discount % to the public
+// price they hold from the third-party provider.
 
 export class EnrichmentEngine {
   private providers: HotelProvider[];
@@ -33,9 +32,6 @@ export class EnrichmentEngine {
   }
 
   async enrich(query: HotelSearchQuery, memberships: Membership[]): Promise<EnrichmentResult> {
-    const currency = query.currency ?? "EUR";
-    const nights = nightsBetween(query.checkIn, query.checkOut);
-
     const perProvider = await Promise.all(
       this.providers.map((provider) =>
         provider
@@ -60,20 +56,7 @@ export class EnrichmentEngine {
           category: "hotel",
         });
 
-        const { memberOffer, perks } = applyBenefitsToPrice(
-          matched.map((m) => ({ benefit: m.benefit, membershipLabel: m.membershipLabel })),
-          p.publicOffer.nightlyAmount,
-          nights,
-          currency,
-        );
-
-        const memberOffers = memberOffer ? [memberOffer] : [];
-        const best = memberOffer ?? p.publicOffer;
-        const savings = round2(p.publicOffer.totalAmount - best.totalAmount);
-        const pct =
-          p.publicOffer.totalAmount > 0
-            ? Math.round((savings / p.publicOffer.totalAmount) * 1000) / 10
-            : 0;
+        const perks = collectPerks(matched.map((m) => m.benefit.value));
 
         for (const m of matched) programs.add(m.benefit.programId ?? m.benefit.id);
 
@@ -86,30 +69,25 @@ export class EnrichmentEngine {
           stars: p.stars,
           thumbnail: p.thumbnail,
           publicOffer: p.publicOffer,
-          memberOffers,
-          bestOffer: best,
+          matches: matched,
           perks,
-          savingsAmount: Math.max(0, savings),
-          savingsPercent: Math.max(0, pct),
-          indicative: Boolean(memberOffer?.indicative),
         });
       }
     }
 
-    // Lead with the rows that have the most to offer: cash savings first, then
-    // properties that at least carry perks.
+    // Lead with properties that have the most to offer: highest discount % first,
+    // then those that at least carry perks.
     properties.sort((a, b) => {
-      if (b.savingsAmount !== a.savingsAmount) return b.savingsAmount - a.savingsAmount;
+      const aDiscount = bestDiscountPct(a.matches);
+      const bDiscount = bestDiscountPct(b.matches);
+      if (bDiscount !== aDiscount) return bDiscount - aDiscount;
       return b.perks.length - a.perks.length;
     });
 
-    const totalSavings = round2(properties.reduce((s, p) => s + p.savingsAmount, 0));
-
     return {
       query,
-      currency,
+      currency: query.currency ?? "EUR",
       properties,
-      totalSavings,
       programsApplied: [...programs],
       generatedAt: new Date().toISOString(),
       mode: this.mode,
@@ -119,7 +97,7 @@ export class EnrichmentEngine {
   /**
    * Match the user's benefits against a single page the extension is looking at
    * (a results page or a hotel detail page). No search is run; we use the
-   * context the extension scraped (domain, optional property + public price).
+   * context the extension scraped (domain, optional property name/brand).
    */
   matchPage(context: PageContext, memberships: Membership[]): PageMatchResult {
     const matched = matchBenefits(memberships, {
@@ -129,41 +107,20 @@ export class EnrichmentEngine {
       category: "hotel",
     });
 
-    const result: PageMatchResult = {
+    return {
       domain: context.domain,
       matches: matched,
       perks: [...new Set(matched.flatMap((m) => m.benefit.value.perks ?? []))],
     };
-
-    const prop = context.property;
-    if (prop?.publicNightly && prop.publicNightly > 0) {
-      const currency = prop.currency ?? "EUR";
-      const nights = prop.publicTotal ? Math.max(1, Math.round(prop.publicTotal / prop.publicNightly)) : 1;
-      const publicOffer: RateOffer = {
-        source: "public",
-        label: "Public rate",
-        nightlyAmount: prop.publicNightly,
-        totalAmount: prop.publicTotal ?? prop.publicNightly,
-        currency,
-      };
-      const { memberOffer } = applyBenefitsToPrice(
-        matched.map((m) => ({ benefit: m.benefit, membershipLabel: m.membershipLabel })),
-        prop.publicNightly,
-        nights,
-        currency,
-      );
-      result.publicOffer = publicOffer;
-      if (memberOffer) result.indicativeOffer = memberOffer;
-    }
-
-    return result;
   }
 }
 
-function nightsBetween(checkIn: string, checkOut: string): number {
-  const n = Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86_400_000);
-  return Math.max(1, n);
-}
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+function bestDiscountPct(matches: ReturnType<typeof matchBenefits>): number {
+  let best = 0;
+  for (const m of matches) {
+    if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
+      best = Math.max(best, m.benefit.value.percentOff);
+    }
+  }
+  return best;
 }

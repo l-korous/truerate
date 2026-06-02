@@ -1,0 +1,97 @@
+name: Auto-merge agent PRs
+
+# Tiered auto-merge readiness gate (resolves #159).
+#
+# A poll-based sweeper that squash-merges the autonomous backlog runner's PRs so
+# the loop can clear its own work and keep chipping at the backlog without a human
+# present — while CI stays the quality gate. A PR is merged ONLY if ALL of:
+#   - head branch is `claude/*` (the agent namespace), base is `main`
+#   - it is NOT a draft (the agent marks ready only once green)
+#   - every check run on the head commit is completed and green
+#     (success/neutral/skipped) — re-verified here, not just the triggering run
+#   - it has no merge conflicts
+#   - it carries no `hold`, `do-not-merge`, or `blocked` label
+#
+# It is poll-based (not purely event-driven) on purpose: the agent marks a PR
+# ready AFTER its final CI run, so an event-only gate would miss it. A sweep on a
+# short schedule (plus a nudge right after CI) closes that timing gap robustly.
+#
+# To hold a specific PR back for manual review: add the `hold` label (or keep it
+# a draft). To pause ALL auto-merging: disable this workflow in the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 min (best-effort; GitHub may delay)
+  workflow_dispatch: {}
+  workflow_run:
+    # Nudge: sweep promptly whenever CI finishes, so green PRs don't wait for the
+    # next scheduled tick.
+    workflows: ["CI"]
+    types: [completed]
+
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge ready, green agent PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          prs=$(gh pr list --repo "$REPO" --state open --base main \
+                  --json number,headRefName,isDraft,labels,mergeable,headRefOid \
+                  --jq '[ .[] | select(.headRefName | startswith("claude/")) | select(.isDraft | not) ]')
+          count=$(echo "$prs" | jq 'length')
+          echo "Non-draft agent PRs to consider: $count"
+          merged=0
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            num=$(echo "$pr"       | jq -r '.number')
+            br=$(echo "$pr"        | jq -r '.headRefName')
+            sha=$(echo "$pr"       | jq -r '.headRefOid')
+            mergeable=$(echo "$pr" | jq -r '.mergeable')
+            held=$(echo "$pr"      | jq -r '[.labels[].name] | any(. == "hold" or . == "do-not-merge" or . == "blocked")')
+
+            if [ "$held" = "true" ]; then echo "#$num: held by label — skip."; continue; fi
+            if [ "$mergeable" = "CONFLICTING" ]; then echo "#$num: has conflicts — skip (needs rebase)."; continue; fi
+
+            # CRITICAL: never merge a branch that was tested against an older main.
+            # Two PRs can each be green in isolation yet break main together (a
+            # semantic merge conflict). If the head is behind main, update it
+            # (merges main in, re-triggering CI) and merge only on a later sweep
+            # once it is both up to date AND green.
+            behind=$(gh api "repos/$REPO/compare/$br...main" --jq '.ahead_by' 2>/dev/null || echo 0)
+            if [ "${behind:-0}" -gt 0 ]; then
+              echo "#$num: $behind commit(s) behind main — updating branch to re-test against latest main; will merge a later sweep if green."
+              gh pr update-branch "$num" --repo "$REPO" 2>&1 || echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              continue
+            fi
+
+            # Re-verify EVERY check on the head commit (belt and suspenders).
+            checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate \
+                       --jq '[.check_runs[] | {status, conclusion}]' 2>/dev/null || echo '[]')
+            total=$(echo "$checks"   | jq 'length')
+            pending=$(echo "$checks" | jq '[.[] | select(.status != "completed")] | length')
+            bad=$(echo "$checks"     | jq '[.[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length')
+
+            if [ "$total" -eq 0 ] || [ "$pending" -ne 0 ] || [ "$bad" -ne 0 ]; then
+              echo "#$num: checks not all green ($total total, $pending pending, $bad not-green) — skip."
+              continue
+            fi
+
+            echo "#$num: ready, no conflicts, all $total checks green — squash-merging."
+            if gh pr merge "$num" --repo "$REPO" --squash --delete-branch; then
+              echo "#$num: merged."
+            else
+              echo "#$num: merge call failed — will retry next sweep."
+            fi
+          done

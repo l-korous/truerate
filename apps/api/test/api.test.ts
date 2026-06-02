@@ -113,7 +113,7 @@ test("credential field is encrypted and never returned (when a program needs it)
   assert.equal(m.hasCredential, false);
 });
 
-test("authenticated hotel search reflects Genius savings + perks", async () => {
+test("authenticated hotel search reflects Genius matches + perks (no member price)", async () => {
   const app = await getApp();
   const { token } = await registerUser(app);
   await app.request("/memberships", { method: "POST", headers: authed(token),
@@ -123,23 +123,29 @@ test("authenticated hotel search reflects Genius savings + perks", async () => {
   const res = await app.request("/search/hotels", { method: "POST", headers: authed(token),
     body: JSON.stringify({ location: "Prague", checkIn: "2026-07-10", checkOut: "2026-07-12", adults: 2, rooms: 1 }) });
   const result = await res.json();
-  assert.ok(result.totalSavings > 0);
   assert.ok(result.programsApplied.includes("booking_genius"));
+  assert.ok(result.properties.some((p: any) => p.matches.length > 0), "expected matched benefits");
   assert.ok(result.properties.some((p: any) => p.perks.some((x: string) => /breakfast/i.test(x))));
+  // assert no price-computing fields are present
+  assert.ok(!("totalSavings" in result), "no totalSavings");
+  assert.ok(!("bestOffer" in result.properties[0]), "no bestOffer");
+  assert.ok(!("savingsAmount" in result.properties[0]), "no savingsAmount");
 });
 
-test("/benefits/match returns indicative price for a declared domain discount", async () => {
+test("/benefits/match returns matched discount % for a declared domain discount (no member price)", async () => {
   const app = await getApp();
   const { token } = await registerUser(app);
   await app.request("/memberships", { method: "POST", headers: authed(token),
     body: JSON.stringify({ label: "Hotel PECR",
       benefits: [{ scope: "property", match: { domains: ["pecr.cz"] }, value: { kind: "percentDiscount", percentOff: 0.15 } }] }) });
   const res = await app.request("/benefits/match", { method: "POST", headers: authed(token),
-    body: JSON.stringify({ domain: "pecr.cz", property: { name: "Hotel PECR", publicNightly: 2000, publicTotal: 4000, currency: "CZK" } }) });
+    body: JSON.stringify({ domain: "pecr.cz", property: { name: "Hotel PECR" } }) });
   const out = await res.json();
   assert.equal(out.matches.length, 1);
-  assert.equal(out.indicativeOffer.nightlyAmount, 1700);
-  assert.equal(out.indicativeOffer.indicative, true);
+  assert.equal(out.matches[0].benefit.value.percentOff, 0.15);
+  // no price fields
+  assert.ok(!("indicativeOffer" in out), "no indicativeOffer");
+  assert.ok(!("publicOffer" in out), "no publicOffer");
 });
 
 test("search validates required fields", async () => {

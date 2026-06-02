@@ -29,7 +29,7 @@ function membership(programId: string, tier?: string): Membership {
   };
 }
 
-function customGenius(percent: number): Membership {
+function customDiscount(percent: number): Membership {
   return {
     id: "m-custom",
     label: "Hotel PECR",
@@ -52,38 +52,41 @@ test("runs in mock mode without provider credentials", () => {
   assert.equal(new EnrichmentEngine().mode, "mock");
 });
 
-test("no memberships -> zero savings, no perks, best offer is public", async () => {
+test("no memberships -> no matches, no perks", async () => {
   const r = await new EnrichmentEngine([new BookingProvider()]).enrich(baseQuery, []);
   assert.ok(r.properties.length > 0);
-  assert.equal(r.totalSavings, 0);
   for (const p of r.properties) {
-    assert.equal(p.savingsAmount, 0);
-    assert.equal(p.bestOffer.source, "public");
+    assert.equal(p.matches.length, 0);
     assert.equal(p.perks.length, 0);
   }
+  // no price fields on the result
+  assert.ok(!("totalSavings" in r), "no totalSavings field");
+  assert.ok(!("savingsAmount" in r.properties[0]!), "no savingsAmount field");
+  assert.ok(!("bestOffer" in r.properties[0]!), "no bestOffer field");
 });
 
-test("Genius Level 3 applies ~20% across booking.com properties (indicative)", async () => {
+test("Genius Level 3 produces 20% discount match on booking.com properties", async () => {
   const r = await new EnrichmentEngine([new BookingProvider()]).enrich(baseQuery, [
     membership("booking_genius", "Level 3"),
   ]);
-  assert.ok(r.totalSavings > 0);
   assert.ok(r.programsApplied.includes("booking_genius"));
   const p = r.properties[0]!;
-  const ratio = p.bestOffer.totalAmount / p.publicOffer.totalAmount;
-  assert.ok(Math.abs(ratio - 0.8) < 0.01, `expected ~0.80, got ${ratio}`);
-  assert.equal(p.indicative, true, "declared/curated discount should be indicative");
+  assert.ok(p.matches.length > 0, "expected matches");
+  const geniusMatch = p.matches.find((m) => m.benefit.programId === "booking_genius");
+  assert.ok(geniusMatch, "expected a Genius match");
+  assert.equal(geniusMatch!.benefit.value.percentOff, 0.2, "Level 3 = 20%");
 });
 
-test("Marriott Platinum adds perks with NO price change (perks without discount)", async () => {
+test("Marriott Platinum adds perks with no discount match", async () => {
   const r = await new EnrichmentEngine([new BookingProvider()]).enrich(baseQuery, [
     membership("marriott_bonvoy", "Platinum"),
   ]);
-  // Marriott-branded mock properties should carry the breakfast perk (Platinum+,
-  // not Gold), with zero price change.
   const marriott = r.properties.find((p) => p.brand === "Marriott")!;
   assert.ok(marriott, "expected a Marriott property in the mock set");
-  assert.equal(marriott.savingsAmount, 0);
+  const discountMatches = marriott.matches.filter(
+    (m) => m.benefit.value.kind === "percentDiscount" || m.benefit.value.kind === "fixedDiscount",
+  );
+  assert.equal(discountMatches.length, 0, "Marriott Platinum has no price discount");
   assert.ok(marriott.perks.some((x) => /breakfast/i.test(x)));
 });
 
@@ -93,15 +96,20 @@ test("stacking: Genius discount AND Marriott perks on the same property", async 
     membership("marriott_bonvoy", "Gold"),
   ]);
   const marriott = r.properties.find((p) => p.brand === "Marriott")!;
-  assert.ok(marriott.savingsAmount > 0, "Genius discount should apply");
+  assert.ok(
+    marriott.matches.some((m) => m.benefit.programId === "booking_genius"),
+    "Genius match should apply",
+  );
   assert.ok(marriott.perks.some((x) => /upgrade|check-?out/i.test(x)), "Marriott Gold perk should apply");
 });
 
-test("higher Genius tier saves more", async () => {
+test("higher Genius tier carries higher discount percentage", async () => {
   const e = new EnrichmentEngine([new BookingProvider()]);
   const l1 = await e.enrich(baseQuery, [membership("booking_genius", "Level 1")]);
   const l3 = await e.enrich(baseQuery, [membership("booking_genius", "Level 3")]);
-  assert.ok(l3.totalSavings > l1.totalSavings);
+  const l1Pct = l1.properties[0]?.matches.find((m) => m.benefit.programId === "booking_genius")?.benefit.value.percentOff ?? 0;
+  const l3Pct = l3.properties[0]?.matches.find((m) => m.benefit.programId === "booking_genius")?.benefit.value.percentOff ?? 0;
+  assert.ok(l3Pct > l1Pct, `Level 3 pct ${l3Pct} should exceed Level 1 pct ${l1Pct}`);
 });
 
 test("a failing provider does not sink the search", async () => {
@@ -110,24 +118,25 @@ test("a failing provider does not sink the search", async () => {
   assert.equal(r.properties.length, 0);
 });
 
-test("matchPage: domain-scoped custom discount yields an indicative estimate", () => {
+test("matchPage: domain-scoped custom discount produces a matched benefit", () => {
   const engine = new EnrichmentEngine([new BookingProvider()]);
   const res = engine.matchPage(
-    { domain: "pecr.cz", property: { name: "Hotel PECR", publicNightly: 2000, publicTotal: 4000, currency: "CZK" } },
-    [customGenius(0.15)],
+    { domain: "pecr.cz", property: { name: "Hotel PECR" } },
+    [customDiscount(0.15)],
   );
   assert.equal(res.matches.length, 1);
-  assert.ok(res.indicativeOffer, "expected an indicative offer");
-  assert.equal(res.indicativeOffer!.nightlyAmount, 1700); // 2000 * 0.85
-  assert.equal(res.indicativeOffer!.indicative, true);
+  assert.equal(res.matches[0]!.benefit.value.percentOff, 0.15);
+  // no price fields on the result
+  assert.ok(!("indicativeOffer" in res), "no indicativeOffer field");
+  assert.ok(!("publicOffer" in res), "no publicOffer on PageMatchResult");
 });
 
-test("matchPage: perks surface even with no price on the page", () => {
+test("matchPage: perks surface even with no property context", () => {
   const engine = new EnrichmentEngine([new BookingProvider()]);
   const res = engine.matchPage(
     { domain: "hilton.com", property: { name: "DoubleTree Riverside", brand: "Hilton" } },
     [membership("hilton_honors", "Gold")],
   );
   assert.ok(res.perks.some((x) => /breakfast/i.test(x)));
-  assert.equal(res.indicativeOffer, undefined);
+  assert.ok(!("indicativeOffer" in res), "no indicativeOffer field");
 });
