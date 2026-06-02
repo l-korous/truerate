@@ -5,6 +5,7 @@ export * from "./match.js";
 export * from "./confidence.js";
 export * from "./crypto.js";
 export * from "./db.js";
+export * from "./catalog-db.js";
 export * from "./enrichment.js";
 export * from "./logger.js";
 export * from "./perk-value.js";

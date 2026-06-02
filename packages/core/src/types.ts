@@ -371,6 +371,135 @@ export interface PageMatchResult {
   perkEstimates: MatchedPerkEstimate[];
 }
 
+// --- Catalog schema ----------------------------------------------------------
+
+/**
+ * Lifecycle status for a catalog entry version.
+ *
+ * Allowed transitions:
+ *   draft → in-review → published → archived
+ *   draft → archived (rejected drafts)
+ */
+export type CatalogStatus = "draft" | "in-review" | "published" | "archived";
+
+/** How a catalog entry version was created or proposed. */
+export type CatalogProvenanceSource =
+  | "manual-seed"          // seeded from the static programs.ts catalog
+  | "scrape-proposal"      // proposed by the scraping job
+  | "partner-submission";  // submitted directly by the program operator
+
+/**
+ * Provenance metadata for one version of a catalog entry.
+ *
+ * Mirrors the `sourceUrl` / `asOf` / `region` fields already present on
+ * Program but adds structured tracking for how the record was created.
+ */
+export interface CatalogProvenance {
+  source: CatalogProvenanceSource;
+  /** URL where the benefits were researched (mirrors Program.sourceUrl). */
+  sourceUrl?: string;
+  /**
+   * "YYYY-MM" string indicating when the benefits were last verified.
+   * Mirrors Program.asOf.
+   */
+  asOf: string;
+  /** ISO-8601 timestamp if the record was produced by the scraper. */
+  scrapedAt?: string;
+  /** Identity (user id or service name) that created this version. */
+  submittedBy?: string;
+  /** Free-text summary of what changed in this version. */
+  notes?: string;
+}
+
+/**
+ * One versioned snapshot of a loyalty-program catalog entry, stored as a
+ * Cosmos NoSQL document in the `catalog` container.
+ *
+ * ## Partition strategy
+ * Partition key: `/programId`
+ * All versions of the same program are co-located on a single logical
+ * partition, so listing history and finding the current entry never require
+ * cross-partition fan-out.
+ *
+ * ## Document id
+ * `{programId}#v{version}` — globally unique within the container; allows
+ * point reads when the version number is already known.
+ *
+ * ## Versioning invariant
+ * Exactly ONE document per `programId` may have `isCurrent = true` at any
+ * moment.  A `published` entry with `isCurrent = true` is the live catalog
+ * record consumed by channels (MCP, extension, web).  Drafts always have
+ * `isCurrent = false`.
+ *
+ * ## No-price invariant (see issue #1)
+ * The `benefits` field mirrors `Program.benefits` — it may contain
+ * `percentDiscount` and `fixedDiscount` BenefitValues (indicative terms from
+ * published program pages), but MUST NOT contain hotel prices, nightly rates,
+ * or any amount computed from a property's room price.
+ */
+export interface CatalogEntryDoc {
+  /** Cosmos document id: "{programId}#v{version}". */
+  id: string;
+  /** Partition key. Matches Program.id for seed entries. */
+  programId: string;
+  /** Monotonically increasing version counter within a programId. Starts at 1. */
+  version: number;
+  /**
+   * True for the single active entry that consumers should read.
+   * Only a `published` entry may be current; exactly one per programId.
+   */
+  isCurrent: boolean;
+  /** Lifecycle status of this version. */
+  status: CatalogStatus;
+
+  // ── Provenance ─────────────────────────────────────────────────────────────
+  provenance: CatalogProvenance;
+
+  // ── Region ─────────────────────────────────────────────────────────────────
+  /**
+   * Region this entry applies to.
+   * "Global" = no regional restriction.
+   * ISO 3166-1 alpha-2 for country-specific entries, e.g. "CZ".
+   */
+  region: string;
+
+  // ── Program content (mirrors the Program type) ─────────────────────────────
+  /** Human-readable program name. */
+  name: string;
+  /** Program category. */
+  category: ProgramCategory;
+  /** Default matching rules inherited by all benefits of this program. */
+  defaultMatch: BenefitMatch;
+  /** Tier names in ascending order. Absent for flat / single-tier programs. */
+  tiers?: string[];
+  /** Whether a stored credential (API key, membership login) is expected. */
+  requiresCredential: boolean;
+  /** User-facing form fields (tier selector, optional membership number, …). */
+  fields: ProgramField[];
+  /**
+   * Benefit templates keyed by tier name.
+   * Use "*" as base / catch-all tier.
+   * Values must not include hotel prices — only % discounts, perk labels,
+   * and point-earn rates from the published program terms.
+   */
+  benefits: Record<string, BenefitTemplate[]>;
+
+  // ── Lifecycle timestamps ───────────────────────────────────────────────────
+  createdAt: string;   // ISO-8601
+  updatedAt: string;   // ISO-8601
+  publishedAt?: string;
+  archivedAt?: string;
+}
+
+/**
+ * Input shape for creating or updating a catalog entry draft.
+ * The repo assigns id, version, isCurrent, status, and timestamps.
+ */
+export type CatalogEntryInput = Omit<
+  CatalogEntryDoc,
+  "id" | "version" | "isCurrent" | "status" | "createdAt" | "updatedAt" | "publishedAt" | "archivedAt"
+>;
+
 // --- Client-side error reporting ---------------------------------------------
 
 export type ClientErrorSource =
