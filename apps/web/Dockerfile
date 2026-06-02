@@ -5,6 +5,9 @@ WORKDIR /repo
 
 FROM base AS build
 COPY pnpm-workspace.yaml package.json tsconfig.base.json turbo.json ./
+# Copy ALL workspace packages so pnpm can resolve every workspace dep
+# (core, harness, future ones) — selective copies broke when new packages landed.
+COPY packages packages
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile=false
 COPY apps/web apps/web
