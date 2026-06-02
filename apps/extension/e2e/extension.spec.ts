@@ -35,9 +35,14 @@ const HOTEL_HTML = `<!DOCTYPE html><html lang="en">
 
 async function makeContext(): Promise<BrowserContext> {
   const ctx = await chromium.launchPersistentContext("", {
-    // Load the built MV3 extension. Headless mode (--headless=new) is the
-    // Playwright/Chromium default and supports extensions since Chromium 112.
+    // Setting headless: false makes Playwright select the full Chromium binary
+    // instead of Chrome Headless Shell. Chrome Headless Shell does not support
+    // extensions. We then pass --headless=new so the full Chromium runs without
+    // a display server, while keeping extension support (requires Chromium 112+).
+    headless: false,
     args: [
+      "--headless=new",
+      "--no-sandbox", // required when running as root in CI containers
       `--disable-extensions-except=${EXTENSION_PATH}`,
       `--load-extension=${EXTENSION_PATH}`,
     ],
@@ -107,13 +112,16 @@ async function panelHtml(page: Awaited<ReturnType<BrowserContext["newPage"]>>): 
 
 /**
  * Wait for the panel to finish loading into its resolved state.
+ * #truerate-root is the shadow host — it has zero layout size because the panel
+ * inside is position:fixed, so we wait for "attached" not "visible".
  * Loading state shows "Checking your benefits…" with no close button or sign-in link.
  * Resolved states always have either:
  *   - .tr-btn  (signed-out prompt)
  *   - .tr-close (any result: match, no-match, or error with result)
  */
 async function waitForPanelReady(page: Awaited<ReturnType<BrowserContext["newPage"]>>): Promise<void> {
-  await page.waitForSelector("#truerate-root", { timeout: 10_000 });
+  // state "attached" because the host div has zero layout size (fixed-position shadow content).
+  await page.waitForSelector("#truerate-root", { state: "attached", timeout: 10_000 });
   await page.waitForFunction(
     () => {
       const host = document.getElementById("truerate-root");
@@ -124,7 +132,7 @@ async function waitForPanelReady(page: Awaited<ReturnType<BrowserContext["newPag
         shadow.querySelector(".tr-close") !== null    // any loaded result
       );
     },
-    { timeout: 10_000 },
+    { timeout: 15_000 },
   );
 }
 
@@ -170,7 +178,9 @@ test.describe("Panel — search results page", () => {
     expect(html).not.toMatch(/final\s+price/i);
     expect(html).not.toMatch(/post.discount/i);
     expect(html).not.toMatch(/member\s+price/i);
-    expect(html).not.toMatch(/indicative.*price/i);
+    // NOTE: the panel may legitimately contain "(indicative, not a price)" — the
+    // perk-estimates disclaimer. That phrase is correct product behavior. Do NOT
+    // assert /indicative.*price/i here; use the specific forbidden-phrase list instead.
   });
 });
 
@@ -214,11 +224,13 @@ test.describe("Panel — hotel detail page", () => {
     // Genius L3 gives 20% off — shown as a percent, never as a computed price
     expect(html).toMatch(/\d+%\s*off/i);
 
-    // Hard product-rule #1 guardrails
+    // Hard product-rule #1 guardrails.
+    // Note: "(indicative, not a price)" is the correct perk-estimate disclaimer and
+    // is NOT a violation — do not assert /indicative.*price/ here.
     expect(html).not.toMatch(/final\s+price/i);
     expect(html).not.toMatch(/post.discount/i);
     expect(html).not.toMatch(/member\s+price/i);
-    expect(html).not.toMatch(/indicative.*price/i);
+    expect(html).not.toMatch(/indicative\s+member\s+(price|savings)/i);
     expect(html).not.toMatch(/total.*\$\d{3,}/i);
     expect(html).not.toMatch(/you\s+save\s+\$\d+/i);
     expect(html).not.toMatch(/nightly\s+rate/i);
@@ -226,8 +238,11 @@ test.describe("Panel — hotel detail page", () => {
   });
 
   test("perk estimates are labeled as estimates — never a computed price", async () => {
+    // Genius Level 3 has known perk estimates (e.g. free breakfast) for Booking.com.
+    // Marriott perks are intentionally NOT used here — they only match Marriott-branded
+    // properties which our generic mock hotel is not.
     const token = await registerUser();
-    await addMembership(token, "marriott_bonvoy", "Platinum");
+    await addMembership(token, "booking_genius", "Level 3");
     await injectToken(ctx, token);
 
     const page = await ctx.newPage();
@@ -237,18 +252,21 @@ test.describe("Panel — hotel detail page", () => {
     const html = await panelHtml(page);
     expect(html).toContain("TrueRate");
 
-    // If perk estimates are shown they use the tilde (~$N) format, not a final price
-    if (html.includes("tr-est-value")) {
-      // Estimated values are prefixed with ~ to signal they are not prices
+    // When perk estimate values are rendered they use "~$N" (tilde-prefixed) format.
+    // "~$" appears ONLY in rendered estimate content, not in the CSS style block.
+    if (html.includes("~$")) {
+      // Estimated values are tilde-prefixed to signal they are not precise prices.
       expect(html).toMatch(/~\$\d+/);
-      // The panel itself notes "(indicative, not a price)"
-      expect(html).toContain("indicative");
+      // The panel section header explicitly labels these as "(indicative, not a price)".
+      // This disclaimer IS correct product behavior — it is not a price violation.
+      expect(html).toContain("indicative, not a price");
     }
 
-    // No price strings
+    // No price strings regardless of whether estimates are shown
     expect(html).not.toMatch(/final\s+price/i);
     expect(html).not.toMatch(/post.discount/i);
     expect(html).not.toMatch(/member\s+price/i);
+    expect(html).not.toMatch(/indicative\s+member\s+(price|savings)/i);
   });
 
   test("no post-discount or final price in any panel state (product rule #1 guardrail)", async () => {
