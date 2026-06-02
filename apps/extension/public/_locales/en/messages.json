@@ -1,0 +1,109 @@
+{
+  "extName": {
+    "message": "TrueRate",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "See the rates your loyalty memberships actually unlock — right on the search page.",
+    "description": "Extension description"
+  },
+
+  "popupSignInSub": {
+    "message": "Sign in to surface your member rates on Booking.com.",
+    "description": "Popup subtitle shown when signed out"
+  },
+  "popupEmailPlaceholder": {
+    "message": "Email",
+    "description": "Email input placeholder"
+  },
+  "popupPasswordPlaceholder": {
+    "message": "Password",
+    "description": "Password input placeholder"
+  },
+  "popupSignInButton": {
+    "message": "Sign in",
+    "description": "Sign in button label"
+  },
+  "popupSignedInSub": {
+    "message": "Connected. Open a Booking.com search to see your rates.",
+    "description": "Popup subtitle shown when signed in"
+  },
+  "popupSignOutButton": {
+    "message": "Sign out",
+    "description": "Sign out button label"
+  },
+  "popupOptionsLink": {
+    "message": "Settings",
+    "description": "Link to options page"
+  },
+
+  "panelSignInPrompt": {
+    "message": "Sign in to see the benefits you hold here.",
+    "description": "Content panel message when user is not signed in"
+  },
+  "panelOpenTrueRate": {
+    "message": "Open TrueRate",
+    "description": "Link text to open the TrueRate web app"
+  },
+  "panelLoading": {
+    "message": "Checking your benefits…",
+    "description": "Content panel loading message"
+  },
+  "panelNoBenefits": {
+    "message": "No benefits on file for this site yet.",
+    "description": "Content panel message when no benefits are available"
+  },
+  "panelPerkEstimatesHeader": {
+    "message": "Estimated perk value",
+    "description": "Header for the perk estimates section"
+  },
+  "panelPerkEstimatesNote": {
+    "message": "(indicative, not a price)",
+    "description": "Note clarifying perk estimates are not prices"
+  },
+  "panelActivePrefix": {
+    "message": "Active here:",
+    "description": "Prefix shown before the list of active memberships"
+  },
+  "panelDisclaimer": {
+    "message": "Discounts and perks are from your declared memberships. Apply discounts to the price you see.",
+    "description": "Footer disclaimer in the content panel"
+  },
+  "panelCloseAriaLabel": {
+    "message": "Close",
+    "description": "Aria label for the panel close button"
+  },
+
+  "optionsTitle": {
+    "message": "TrueRate Settings",
+    "description": "Options page title"
+  },
+  "optionsAccountHeading": {
+    "message": "Account",
+    "description": "Account section heading on options page"
+  },
+  "optionsSignedIn": {
+    "message": "Signed in",
+    "description": "Account status when signed in"
+  },
+  "optionsNotSignedIn": {
+    "message": "Not signed in",
+    "description": "Account status when not signed in"
+  },
+  "optionsSignOutButton": {
+    "message": "Sign out",
+    "description": "Sign out button on options page"
+  },
+  "optionsSignInLink": {
+    "message": "Sign in at TrueRate",
+    "description": "Link to sign in via the web app"
+  },
+  "optionsPreferencesHeading": {
+    "message": "Preferences",
+    "description": "Preferences section heading on options page"
+  },
+  "optionsShowPanelLabel": {
+    "message": "Show benefits panel on Booking.com",
+    "description": "Toggle label for showing the benefits panel"
+  }
+}

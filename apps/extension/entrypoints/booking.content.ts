@@ -3,6 +3,7 @@ import { detectPageType, extractHotelName } from "../utils/booking-context";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
 import { esc, perkEstimateRow } from "../utils/render-helpers";
+import { t } from "../utils/i18n";
 
 // Content script for Booking.com.
 //
@@ -114,11 +115,11 @@ function mountHost(): ShadowRoot {
 const panel = (s: ShadowRoot) => s.querySelector(".tr-panel") as HTMLElement;
 
 function renderSignedOut(s: ShadowRoot) {
-  panel(s).innerHTML = head() + `<div class="tr-body"><p>Sign in to see the benefits you hold here.</p>
-    <a class="tr-btn" href="http://localhost:3000" target="_blank" rel="noopener">Open TrueRate</a></div>`;
+  panel(s).innerHTML = head() + `<div class="tr-body"><p>${t("panelSignInPrompt")}</p>
+    <a class="tr-btn" href="http://localhost:3000" target="_blank" rel="noopener">${t("panelOpenTrueRate")}</a></div>`;
 }
 function renderLoading(s: ShadowRoot) {
-  panel(s).innerHTML = head() + `<div class="tr-body"><p class="tr-muted">Checking your benefits…</p></div>`;
+  panel(s).innerHTML = head() + `<div class="tr-body"><p class="tr-muted">${t("panelLoading")}</p></div>`;
 }
 function renderError(s: ShadowRoot, msg: string) {
   panel(s).innerHTML = head() + `<div class="tr-body"><p class="tr-muted">${esc(msg)}</p></div>`;
@@ -126,7 +127,7 @@ function renderError(s: ShadowRoot, msg: string) {
 
 function renderResult(s: ShadowRoot, r: PageMatchResult) {
   if (!r.matches.length && !r.perks.length) {
-    panel(s).innerHTML = head(true) + `<div class="tr-body"><p class="tr-muted">No benefits on file for this site yet.</p></div>`;
+    panel(s).innerHTML = head(true) + `<div class="tr-body"><p class="tr-muted">${t("panelNoBenefits")}</p></div>`;
     wireClose(s);
     return;
   }
@@ -152,13 +153,13 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
 
   const estimatesHtml = r.perkEstimates.length
     ? `<div class="tr-estimates">
-        <p class="tr-est-head">Estimated perk value <span class="tr-est-note">(indicative, not a price)</span></p>
+        <p class="tr-est-head">${t("panelPerkEstimatesHeader")} <span class="tr-est-note">${t("panelPerkEstimatesNote")}</span></p>
         ${r.perkEstimates.map((e) => perkEstimateRow(e)).join("")}
       </div>`
     : "";
 
   const active = r.matches.length
-    ? `<p class="tr-active">Active here: ${[...new Set(r.matches.map((m) => esc(m.membershipLabel)))].join(", ")}</p>`
+    ? `<p class="tr-active">${t("panelActivePrefix")} ${[...new Set(r.matches.map((m) => esc(m.membershipLabel)))].join(", ")}</p>`
     : "";
 
   panel(s).innerHTML = head(true) + `<div class="tr-body">
@@ -166,14 +167,14 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
       ${perksHtml}
       ${estimatesHtml}
       ${active}
-      <p class="tr-foot">Discounts and perks are from your declared memberships. Apply discounts to the price you see.</p>
+      <p class="tr-foot">${t("panelDisclaimer")}</p>
     </div>`;
   wireClose(s);
 }
 
 function head(closable = false): string {
   return `<div class="tr-head"><span class="tr-logo">TrueRate</span>
-    ${closable ? '<button class="tr-close" aria-label="Close">×</button>' : ""}</div>`;
+    ${closable ? `<button class="tr-close" aria-label="${t("panelCloseAriaLabel")}">×</button>` : ""}</div>`;
 }
 function wireClose(s: ShadowRoot) {
   s.querySelector(".tr-close")?.addEventListener("click", () => document.getElementById("truerate-root")?.remove());

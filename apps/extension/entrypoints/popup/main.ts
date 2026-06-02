@@ -1,5 +1,6 @@
 import { clearToken, getToken, login } from "../../utils/api";
 import { installWindowHandlers } from "../../utils/error-reporter";
+import { t } from "../../utils/i18n";
 
 installWindowHandlers("extension-popup");
 
@@ -16,10 +17,10 @@ function signInView(): string {
   return `
     <div class="card">
       <div class="logo">TrueRate</div>
-      <p class="sub">Sign in to surface your member rates on Booking.com.</p>
-      <input id="email" type="email" placeholder="Email" autocomplete="username" />
-      <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-      <button id="signin">Sign in</button>
+      <p class="sub">${t("popupSignInSub")}</p>
+      <input id="email" type="email" placeholder="${t("popupEmailPlaceholder")}" autocomplete="username" />
+      <input id="password" type="password" placeholder="${t("popupPasswordPlaceholder")}" autocomplete="current-password" />
+      <button id="signin">${t("popupSignInButton")}</button>
       <p id="err" class="err"></p>
     </div>`;
 }
@@ -28,8 +29,9 @@ function signedInView(): string {
   return `
     <div class="card">
       <div class="logo">TrueRate</div>
-      <p class="sub ok">Connected. Open a Booking.com search to see your rates.</p>
-      <button id="signout" class="ghost">Sign out</button>
+      <p class="sub ok">${t("popupSignedInSub")}</p>
+      <button id="signout" class="ghost">${t("popupSignOutButton")}</button>
+      <button id="options" class="ghost link">${t("popupOptionsLink")}</button>
     </div>`;
 }
 
@@ -50,6 +52,9 @@ function wire() {
     await clearToken();
     await render();
   });
+  document.getElementById("options")?.addEventListener("click", () => {
+    browser.runtime.openOptionsPage();
+  });
 }
 
 function stylesheet(): HTMLStyleElement {
@@ -62,7 +67,8 @@ function stylesheet(): HTMLStyleElement {
     .sub.ok{color:#0b8a5a}
     input{width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border:1px solid #dcdce6;border-radius:9px;font-size:13px}
     button{width:100%;padding:10px;border:0;border-radius:9px;background:#0b1f3a;color:#fff;font-weight:600;font-size:13px;cursor:pointer}
-    button.ghost{background:transparent;color:#0b1f3a;border:1px solid #dcdce6}
+    button.ghost{background:transparent;color:#0b1f3a;border:1px solid #dcdce6;margin-top:6px}
+    button.link{font-weight:400;font-size:12px;color:#6a6a85;border-color:transparent}
     .err{color:#c0392b;font-size:12px;min-height:14px;margin:8px 0 0}`;
   return s;
 }

@@ -6,9 +6,9 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   manifest: {
-    name: "TrueRate",
-    description:
-      "See the rates your loyalty memberships actually unlock — right on the search page.",
+    name: "__MSG_extName__",
+    description: "__MSG_extDescription__",
+    default_locale: "en",
     permissions: ["storage", "activeTab"],
     host_permissions: ["https://*.booking.com/*", "http://localhost:8787/*"],
     action: { default_popup: "popup.html", default_title: "TrueRate" },
