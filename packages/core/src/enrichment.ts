@@ -1,10 +1,12 @@
 import { collectPerks, matchBenefits } from "./match.js";
+import { estimatePerkValueAllBands, perkHasMonetaryEstimate } from "./perk-value.js";
 import { BookingProvider } from "./providers/booking.js";
 import type { HotelProvider } from "./providers/types.js";
 import type {
   EnrichedProperty,
   EnrichmentResult,
   HotelSearchQuery,
+  MatchedPerkEstimate,
   Membership,
   PageContext,
   PageMatchResult,
@@ -107,10 +109,28 @@ export class EnrichmentEngine {
       category: "hotel",
     });
 
+    const perkEstimates: MatchedPerkEstimate[] = [];
+    for (const m of matched) {
+      for (const sp of m.benefit.value.structuredPerks ?? []) {
+        if (perkHasMonetaryEstimate(sp.type)) {
+          const bands = estimatePerkValueAllBands(sp.type);
+          perkEstimates.push({
+            perkType: sp.type,
+            label: sp.label,
+            estimatedUsd: { 3: bands[3].estimatedUsd, 4: bands[4].estimatedUsd, 5: bands[5].estimatedUsd },
+            membershipLabel: m.membershipLabel,
+            conditions: sp.conditions,
+            isEstimate: true,
+          });
+        }
+      }
+    }
+
     return {
       domain: context.domain,
       matches: matched,
       perks: [...new Set(matched.flatMap((m) => m.benefit.value.perks ?? []))],
+      perkEstimates,
     };
   }
 }
