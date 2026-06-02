@@ -92,7 +92,24 @@ jobs:
             pending=$(echo "$checks" | jq '[.[] | select(.status != "completed")] | length')
             bad=$(echo "$checks"     | jq '[.[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length')
 
-            if [ "$total" -eq 0 ] || [ "$pending" -ne 0 ] || [ "$bad" -ne 0 ]; then
+            # Zero checks on the head usually means CI never ran on it — most often
+            # because update-branch produced a GITHUB_TOKEN merge commit and the
+            # follow-up dispatch lost a race (HTTP 500). Re-dispatch CI here so the
+            # PR self-heals on a later sweep instead of stalling forever. Guard
+            # against pile-up: don't dispatch if a CI run is already pending/running
+            # for this branch.
+            if [ "$total" -eq 0 ]; then
+              active=$(gh run list --repo "$REPO" --branch "$br" --workflow CI \
+                         --json status --jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length' 2>/dev/null || echo 0)
+              if [ "${active:-0}" -gt 0 ]; then
+                echo "#$num: no checks on head yet but CI is already running — waiting."
+              else
+                echo "#$num: no checks on head — dispatching CI."
+                gh workflow run CI --repo "$REPO" --ref "$br" 2>&1 || echo "#$num: CI dispatch failed (will retry next sweep)."
+              fi
+              continue
+            fi
+            if [ "$pending" -ne 0 ] || [ "$bad" -ne 0 ]; then
               echo "#$num: checks not all green ($total total, $pending pending, $bad not-green) — skip."
               continue
             fi
