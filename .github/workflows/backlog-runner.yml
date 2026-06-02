@@ -37,6 +37,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Full autonomy: keep the agent-ready queue fed by PRIORITY so the loop
+      # works the whole implementable backlog without a human deciding what's
+      # next. When fewer than MIN_QUEUE eligible (agent-ready, no branch) issues
+      # remain, label the next ones by priority (P0->P1->P2->none, then number).
+      # Exclusions = work that can't run headlessly and must stay human-driven:
+      #   blocked, needs-design, no-auto (owner/secrets/data/spec), type:epic,
+      #   type:spike, area:scraping (live data), area:infra / area:ci-cd /
+      #   area:auth / area:observability (cloud provisioning, secrets, deploy).
+      - name: Auto-enqueue next issues by priority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          eligible=0
+          for n in $(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
+              --jq '[ .[] | {n:.number, L:[.labels[].name]} | select((.L|index("blocked"))|not) ] | .[].n'); do
+            br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
+            [ "${br:-0}" -eq 0 ] && eligible=$((eligible+1))
+          done
+          MIN_QUEUE=3
+          need=$(( MIN_QUEUE - eligible ))
+          if [ "$need" -le 0 ]; then echo "Queue healthy (eligible=$eligible >= $MIN_QUEUE)."; exit 0; fi
+          echo "Eligible=$eligible < $MIN_QUEUE — auto-enqueuing up to $need by priority."
+          cands=$(gh issue list --repo "$REPO" --state open --limit 300 --json number,labels --jq '
+            [ .[] | {n:.number, L:[.labels[].name]}
+              | select((.L|index("agent-ready"))|not)
+              | select( ["blocked","needs-design","no-auto","type:epic","type:spike",
+                         "area:scraping","area:infra","area:ci-cd","area:auth","area:observability"]
+                        as $X | (.L|any(. as $l | $X|index($l))) | not )
+              | {n, p:(if (.L|index("P0")) then 0 elif (.L|index("P1")) then 1 elif (.L|index("P2")) then 2 else 3 end)} ]
+            | sort_by(.p, .n) | .[].n')
+          c=0
+          for n in $cands; do
+            [ "$c" -ge "$need" ] && break
+            if gh api -X POST "repos/$REPO/issues/$n/labels" -f "labels[]=agent-ready" >/dev/null 2>&1; then
+              echo "auto-enqueued #$n"; c=$((c+1))
+            else
+              echo "could not label #$n"
+            fi
+          done
+          [ "$c" -eq 0 ] && echo "Nothing eligible left to enqueue — autonomous backlog drained."
+
       - name: Pick next agent-ready issue
         id: pick
         env:
@@ -53,11 +96,14 @@ jobs:
             echo "At capacity (open agent PRs=$inflight/$MAX_INFLIGHT, active runs=$active). Skipping."
             echo "should_run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          # Lowest-numbered agent-ready issue that has NO claude/<n>-* branch yet.
-          # Skip-and-CONTINUE past issues already in progress / done-awaiting-merge,
-          # so one completed-but-unmerged issue can't wedge the whole queue.
+          # Highest-PRIORITY agent-ready issue that has NO claude/<n>-* branch yet
+          # (P0 < P1 < P2 < none, then lowest number). Skip-and-CONTINUE past
+          # issues already in progress / done-awaiting-merge, so one completed-but-
+          # unmerged issue can't wedge the whole queue.
           CANDIDATES=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
-            --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | .[].number')
+            --jq '[ .[] | {n:.number, L:[.labels[].name]} | select( (.L|index("blocked")) | not )
+                    | {n, p:(if (.L|index("P0")) then 0 elif (.L|index("P1")) then 1 elif (.L|index("P2")) then 2 else 3 end)} ]
+                  | sort_by(.p, .n) | .[].n')
           PICK=""
           for n in $CANDIDATES; do
             br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
