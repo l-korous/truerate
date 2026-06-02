@@ -10,6 +10,8 @@ import type {
   Membership,
   PageContext,
   PageMatchResult,
+  TermProvenance,
+  TermConfidence,
 } from "./types.js";
 
 // The enrichment engine layers the user's BENEFITS over provider results. For
@@ -114,6 +116,10 @@ export class EnrichmentEngine {
       for (const sp of m.benefit.value.structuredPerks ?? []) {
         if (perkHasMonetaryEstimate(sp.type)) {
           const bands = estimatePerkValueAllBands(sp.type);
+          const termProvenance: TermProvenance =
+            sp.provenance ?? (m.benefit.source === "user-declared" ? "user-declared" : "catalog");
+          const termConfidence: TermConfidence =
+            sp.confidence ?? (m.benefit.source === "user-declared" ? "declared" : "verified");
           perkEstimates.push({
             perkType: sp.type,
             label: sp.label,
@@ -121,6 +127,10 @@ export class EnrichmentEngine {
             membershipLabel: m.membershipLabel,
             conditions: sp.conditions,
             isEstimate: true,
+            termProvenance,
+            termConfidence,
+            estimateProvenance: "default-estimate",
+            estimateConfidence: "estimated",
           });
         }
       }
