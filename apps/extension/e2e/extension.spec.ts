@@ -31,6 +31,19 @@ const HOTEL_HTML = `<!DOCTYPE html><html lang="en">
 </body>
 </html>`;
 
+// Genius-active hotel page: includes a DOM signal that detectGeniusActive() picks up.
+const GENIUS_HOTEL_HTML = `<!DOCTYPE html><html lang="en">
+<head>
+  <title>Hotel Metropol – Prague | Booking.com</title>
+  <meta property="og:title" content="Hotel Metropol, Prague, Czech Republic">
+</head>
+<body>
+  <div data-testid="title">Hotel Metropol</div>
+  <div data-testid="genius-logo" aria-label="Booking Genius">Genius</div>
+  <p>Central Prague · 4-star hotel</p>
+</body>
+</html>`;
+
 // --- Context helpers ---------------------------------------------------------
 
 async function makeContext(): Promise<BrowserContext> {
@@ -60,6 +73,30 @@ async function makeContext(): Promise<BrowserContext> {
     }
   });
 
+  return ctx;
+}
+
+/** Context with a Genius-active hotel page — routes /hotel/* to GENIUS_HOTEL_HTML. */
+async function makeGeniusContext(): Promise<BrowserContext> {
+  const ctx = await chromium.launchPersistentContext("", {
+    headless: false,
+    args: [
+      "--headless=new",
+      "--no-sandbox",
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+    ],
+  });
+  await ctx.route(/booking\.com/, (route) => {
+    const url = route.request().url();
+    if (url.includes("/hotel/")) {
+      route.fulfill({ status: 200, contentType: "text/html", body: GENIUS_HOTEL_HTML });
+    } else if (url.includes("/searchresults")) {
+      route.fulfill({ status: 200, contentType: "text/html", body: SEARCH_HTML });
+    } else {
+      route.abort();
+    }
+  });
   return ctx;
 }
 
@@ -317,5 +354,81 @@ test.describe("Panel — hotel detail page", () => {
     expect(html).not.toMatch(/genius\s+rate/i);
     expect(html).not.toMatch(/post.discount/i);
     expect(html).not.toMatch(/final\s+price/i);
+  });
+});
+
+// =============================================================================
+// Genius-active page tests
+// =============================================================================
+
+test.describe("Panel — Genius-active hotel page", () => {
+  let ctx: BrowserContext;
+
+  test.beforeEach(async () => {
+    ctx = await makeGeniusContext();
+  });
+
+  test.afterEach(async () => {
+    await ctx.close();
+  });
+
+  test("panel shows Genius-active note when Genius DOM signal is present", async () => {
+    const token = await registerUser();
+    await addMembership(token, "booking_genius", "Level 1");
+    await injectToken(ctx, token);
+
+    const page = await ctx.newPage();
+    await page.goto("https://www.booking.com/hotel/cz/metropol.html");
+    await waitForPanelReady(page);
+
+    const html = await panelHtml(page);
+    expect(html).toContain("TrueRate");
+    // The Genius-active note element must appear in the panel
+    expect(html).toContain("tr-genius-note");
+    // The note must not use any forbidden framing
+    expect(html).not.toMatch(/already\s+applied/i);
+    expect(html).not.toMatch(/genius\s+price/i);
+    expect(html).not.toMatch(/genius\s+rate/i);
+    expect(html).not.toMatch(/post.discount/i);
+    expect(html).not.toMatch(/final\s+price/i);
+    expect(html).not.toMatch(/member\s+price/i);
+  });
+
+  test("Genius-active panel still shows incremental TrueRate benefits", async () => {
+    const token = await registerUser();
+    await addMembership(token, "booking_genius", "Level 3");
+    await injectToken(ctx, token);
+
+    const page = await ctx.newPage();
+    await page.goto("https://www.booking.com/hotel/cz/metropol.html");
+    await waitForPanelReady(page);
+
+    const html = await panelHtml(page);
+    expect(html).toContain("TrueRate");
+    // Genius note is shown because the page has a Genius DOM signal
+    expect(html).toContain("tr-genius-note");
+    // Benefits are still displayed (% discount shown, no prices)
+    expect(html).toMatch(/\d+%\s*off/i);
+    expect(html).not.toMatch(/final\s+price/i);
+    expect(html).not.toMatch(/post.discount/i);
+    expect(html).not.toMatch(/member\s+price/i);
+  });
+
+  test("Genius-active panel without benefits still shows Genius note", async () => {
+    // Register a user with NO memberships — no TrueRate benefits to show.
+    const token = await registerUser();
+    await injectToken(ctx, token);
+
+    const page = await ctx.newPage();
+    await page.goto("https://www.booking.com/hotel/cz/metropol.html");
+    await waitForPanelReady(page);
+
+    const html = await panelHtml(page);
+    expect(html).toContain("TrueRate");
+    // The Genius note still appears so the user knows Genius is active
+    expect(html).toContain("tr-genius-note");
+    // No forbidden patterns
+    expect(html).not.toMatch(/final\s+price/i);
+    expect(html).not.toMatch(/member\s+price/i);
   });
 });

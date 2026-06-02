@@ -73,6 +73,10 @@
     "message": "Zavřít",
     "description": "Aria label for the panel close button"
   },
+  "panelGeniusActiveNote": {
+    "message": "Na této stránce je aktivní Booking Genius. TrueRate zobrazuje, co vaše členství přidávají navíc.",
+    "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
+  },
 
   "optionsTitle": {
     "message": "Nastavení TrueRate",

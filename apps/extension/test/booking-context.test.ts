@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectPageType, extractHotelName, buildPageContext } from "../utils/booking-context.js";
+import { detectPageType, extractHotelName, buildPageContext, detectGeniusActive } from "../utils/booking-context.js";
 import type { DocLike } from "../utils/booking-context.js";
 
 // --- detectPageType ----------------------------------------------------------
@@ -141,4 +141,66 @@ test("buildPageContext: detail page without hotel name omits property", () => {
   const doc = mockDoc({}, "");
   const ctx = buildPageContext("https://www.booking.com/hotel/cz/unknown.html", doc);
   assert.deepEqual(ctx, { domain: "booking.com" });
+});
+
+// --- detectGeniusActive ------------------------------------------------------
+
+function mockDocWithSelectors(present: string[]): DocLike {
+  return {
+    querySelector(selector: string) {
+      if (present.includes(selector)) {
+        return { textContent: "Genius", getAttribute: () => null };
+      }
+      return null;
+    },
+    title: "",
+  };
+}
+
+test("detectGeniusActive: returns false when no Genius signals present", () => {
+  const doc = mockDocWithSelectors([]);
+  assert.equal(detectGeniusActive(doc), false);
+});
+
+test("detectGeniusActive: detects genius-logo data-testid", () => {
+  const doc = mockDocWithSelectors(['[data-testid="genius-logo"]']);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: detects header-genius-logo data-testid", () => {
+  const doc = mockDocWithSelectors(['[data-testid="header-genius-logo"]']);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: detects genius-banner data-testid", () => {
+  const doc = mockDocWithSelectors(['[data-testid="genius-banner"]']);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: detects web-genius-banner data-testid", () => {
+  const doc = mockDocWithSelectors(['[data-testid="web-genius-banner"]']);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: detects genius-badge data-component", () => {
+  const doc = mockDocWithSelectors(['[data-component="genius-badge"]']);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: detects BUI Genius CSS class", () => {
+  const doc = mockDocWithSelectors([".bui-header__action-link--genius"]);
+  assert.equal(detectGeniusActive(doc), true);
+});
+
+test("detectGeniusActive: returns false for unrelated DOM signals", () => {
+  const doc = mockDocWithSelectors(['[data-testid="title"]', '[data-testid="property-header"]']);
+  assert.equal(detectGeniusActive(doc), false);
+});
+
+test("detectGeniusActive: returns true when multiple signals present", () => {
+  const doc = mockDocWithSelectors([
+    '[data-testid="genius-logo"]',
+    '[data-testid="genius-banner"]',
+  ]);
+  assert.equal(detectGeniusActive(doc), true);
 });
