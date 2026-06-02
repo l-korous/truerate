@@ -91,6 +91,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # This workflow runs ONLY on schedule + workflow_dispatch (no untrusted
+          # trigger surface), and the loop dispatches itself / is nudged by
+          # auto-merge via GITHUB_TOKEN, so the actor is github-actions[bot].
+          # Without this, the action aborts ("Workflow initiated by non-human
+          # actor") and the loop only works when a human dispatches it.
+          allowed_bots: "*"
           # bypassPermissions: this is an ephemeral CI sandbox, the agent needs
           # Edit/Write/Bash to implement, verify, commit and push. --max-turns
           # bounds a single run so it can't drain the whole Max window.
