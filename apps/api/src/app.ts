@@ -13,6 +13,9 @@ import {
   summariseBenefits,
   templatesForTier,
   estimatePerkValueAllBands,
+  generateMcpToken,
+  hashMcpToken,
+  mcpUrlForToken,
   createLogger,
   generateCorrelationId,
   hashUserId,
@@ -177,6 +180,50 @@ app.post("/auth/login", async (c) => {
 app.get("/me", requireAuth, async (c) => {
   const user = await loadUser(c.get("userId"));
   return c.json({ user: publicUser(user) });
+});
+
+// --- Per-user MCP URL (issue #82) -------------------------------------------
+// Each user mints one opaque token; their MCP endpoint embeds it in the path
+// (https://<mcp-host>/u/<token>/mcp) because MCP desktop clients can't send
+// custom auth headers. Only the token's hash is stored; the raw token/URL is
+// returned exactly ONCE here. POST issues-or-rotates (always a fresh token,
+// invalidating any previous one); DELETE revokes; GET reports status only.
+
+/** Public base URL of the MCP service, used to build the personal URL. */
+function mcpPublicBase(): string {
+  return process.env.MCP_PUBLIC_URL ?? "http://localhost:8788";
+}
+
+app.post("/me/mcp-url", requireAuth, async (c) => {
+  const user = await loadUser(c.get("userId"));
+  const token = generateMcpToken();
+  const createdAt = new Date().toISOString();
+  user.mcpToken = { hash: hashMcpToken(token), createdAt };
+  markActivation(user, "mcp_url_obtained");
+  await saveUser(user);
+  c.get("logger").info("mcp url issued", { userIdHash: hashUserId(user.id) });
+  // url + token are shown once and never stored — the client must save them now.
+  return c.json({ url: mcpUrlForToken(mcpPublicBase(), token), token, createdAt });
+});
+
+app.get("/me/mcp-url", requireAuth, async (c) => {
+  const user = await loadUser(c.get("userId"));
+  if (!user.mcpToken) return c.json({ active: false });
+  // The raw token/URL cannot be reconstructed (only its hash is stored); the
+  // user must rotate to obtain a fresh URL if they lost the previous one.
+  return c.json({
+    active: true,
+    createdAt: user.mcpToken.createdAt,
+    lastUsedAt: user.mcpToken.lastUsedAt,
+  });
+});
+
+app.delete("/me/mcp-url", requireAuth, async (c) => {
+  const user = await loadUser(c.get("userId"));
+  user.mcpToken = undefined;
+  await saveUser(user);
+  c.get("logger").info("mcp url revoked", { userIdHash: hashUserId(user.id) });
+  return c.body(null, 204);
 });
 
 // Two valid shapes for adding a membership:

@@ -258,7 +258,12 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'api'
           image: apiImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: concat(cosmosEnv, secretEnv, [ { name: 'API_PORT', value: '8787' } ])
+          env: concat(cosmosEnv, secretEnv, [
+            { name: 'API_PORT', value: '8787' }
+            // Base URL of the MCP service, used to build each user's personal
+            // MCP URL (https://<mcp>/u/<token>/mcp) — see issue #82.
+            { name: 'MCP_PUBLIC_URL', value: 'https://${mcp.properties.configuration.ingress.fqdn}' }
+          ])
           probes: [
             {
               type: 'Startup'
