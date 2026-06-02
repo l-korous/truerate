@@ -25,6 +25,10 @@ export interface PerkEstimate {
   estimatedUsd: number;
   /** Always true — this is explicitly NOT a price or a discount amount. */
   isEstimate: true;
+  /** Always "default-estimate" — values come from the curated estimation table. */
+  estimateProvenance: "default-estimate";
+  /** Always "estimated" — these are heuristic values, not verified amounts. */
+  estimateConfidence: "estimated";
 }
 
 /**
@@ -60,7 +64,7 @@ const PERK_VALUE_TABLE: Record<PerkType, Record<StarBand, number>> = {
 export function estimatePerkValue(perkType: PerkType, starBand: StarBand): PerkEstimate {
   const row = PERK_VALUE_TABLE[perkType];
   const estimatedUsd = row ? (row[starBand] ?? 0) : 0;
-  return { perkType, starBand, estimatedUsd, isEstimate: true };
+  return { perkType, starBand, estimatedUsd, isEstimate: true, estimateProvenance: "default-estimate", estimateConfidence: "estimated" };
 }
 
 /**

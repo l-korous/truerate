@@ -53,6 +53,31 @@ export type PerkType =
   | "other";               // Catch-all for perks outside this taxonomy
 
 // ---------------------------------------------------------------------------
+// Provenance + confidence labeling
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a specific perk term, condition, or value estimate originated.
+ *
+ * - "catalog"          — from TrueRate's curated program catalog
+ * - "user-declared"    — the user manually declared they hold this perk
+ * - "default-estimate" — derived from the curated estimation table (values only)
+ */
+export type TermProvenance = "catalog" | "user-declared" | "default-estimate";
+
+/**
+ * How trustworthy a specific perk term, condition, or value estimate is.
+ *
+ * - "verified"  — confirmed from an authoritative source (catalog with sourceUrl
+ *                 and recent asOf, or live provider data)
+ * - "declared"  — stated by the user, or from the catalog without explicit live
+ *                 verification
+ * - "estimated" — derived from heuristic / estimation table; not sourced from
+ *                 program terms
+ */
+export type TermConfidence = "verified" | "declared" | "estimated";
+
+// ---------------------------------------------------------------------------
 // Conditions model
 // ---------------------------------------------------------------------------
 
@@ -107,6 +132,10 @@ export interface StructuredPerk {
   label: string;
   /** Structured conditions qualifying when the perk applies. */
   conditions?: PerkConditions;
+  /** Where this perk term originated in TrueRate's data pipeline. */
+  provenance?: TermProvenance;
+  /** How trustworthy this perk term is. */
+  confidence?: TermConfidence;
 }
 
 /** What a benefit gives the user. */
@@ -370,6 +399,14 @@ export interface MatchedPerkEstimate {
   conditions?: PerkConditions;
   /** Always true — this is NOT a price or a discount amount. */
   isEstimate: true;
+  /** Where the perk term itself originated. Derived from the benefit source. */
+  termProvenance: TermProvenance;
+  /** Trustworthiness of the perk term. */
+  termConfidence: TermConfidence;
+  /** Always "default-estimate" — monetary values come from the estimation table. */
+  estimateProvenance: "default-estimate";
+  /** Always "estimated" — these are heuristic values, not verified amounts. */
+  estimateConfidence: "estimated";
 }
 
 export interface PageMatchResult {
