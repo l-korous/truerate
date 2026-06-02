@@ -2,7 +2,7 @@
  * Seed script: loads all programs from programs.ts into the Cosmos catalog
  * container as published records with provenance=manual-seed.
  *
- * Idempotent: uses upsert, so re-running is always safe.
+ * Idempotent: already-seeded programs are skipped (seedIfEmpty).
  *
  * Usage:
  *   pnpm --filter @truerate/core seed:catalog
@@ -13,26 +13,17 @@
  *   COSMOS_DATABASE   — database name (default: "truerate")
  */
 
-import { getCatalogRepo, toCatalogProgram } from "../src/catalog-repo.js";
+import { getCatalogRepo, programToCatalogInput } from "../src/catalog-db.js";
 import { PROGRAMS } from "../src/programs.js";
 
 async function main() {
-  console.log(`Seeding ${PROGRAMS.length} programs into catalog…`);
+  console.log(`Seeding up to ${PROGRAMS.length} programs into catalog…`);
 
   const repo = await getCatalogRepo();
+  const inputs = PROGRAMS.map(programToCatalogInput);
+  const result = await repo.seedIfEmpty(inputs);
 
-  let seeded = 0;
-  for (const program of PROGRAMS) {
-    const doc = toCatalogProgram(program, {
-      provenance: "manual-seed",
-      status: "published",
-    });
-    await repo.upsert(doc);
-    seeded++;
-    console.log(`  [${seeded}/${PROGRAMS.length}] ${program.id}`);
-  }
-
-  console.log(`Done — ${seeded} programs seeded.`);
+  console.log(`Done — ${result.seeded} programs seeded, ${result.skipped} skipped.`);
 }
 
 main().catch((err) => {
