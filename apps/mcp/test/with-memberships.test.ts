@@ -1,22 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { buildServer } from "../src/server.js";
-import {
-  getUserRepo,
-  getProgram,
-  instantiateBenefits,
-  type User,
-} from "@truerate/core";
+import { getUserRepo, getProgram, instantiateBenefits, type User } from "@truerate/core";
 
 // Cross-channel e2e: memberships stored in the shared data store (core repo)
 // must be surfaced correctly through both MCP tools. This is the product's
-// central promise — one vault, multiple channels — and previously had zero
-// coverage (existing MCP tests only exercised the empty-user case).
+// central promise — one vault, multiple channels.
 //
-// No HTTP server needed: in-memory repo + in-memory MCP transport exercise
-// the full tool handler bodies (repo read → enrichment → response format).
+// MCP is pure membership-intelligence: it returns which discounts (%), perks,
+// and conditions apply (an McpBenefitResult) — NEVER prices or savings amounts.
+// These tests assert that contract directly (see issue #1 / CLAUDE.md).
+//
+// No HTTP server needed: in-memory repo + in-memory MCP transport exercise the
+// full tool handler bodies (repo read → match → response format).
 
 async function wire(userId: string) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -29,7 +28,7 @@ async function wire(userId: string) {
 
 async function seedUser(memberships: User["memberships"]): Promise<string> {
   const repo = await getUserRepo();
-  const userId = `cross-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const userId = `cross-${randomUUID()}`;
   await repo.create({
     id: userId,
     email: `${userId}@example.com`,
@@ -41,6 +40,13 @@ async function seedUser(memberships: User["memberships"]): Promise<string> {
   });
   return userId;
 }
+
+type BenefitMatch = {
+  membershipLabel: string;
+  discount?: { percentOff: number };
+  perks: string[];
+};
+type SearchResult = { matches: BenefitMatch[]; programsApplied: string[] };
 
 // --- get_membership_summary with real stored memberships -------------------
 
@@ -94,7 +100,7 @@ test("get_membership_summary returns catalog memberships with correct benefit li
 
 // --- search_hotels with stored memberships applies discounts ---------------
 
-test("search_hotels with Booking Genius Level 3 produces savings and lists the program as applied", async () => {
+test("search_hotels with Booking Genius Level 3 surfaces the 20% discount and lists the program as applied", async () => {
   const genius = getProgram("booking_genius")!;
   const userId = await seedUser([
     {
@@ -113,27 +119,24 @@ test("search_hotels with Booking Genius Level 3 produces savings and lists the p
   try {
     const result = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Prague", checkIn: "2026-08-01", checkOut: "2026-08-03" },
+      arguments: { domain: "booking.com", location: "Prague" },
     });
-    assert.ok(!result.isError);
+    assert.ok(!result.isError, `tool error: ${JSON.stringify(result)}`);
 
-    const sc = result.structuredContent as {
-      properties: { savingsAmount: number }[];
-      totalSavings: number;
-      programsApplied: string[];
-    };
+    const sc = result.structuredContent as unknown as SearchResult;
 
-    // Genius Level 3 is 20% off all Booking.com properties — savings must be positive.
-    assert.ok(sc.totalSavings > 0, `totalSavings must be > 0 when Genius is applied; got ${sc.totalSavings}`);
+    // Genius Level 3 is 20% off on Booking.com — a discount match must be present.
+    const has20 = sc.matches.some(
+      (m) => m.discount !== undefined && Math.round(m.discount.percentOff * 100) === 20,
+    );
+    assert.ok(has20, `a 20% Genius discount match must be present; got ${JSON.stringify(sc.matches)}`);
     assert.ok(
       sc.programsApplied.includes("booking_genius"),
       `booking_genius must be in programsApplied; got: ${JSON.stringify(sc.programsApplied)}`,
     );
-    // Every property should have a savings amount (Genius matches all booking.com hotels).
-    assert.ok(
-      sc.properties.every((p) => p.savingsAmount > 0),
-      "all mock booking.com properties should show Genius savings",
-    );
+
+    const text = (result.content[0] as { type: "text"; text: string }).text;
+    assert.match(text, /20% off/, "formatted text must surface the discount label");
   } finally {
     await server.close();
   }
@@ -141,7 +144,7 @@ test("search_hotels with Booking Genius Level 3 produces savings and lists the p
 
 // --- search_hotels with Marriott Platinum surfaces perks -------------------
 
-test("search_hotels with Marriott Platinum surfaces breakfast perk on Marriott-brand properties", async () => {
+test("search_hotels with Marriott Platinum surfaces the breakfast perk on Marriott-brand context", async () => {
   const marriott = getProgram("marriott_bonvoy")!;
   const userId = await seedUser([
     {
@@ -160,32 +163,26 @@ test("search_hotels with Marriott Platinum surfaces breakfast perk on Marriott-b
   try {
     const result = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Vienna", checkIn: "2026-08-01", checkOut: "2026-08-03" },
+      arguments: { brand: "Marriott", location: "Vienna" },
     });
-    assert.ok(!result.isError);
+    assert.ok(!result.isError, `tool error: ${JSON.stringify(result)}`);
 
-    const sc = result.structuredContent as {
-      properties: { name: string; brand?: string; perks: string[] }[];
-      programsApplied: string[];
-    };
+    const sc = result.structuredContent as unknown as SearchResult;
 
-    // Marriott Bonvoy Platinum includes free breakfast on Marriott-brand properties.
-    // The mock dataset includes Sheraton Grand, Courtyard Park, Westin Belvedere
-    // all tagged with brand "Marriott" — at least one must carry the perk.
-    const marriottProperties = sc.properties.filter((p) => p.brand === "Marriott");
-    assert.ok(marriottProperties.length > 0, "mock data must include Marriott-brand properties");
+    // Marriott Bonvoy Platinum is a perk-only tier (free breakfast etc.) matched
+    // on Marriott brands — at least one match must carry the breakfast perk.
+    const hasBreakfast = sc.matches.some((m) => m.perks.some((pk) => /breakfast/i.test(pk)));
+    assert.ok(hasBreakfast, `Marriott Platinum breakfast perk must appear; got ${JSON.stringify(sc.matches)}`);
 
-    const hasBreakfastPerk = marriottProperties.some((p) =>
-      p.perks.some((pk) => /breakfast/i.test(pk)),
-    );
-    assert.ok(hasBreakfastPerk, "Marriott Platinum breakfast perk must appear on Marriott-brand properties");
-
-    // Marriott Platinum is a perk-only tier (no % discount), so totalSavings should
-    // not come from this membership (no monetary discount benefit defined).
     assert.ok(
       sc.programsApplied.includes("marriott_bonvoy"),
       `marriott_bonvoy must appear in programsApplied; got: ${JSON.stringify(sc.programsApplied)}`,
     );
+
+    // Perk-only tier: no percent discount should be attached to this match.
+    const marriottMatch = sc.matches.find((m) => /Marriott/i.test(m.membershipLabel));
+    assert.ok(marriottMatch, "a Marriott match must be present");
+    assert.strictEqual(marriottMatch!.discount, undefined, "perk-only tier must carry no % discount");
   } finally {
     await server.close();
   }
@@ -210,20 +207,16 @@ test("MCP text output never contains price amounts or 'member price' language", 
 
   const { client, server } = await wire(userId);
   try {
-    // summary
     const summaryResult = await client.callTool({ name: "get_membership_summary", arguments: {} });
     const summaryText = (summaryResult.content[0] as { type: "text"; text: string }).text;
     assert.doesNotMatch(summaryText, /member price/i, "summary must not contain 'member price'");
     assert.doesNotMatch(summaryText, /post.discount/i, "summary must not contain post-discount price");
 
-    // search
     const searchResult = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Prague", checkIn: "2026-09-01", checkOut: "2026-09-03" },
+      arguments: { domain: "booking.com", location: "Prague" },
     });
     const searchText = (searchResult.content[0] as { type: "text"; text: string }).text;
-    // "member (est.)" is the MCP's savings notation (see formatResult) — that's fine.
-    // What's NOT allowed: "member price" (implying a final price TrueRate computed).
     assert.doesNotMatch(searchText, /member price/i, "search text must not contain 'member price'");
     assert.doesNotMatch(searchText, /final price/i, "search text must not contain 'final price'");
     assert.doesNotMatch(searchText, /post.discount/i, "search text must not contain 'post-discount'");
