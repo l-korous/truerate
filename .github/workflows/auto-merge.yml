@@ -56,12 +56,25 @@ jobs:
           merged=0
           echo "$prs" | jq -c '.[]' | while read -r pr; do
             num=$(echo "$pr"       | jq -r '.number')
+            br=$(echo "$pr"        | jq -r '.headRefName')
             sha=$(echo "$pr"       | jq -r '.headRefOid')
             mergeable=$(echo "$pr" | jq -r '.mergeable')
             held=$(echo "$pr"      | jq -r '[.labels[].name] | any(. == "hold" or . == "do-not-merge" or . == "blocked")')
 
             if [ "$held" = "true" ]; then echo "#$num: held by label — skip."; continue; fi
             if [ "$mergeable" = "CONFLICTING" ]; then echo "#$num: has conflicts — skip (needs rebase)."; continue; fi
+
+            # CRITICAL: never merge a branch that was tested against an older main.
+            # Two PRs can each be green in isolation yet break main together (a
+            # semantic merge conflict). If the head is behind main, update it
+            # (merges main in, re-triggering CI) and merge only on a later sweep
+            # once it is both up to date AND green.
+            behind=$(gh api "repos/$REPO/compare/$br...main" --jq '.ahead_by' 2>/dev/null || echo 0)
+            if [ "${behind:-0}" -gt 0 ]; then
+              echo "#$num: $behind commit(s) behind main — updating branch to re-test against latest main; will merge a later sweep if green."
+              gh pr update-branch "$num" --repo "$REPO" 2>&1 || echo "#$num: update-branch failed (conflicts?) — leaving for manual rebase."
+              continue
+            fi
 
             # Re-verify EVERY check on the head commit (belt and suspenders).
             checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate \
