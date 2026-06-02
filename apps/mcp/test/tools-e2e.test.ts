@@ -2,11 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { buildServer } from "../src/server.js";
+import { buildServer, type McpBenefitResult } from "../src/server.js";
 
 // Wire a real MCP client↔server pair over an in-memory transport.
-// No HTTP, no auth — exercises the actual tool handler bodies (lines 39-82
-// in server.ts) which were previously 0% covered.
+// No HTTP, no auth — exercises the actual tool handler bodies.
 async function wire(userId = "mcp-test-user") {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = buildServer(userId);
@@ -16,35 +15,61 @@ async function wire(userId = "mcp-test-user") {
   return { client, server };
 }
 
-test("search_hotels tool executes end-to-end: returns hotel text and structuredContent", async () => {
+test("search_hotels: returns structuredContent with no price fields for an unknown user", async () => {
   const { client, server } = await wire("mcp-search-user");
   try {
     const result = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Vienna", checkIn: "2026-07-10", checkOut: "2026-07-12" },
+      arguments: { brand: "Marriott", location: "Vienna", stars: 4 },
     });
     assert.ok(!result.isError, `tool errored: ${JSON.stringify(result)}`);
     const text = (result.content[0] as { type: "text"; text: string }).text;
-    assert.match(text, /Found \d+ hotel/i, "response header missing");
+    // User has no memberships → no benefits found
+    assert.match(text, /No applicable benefits found|Applicable benefits/i);
+    assert.match(text, /Prices are not returned/i);
     assert.ok(result.structuredContent, "structuredContent required for AI assistant consumption");
-    const sc = result.structuredContent as { properties: unknown[]; mode: string };
-    assert.ok(Array.isArray(sc.properties) && sc.properties.length > 0, "properties must be non-empty");
-    assert.strictEqual(sc.mode, "mock", "must run in mock mode during tests");
+    const sc = result.structuredContent as McpBenefitResult;
+    // publicOffer / price fields must not appear in MCP output
+    const raw = JSON.stringify(sc);
+    assert.ok(!raw.includes("publicOffer"), "publicOffer must not appear in MCP output");
+    assert.ok(!raw.includes("nightlyAmount"), "nightlyAmount must not appear in MCP output");
+    assert.ok(!raw.includes("totalAmount"), "totalAmount must not appear in MCP output");
+    assert.ok(Array.isArray(sc.matches), "matches must be an array");
+    assert.ok(Array.isArray(sc.perkValueEstimates), "perkValueEstimates must be an array");
+    assert.ok(typeof sc.generatedAt === "string", "generatedAt must be present");
   } finally {
     await server.close();
   }
 });
 
-test("search_hotels respects the limit parameter", async () => {
-  const { client, server } = await wire("mcp-limit-user");
+test("search_hotels: accepts domain-based context (OTA matching)", async () => {
+  const { client, server } = await wire("mcp-domain-user");
   try {
     const result = await client.callTool({
       name: "search_hotels",
-      arguments: { location: "Prague", checkIn: "2026-08-01", checkOut: "2026-08-03", limit: 2 },
+      arguments: { domain: "booking.com", location: "Prague" },
     });
-    assert.ok(!result.isError);
-    const sc = result.structuredContent as { properties: unknown[] };
-    assert.strictEqual(sc.properties.length, 2, "limit: 2 must return exactly 2 properties");
+    assert.ok(!result.isError, `tool errored: ${JSON.stringify(result)}`);
+    const sc = result.structuredContent as McpBenefitResult;
+    assert.ok(typeof sc.context === "object", "context object required");
+    assert.strictEqual(sc.context.domain, "booking.com");
+    assert.strictEqual(sc.context.location, "Prague");
+  } finally {
+    await server.close();
+  }
+});
+
+test("search_hotels: accepts hotel-name context", async () => {
+  const { client, server } = await wire("mcp-hotel-user");
+  try {
+    const result = await client.callTool({
+      name: "search_hotels",
+      arguments: { hotel: "Marriott Marquis Vienna", stars: 5 },
+    });
+    assert.ok(!result.isError, `tool errored: ${JSON.stringify(result)}`);
+    const sc = result.structuredContent as McpBenefitResult;
+    assert.strictEqual(sc.context.hotel, "Marriott Marquis Vienna");
+    assert.strictEqual(sc.context.stars, 5);
   } finally {
     await server.close();
   }
