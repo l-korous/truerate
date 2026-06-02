@@ -129,8 +129,10 @@ export function createRequestListener(): (
       transport.close();
       server.close();
     });
+    // Set response headers BEFORE handing off to the transport: handleRequest
+    // flushes the response, after which setHeader throws ERR_HTTP_HEADERS_SENT.
+    res.setHeader("x-correlation-id", correlationId);
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
-    res.setHeader("x-correlation-id", correlationId);
   };
 }
