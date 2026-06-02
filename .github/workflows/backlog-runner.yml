@@ -55,7 +55,7 @@ jobs:
           for n in $(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
               --jq '[ .[] | {n:.number, L:[.labels[].name]} | select((.L|index("blocked"))|not) ] | .[].n'); do
             br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
-            [ "${br:-0}" -eq 0 ] && eligible=$((eligible+1))
+            if [ "${br:-0}" -eq 0 ]; then eligible=$((eligible+1)); fi
           done
           MIN_QUEUE=3
           need=$(( MIN_QUEUE - eligible ))
@@ -71,14 +71,15 @@ jobs:
             | sort_by(.p, .n) | .[].n')
           c=0
           for n in $cands; do
-            [ "$c" -ge "$need" ] && break
+            if [ "$c" -ge "$need" ]; then break; fi
             if gh api -X POST "repos/$REPO/issues/$n/labels" -f "labels[]=agent-ready" >/dev/null 2>&1; then
               echo "auto-enqueued #$n"; c=$((c+1))
             else
               echo "could not label #$n"
             fi
           done
-          [ "$c" -eq 0 ] && echo "Nothing eligible left to enqueue — autonomous backlog drained."
+          if [ "$c" -eq 0 ]; then echo "Nothing eligible left to enqueue — autonomous backlog drained."; fi
+          echo "Auto-enqueue done (added $c)."
 
       - name: Pick next agent-ready issue
         id: pick
