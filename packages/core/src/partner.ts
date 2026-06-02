@@ -21,7 +21,7 @@ import type {
 // Partner org
 // ---------------------------------------------------------------------------
 
-export type PartnerOrgStatus = "pending" | "active";
+export type PartnerOrgStatus = "pending" | "active" | "rejected";
 export type PartnerRole = "owner" | "editor";
 
 /** A partner organization (hotel chain, independent property, etc.). */
@@ -32,6 +32,13 @@ export interface PartnerOrg {
   contactEmail: string;
   status: PartnerOrgStatus;
   createdAt: string;
+  /** Set when an admin approves the org. */
+  approvedAt?: string;
+  approvedBy?: string;
+  /** Set when an admin rejects the org. */
+  rejectedAt?: string;
+  rejectedBy?: string;
+  rejectReason?: string;
 }
 
 /** Link between a User and a PartnerOrg, with a scoped role. */
@@ -86,6 +93,11 @@ export interface PartnerSubmission {
   updatedAt: string;
   /** Set when approved and published to the catalog. */
   publishedProgramId?: string;
+  /** Audit: who approved/rejected and when. */
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +132,7 @@ export interface PartnerOrgRepo {
   addMember(member: PartnerOrgMember): Promise<void>;
   getMember(userId: string, orgId: string): Promise<PartnerOrgMember | null>;
   listMembers(orgId: string): Promise<PartnerOrgMember[]>;
+  listByStatus(status: PartnerOrgStatus): Promise<PartnerOrg[]>;
 }
 
 export interface PartnerSubmissionRepo {
@@ -171,6 +184,10 @@ export class MemoryPartnerOrgRepo implements PartnerOrgRepo {
 
   async listMembers(orgId: string): Promise<PartnerOrgMember[]> {
     return [...this.members.values()].filter((m) => m.orgId === orgId);
+  }
+
+  async listByStatus(status: PartnerOrgStatus): Promise<PartnerOrg[]> {
+    return [...this.orgs.values()].filter((o) => o.status === status);
   }
 }
 
@@ -282,21 +299,63 @@ export class PartnerWorkflow {
   }
 
   /**
+   * Approve a partner org.
+   * Admin-only action — records who approved and when.
+   */
+  async approveOrg(orgId: string, adminId: string): Promise<PartnerOrg> {
+    const org = await this.orgs.getOrg(orgId);
+    if (!org) throw new PartnerWorkflowError("org_not_found", "Organization not found");
+    if (org.status === "active") {
+      throw new PartnerWorkflowError("invalid_transition", "Organization is already active");
+    }
+    const updated: PartnerOrg = {
+      ...org,
+      status: "active",
+      approvedAt: new Date().toISOString(),
+      approvedBy: adminId,
+    };
+    return this.orgs.updateOrg(updated);
+  }
+
+  /**
+   * Reject a partner org with a reason.
+   * Admin-only action — records who rejected, when, and why.
+   */
+  async rejectOrg(orgId: string, adminId: string, reason: string): Promise<PartnerOrg> {
+    const org = await this.orgs.getOrg(orgId);
+    if (!org) throw new PartnerWorkflowError("org_not_found", "Organization not found");
+    if (org.status === "rejected") {
+      throw new PartnerWorkflowError("invalid_transition", "Organization is already rejected");
+    }
+    const updated: PartnerOrg = {
+      ...org,
+      status: "rejected",
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: adminId,
+      rejectReason: reason,
+    };
+    return this.orgs.updateOrg(updated);
+  }
+
+  /**
    * Approve a submission and publish to catalog.
    * Admin-only: no org membership check (admin acts outside any org).
    * Returns the published program id.
    */
-  async approve(submissionId: string, publishedProgramId: string): Promise<PartnerSubmission> {
+  async approve(submissionId: string, publishedProgramId: string, adminId?: string): Promise<PartnerSubmission> {
     const sub = await this.getSubmissionOrThrow(submissionId);
     if (sub.status !== "submitted" && sub.status !== "in_review") {
       throw new PartnerWorkflowError("invalid_transition", `Cannot approve a submission in status '${sub.status}'`);
     }
     assertNoPriceFields(sub.programDraft);
+    const now = new Date().toISOString();
     const updated: PartnerSubmission = {
       ...sub,
       status: "approved",
       publishedProgramId,
-      updatedAt: new Date().toISOString(),
+      approvedAt: now,
+      approvedBy: adminId,
+      updatedAt: now,
     };
     await this.submissions.update(updated);
     await this.sendNotification(updated, "submission_approved");
@@ -307,16 +366,19 @@ export class PartnerWorkflow {
    * Reject a submission with a reason.
    * Admin-only action.
    */
-  async reject(submissionId: string, reason: string): Promise<PartnerSubmission> {
+  async reject(submissionId: string, reason: string, adminId?: string): Promise<PartnerSubmission> {
     const sub = await this.getSubmissionOrThrow(submissionId);
     if (sub.status !== "submitted" && sub.status !== "in_review") {
       throw new PartnerWorkflowError("invalid_transition", `Cannot reject a submission in status '${sub.status}'`);
     }
+    const now = new Date().toISOString();
     const updated: PartnerSubmission = {
       ...sub,
       status: "rejected",
       rejectReason: reason,
-      updatedAt: new Date().toISOString(),
+      rejectedAt: now,
+      rejectedBy: adminId,
+      updatedAt: now,
     };
     await this.submissions.update(updated);
     await this.sendNotification(updated, "submission_rejected");
@@ -375,6 +437,54 @@ export class PartnerWorkflowError extends Error {
     super(message);
     this.name = "PartnerWorkflowError";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Singleton factories (mirrors getUserRepo / getCatalogRepo pattern)
+// ---------------------------------------------------------------------------
+
+let _orgRepo: PartnerOrgRepo | null = null;
+let _submissionRepo: PartnerSubmissionRepo | null = null;
+let _notificationRepo: PartnerNotificationRepo | null = null;
+
+/** Singleton partner org repo, chosen by env. In-memory unless Cosmos is configured. */
+export async function getPartnerOrgRepo(): Promise<PartnerOrgRepo> {
+  if (_orgRepo) return _orgRepo;
+  _orgRepo = new MemoryPartnerOrgRepo();
+  await _orgRepo.init();
+  return _orgRepo;
+}
+
+/** Singleton partner submission repo. */
+export async function getPartnerSubmissionRepo(): Promise<PartnerSubmissionRepo> {
+  if (_submissionRepo) return _submissionRepo;
+  _submissionRepo = new MemoryPartnerSubmissionRepo();
+  await _submissionRepo.init();
+  return _submissionRepo;
+}
+
+/** Singleton partner notification repo. */
+export async function getPartnerNotificationRepo(): Promise<PartnerNotificationRepo> {
+  if (_notificationRepo) return _notificationRepo;
+  _notificationRepo = new MemoryPartnerNotificationRepo();
+  return _notificationRepo;
+}
+
+/** Get a pre-wired PartnerWorkflow using the singleton repos. */
+export async function getPartnerWorkflow(): Promise<PartnerWorkflow> {
+  const [orgs, submissions, notifications] = await Promise.all([
+    getPartnerOrgRepo(),
+    getPartnerSubmissionRepo(),
+    getPartnerNotificationRepo(),
+  ]);
+  return new PartnerWorkflow(orgs, submissions, notifications);
+}
+
+/** Reset all partner singletons — for use in tests only. */
+export function resetPartnerRepos(): void {
+  _orgRepo = null;
+  _submissionRepo = null;
+  _notificationRepo = null;
 }
 
 // ---------------------------------------------------------------------------

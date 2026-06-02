@@ -28,13 +28,21 @@ import {
   resetCatalogCache,
   catalogEntryToProgram,
   programToCatalogInput,
+  getPartnerOrgRepo,
+  getPartnerSubmissionRepo,
+  getPartnerNotificationRepo,
+  getPartnerWorkflow,
+  resetPartnerRepos,
   type CatalogCache,
+  type CatalogEntryInput,
   type Logger,
   type Benefit,
   type Membership,
   type User,
   type PerkType,
   type ActivationEventName,
+  type PartnerSubmission,
+  type PartnerProgramDraft,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
@@ -60,6 +68,11 @@ async function getAppCatalogCache(): Promise<CatalogCache> {
 export function resetAppCatalog(): void {
   _catalogCache = null;
   resetCatalogCache();
+}
+
+/** Reset partner repo state — for tests only. */
+export function resetAppPartnerRepos(): void {
+  resetPartnerRepos();
 }
 
 /**
@@ -538,6 +551,192 @@ app.get("/admin/funnel/activation", async (c) => {
   const repo = await getUserRepo();
   const counts = await repo.funnelCounts();
   return c.json({ funnel: counts, generatedAt: new Date().toISOString() });
+});
+
+// --- Admin: partner org approval --------------------------------------------
+// All routes require x-admin-secret header (same RBAC gate as other admin endpoints).
+
+function requireAdminSecret(c: { req: { header(n: string): string | undefined } }): boolean {
+  const adminSecret = process.env.ADMIN_SECRET;
+  return Boolean(adminSecret && c.req.header("x-admin-secret") === adminSecret);
+}
+
+// GET /admin/partners?status=pending — list partner orgs by status.
+app.get("/admin/partners", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const status = (c.req.query("status") as "pending" | "active" | "rejected") ?? "pending";
+  const orgRepo = await getPartnerOrgRepo();
+  const orgs = await orgRepo.listByStatus(status);
+  return c.json({ orgs, status });
+});
+
+const OrgActionSchema = z.object({
+  reason: z.string().optional(),
+});
+
+// POST /admin/partners/:id/approve — approve a pending partner org.
+app.post("/admin/partners/:id/approve", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const orgId = c.req.param("id");
+  const workflow = await getPartnerWorkflow();
+  try {
+    const org = await workflow.approveOrg(orgId, "admin");
+    c.get("logger").info("partner org approved", { orgId });
+    return c.json({ org });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "PartnerWorkflowError") {
+      const code = (err as { code?: string }).code;
+      if (code === "org_not_found") return c.json({ error: "not_found" }, 404);
+      return c.json({ error: code }, 409);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/partners/:id/reject — reject a partner org with a reason.
+app.post("/admin/partners/:id/reject", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const orgId = c.req.param("id");
+  const parsed = await parseBody(OrgActionSchema, c);
+  if (parsed instanceof Response) return parsed;
+  const reason = parsed.reason ?? "";
+  const workflow = await getPartnerWorkflow();
+  try {
+    const org = await workflow.rejectOrg(orgId, "admin", reason);
+    c.get("logger").info("partner org rejected", { orgId });
+    return c.json({ org });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "PartnerWorkflowError") {
+      const code = (err as { code?: string }).code;
+      if (code === "org_not_found") return c.json({ error: "not_found" }, 404);
+      return c.json({ error: code }, 409);
+    }
+    throw err;
+  }
+});
+
+// --- Admin: submission review queue -----------------------------------------
+
+// GET /admin/submissions?status=submitted — list submissions by status.
+// Default status is "submitted"; also supports "in_review", "approved", "rejected", "draft".
+app.get("/admin/submissions", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const status = (c.req.query("status") as PartnerSubmission["status"]) ?? "submitted";
+  const submissionRepo = await getPartnerSubmissionRepo();
+  const submissions = await submissionRepo.listByStatus(status);
+  // Strip programDraft.benefits to avoid large payloads; include summary fields only.
+  const items = submissions.map((s) => ({
+    id: s.id,
+    orgId: s.orgId,
+    submittedByUserId: s.submittedByUserId,
+    status: s.status,
+    programName: s.programDraft.name,
+    programCategory: s.programDraft.category,
+    programRegion: s.programDraft.region,
+    source: "partner-submission",
+    rejectReason: s.rejectReason,
+    publishedProgramId: s.publishedProgramId,
+    approvedAt: s.approvedAt,
+    approvedBy: s.approvedBy,
+    rejectedAt: s.rejectedAt,
+    rejectedBy: s.rejectedBy,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  }));
+  return c.json({ submissions: items, status });
+});
+
+// GET /admin/submissions/:id — full submission detail including program draft.
+app.get("/admin/submissions/:id", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const submissionRepo = await getPartnerSubmissionRepo();
+  const sub = await submissionRepo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "not_found" }, 404);
+  return c.json({ submission: sub });
+});
+
+const SubmissionApproveSchema = z.object({
+  publishedProgramId: z.string().min(1).optional(),
+});
+
+const SubmissionRejectSchema = z.object({
+  reason: z.string().min(1, "reason is required"),
+});
+
+// POST /admin/submissions/:id/approve — approve a submission and flow it to the catalog as a draft.
+app.post("/admin/submissions/:id/approve", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const submissionId = c.req.param("id");
+  const parsed = await parseBody(SubmissionApproveSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const submissionRepo = await getPartnerSubmissionRepo();
+  const sub = await submissionRepo.get(submissionId);
+  if (!sub) return c.json({ error: "not_found" }, 404);
+
+  // Derive catalog program ID from submission if not provided.
+  const programId = parsed.publishedProgramId ?? `partner-prog-${sub.orgId}-${submissionId}`;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const approved = await workflow.approve(submissionId, programId, "admin");
+
+    // Flow the approved submission into the catalog as a draft entry.
+    const catalogRepo = await getCatalogRepo();
+    const draft = sub.programDraft as PartnerProgramDraft;
+    const catalogInput: CatalogEntryInput = {
+      programId,
+      provenance: {
+        source: "partner-submission",
+        sourceUrl: draft.sourceUrl,
+        asOf: new Date().toISOString().slice(0, 7),
+        submittedBy: sub.submittedByUserId,
+        notes: `Approved from partner submission ${submissionId} (org ${sub.orgId})`,
+      },
+      region: draft.region,
+      name: draft.name,
+      category: draft.category,
+      defaultMatch: {},
+      tiers: draft.tiers,
+      requiresCredential: false,
+      fields: draft.fields,
+      benefits: draft.benefits,
+    };
+    const catalogEntry = await catalogRepo.upsertDraft(catalogInput);
+
+    c.get("logger").info("submission approved", { submissionId, programId });
+    return c.json({ submission: approved, catalogEntry });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "PartnerWorkflowError") {
+      const code = (err as { code?: string }).code;
+      if (code === "submission_not_found") return c.json({ error: "not_found" }, 404);
+      if (code === "price_field_in_draft") return c.json({ error: "price_field_in_draft", message: err.message }, 422);
+      return c.json({ error: code }, 409);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/submissions/:id/reject — reject a submission with a reason.
+app.post("/admin/submissions/:id/reject", async (c) => {
+  if (!requireAdminSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const submissionId = c.req.param("id");
+  const parsed = await parseBody(SubmissionRejectSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const rejected = await workflow.reject(submissionId, parsed.reason, "admin");
+    c.get("logger").info("submission rejected", { submissionId });
+    return c.json({ submission: rejected });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "PartnerWorkflowError") {
+      const code = (err as { code?: string }).code;
+      if (code === "submission_not_found") return c.json({ error: "not_found" }, 404);
+      return c.json({ error: code }, 409);
+    }
+    throw err;
+  }
 });
 
 // --- helpers ----------------------------------------------------------------
