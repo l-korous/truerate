@@ -21,7 +21,7 @@ name: Auto-merge agent PRs
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # every 10 min (best-effort; GitHub may delay)
+    - cron: "*/5 * * * *" # every 5 min (best-effort; GitHub may delay)
   workflow_dispatch: {}
   workflow_run:
     # Nudge: sweep promptly whenever CI finishes, so green PRs don't wait for the
@@ -129,6 +129,9 @@ jobs:
                     gh issue close "$iss" --repo "$REPO" --reason completed \
                       --comment "Implemented by #$num (merged automatically)." 2>&1 || true
                   done
+              # A slot just freed — nudge the backlog runner to start the next
+              # issue immediately instead of waiting on its throttled cron.
+              gh workflow run "Backlog runner" --repo "$REPO" 2>&1 || echo "#$num: could not nudge backlog runner (will run on its own schedule)."
             else
               echo "#$num: merge call failed — will retry next sweep."
             fi
