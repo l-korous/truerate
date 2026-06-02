@@ -83,6 +83,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@truerate/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       '@types/node':
         specifier: ^20.16.10
         version: 20.19.41
