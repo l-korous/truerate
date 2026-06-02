@@ -23,6 +23,7 @@ import {
   PageContextSchema,
   ClientErrorReportSchema,
   BenefitInputSchema,
+  CatalogEntryInputSchema,
   getCatalogRepo,
   getCatalogCache,
   resetCatalogCache,
@@ -35,6 +36,7 @@ import {
   type User,
   type PerkType,
   type ActivationEventName,
+  type CatalogStatus,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
@@ -538,6 +540,171 @@ app.get("/admin/funnel/activation", async (c) => {
   const repo = await getUserRepo();
   const counts = await repo.funnelCounts();
   return c.json({ funnel: counts, generatedAt: new Date().toISOString() });
+});
+
+// --- Admin catalog editor (CRUD + versioning + publish) ----------------------
+// All routes require x-admin-secret header (CatalogEditor role; future: Entra RBAC).
+// Channels (MCP, extension) continue reading from GET /catalog/programs which
+// serves only published+current entries via the TTL cache.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function requireCatalogEditor(c: any): Response | null {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret || c.req.header("x-admin-secret") !== adminSecret) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  return null;
+}
+
+// GET /admin/catalog — list catalog entries, optionally filtered by ?status=
+app.get("/admin/catalog", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const status = c.req.query("status") as CatalogStatus | undefined;
+  const repo = await getCatalogRepo();
+
+  const entries = status
+    ? await repo.listByStatus(status)
+    : await (async () => {
+        const [draft, published, archived, inReview] = await Promise.all([
+          repo.listByStatus("draft"),
+          repo.listByStatus("published"),
+          repo.listByStatus("archived"),
+          repo.listByStatus("in-review"),
+        ]);
+        return [...draft, ...inReview, ...published, ...archived];
+      })();
+
+  return c.json({ entries, count: entries.length });
+});
+
+// POST /admin/catalog — create a new draft for a program
+app.post("/admin/catalog", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(CatalogEntryInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getCatalogRepo();
+  const entry = await repo.upsertDraft(parsed);
+  return c.json({ entry }, 201);
+});
+
+// GET /admin/catalog/:id — get the current entry (any status) for a program
+app.get("/admin/catalog/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+
+  // Return current published entry, or any existing draft/in-review
+  const history = await repo.getHistory(programId);
+  if (history.length === 0) return c.json({ error: "not_found" }, 404);
+
+  // Prefer draft/in-review over published for the editor view
+  const active = history.find((e) => e.status === "draft" || e.status === "in-review")
+    ?? history.find((e) => e.isCurrent)
+    ?? history[0];
+
+  return c.json({ entry: active });
+});
+
+// PUT /admin/catalog/:id — update the draft for a program (creates draft if none)
+app.put("/admin/catalog/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const parsed = await parseBody(CatalogEntryInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  if (parsed.programId !== programId) {
+    return c.json({ error: "programId in body must match URL parameter" }, 400);
+  }
+
+  const repo = await getCatalogRepo();
+  const entry = await repo.upsertDraft(parsed);
+  return c.json({ entry });
+});
+
+// DELETE /admin/catalog/:id — archive the current entry for a program
+app.delete("/admin/catalog/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+  const current = await repo.getCurrent(programId);
+  if (!current) return c.json({ error: "not_found" }, 404);
+
+  await repo.archive(programId);
+
+  // Invalidate cache so channels stop serving this program immediately
+  const cache = await getAppCatalogCache();
+  cache.invalidate(programId);
+
+  return c.body(null, 204);
+});
+
+// POST /admin/catalog/:id/publish — promote the current draft to published
+app.post("/admin/catalog/:id/publish", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+
+  let entry;
+  try {
+    entry = await repo.publish(programId);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "publish failed";
+    return c.json({ error: msg }, 400);
+  }
+
+  // Invalidate cache so channels pick up the new published version immediately
+  const cache = await getAppCatalogCache();
+  cache.invalidate(programId);
+
+  return c.json({ entry });
+});
+
+// GET /admin/catalog/:id/history — list all versions of a program, newest first
+app.get("/admin/catalog/:id/history", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const repo = await getCatalogRepo();
+  const history = await repo.getHistory(programId);
+  if (history.length === 0) return c.json({ error: "not_found" }, 404);
+
+  return c.json({ history, programId });
+});
+
+// POST /admin/catalog/:id/restore/:version — restore a prior version as a new draft
+app.post("/admin/catalog/:id/restore/:version", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const programId = c.req.param("id");
+  const versionNum = parseInt(c.req.param("version"), 10);
+  if (isNaN(versionNum) || versionNum < 1) {
+    return c.json({ error: "version must be a positive integer" }, 400);
+  }
+
+  const repo = await getCatalogRepo();
+  const snapshot = await repo.getVersion(programId, versionNum);
+  if (!snapshot) return c.json({ error: "version_not_found" }, 404);
+
+  // Build a new draft from the snapshot's content (no id/version/status/timestamps)
+  const { id: _id, version: _v, isCurrent: _c, status: _s, createdAt: _ca, updatedAt: _ua, publishedAt: _pa, archivedAt: _aa, ...content } = snapshot;
+  const draft = await repo.upsertDraft(content);
+
+  return c.json({ entry: draft }, 201);
 });
 
 // --- helpers ----------------------------------------------------------------
