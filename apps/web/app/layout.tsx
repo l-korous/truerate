@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
 import { ErrorReporter } from "../components/ErrorReporter";
+import { CookieBanner } from "../components/CookieBanner";
 
 const display = Fraunces({
   subsets: ["latin"],
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body className="font-sans">
         <ErrorReporter />
+        <CookieBanner />
         {children}
       </body>
     </html>

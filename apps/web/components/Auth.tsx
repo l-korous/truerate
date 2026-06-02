@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type PublicUser } from "@/lib/api";
+import { track } from "@/lib/analytics";
 
 export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
   const [mode, setMode] = useState<"login" | "register">("register");
@@ -19,6 +20,9 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
         mode === "login"
           ? await api.login(email, password)
           : await api.register(email, password, market);
+      if (mode === "register") {
+        track({ name: "sign_up", properties: { market } });
+      }
       onAuth(user);
     } catch (e) {
       setErr((e as Error).message);
