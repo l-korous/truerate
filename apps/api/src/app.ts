@@ -13,6 +13,7 @@ import {
   summariseBenefits,
   templatesForTier,
   estimatePerkValueAllBands,
+  computeConfidence,
   generateMcpToken,
   hashMcpToken,
   mcpUrlForToken,
@@ -465,6 +466,31 @@ app.get("/admin/funnel/activation", async (c) => {
   const repo = await getUserRepo();
   const counts = await repo.funnelCounts();
   return c.json({ funnel: counts, generatedAt: new Date().toISOString() });
+});
+
+// GET /admin/catalog/confidence — catalog entries with staleness/confidence scores.
+// Catalog data is not user-sensitive (it is static program metadata), so this
+// endpoint is accessible without an admin secret. No prices are returned.
+app.get("/admin/catalog/confidence", (c) => {
+  const catalog = PROGRAMS.map((p) => {
+    const confidence = computeConfidence(p.asOf, p.category, p.sourceUrl);
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      region: p.region,
+      asOf: p.asOf,
+      sourceUrl: p.sourceUrl,
+      confidence: {
+        level: confidence.level,
+        score: confidence.score,
+        ageMonths: confidence.ageMonths,
+        expiresAt: confidence.expiresAt,
+        isExpired: confidence.isExpired,
+      },
+    };
+  });
+  return c.json({ catalog, generatedAt: new Date().toISOString() });
 });
 
 // --- helpers ----------------------------------------------------------------

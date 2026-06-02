@@ -73,6 +73,14 @@
     "message": "Zavřít",
     "description": "Aria label for the panel close button"
   },
+  "panelStalenessNote": {
+    "message": "Data podmínek mohou být zastaralá — ověřte výhody přímo u poskytovatele.",
+    "description": "Warning shown when benefit terms confidence is stale"
+  },
+  "panelLowConfidenceNote": {
+    "message": "Některá data podmínek stárnou — doporučujeme ověřit u poskytovatele.",
+    "description": "Note shown when benefit terms confidence is low"
+  },
 
   "optionsTitle": {
     "message": "Nastavení TrueRate",

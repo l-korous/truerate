@@ -240,3 +240,38 @@ test("matchPage: Genius Level 1 has no perkEstimates (no structuredPerks)", () =
   // Level 1 only has a percentDiscount benefit, no structuredPerks
   assert.equal(res.perkEstimates.length, 0);
 });
+
+// --- confidence flags (issue #153) ---
+
+test("matchPage: catalog-backed benefits include confidence field", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 1")],
+  );
+  assert.ok(res.matches.length > 0, "should have matches");
+  const m = res.matches[0]!;
+  assert.ok(m.confidence, "matches from catalog programs should have confidence");
+  assert.ok(
+    ["high", "medium", "low", "stale"].includes(m.confidence.level),
+    `confidence level must be a valid level, got: ${m.confidence.level}`,
+  );
+  assert.ok(typeof m.confidence.score === "number", "confidence score is a number");
+  assert.ok(typeof m.confidence.expiresAt === "string", "confidence expiresAt is a string");
+  assert.ok(typeof m.confidence.isExpired === "boolean", "confidence isExpired is a boolean");
+  // confidence is about terms freshness, never price-related
+  assert.ok(!("price" in m.confidence), "no price field in confidence");
+  assert.ok(!("amount" in m.confidence), "no amount field in confidence");
+});
+
+test("matchPage: user-declared benefits without programId have no confidence", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "pecr.cz", property: { name: "Hotel PECR" } },
+    [customDiscount(0.15)],
+  );
+  // custom benefits have no programId so no catalog confidence can be computed
+  for (const m of res.matches) {
+    assert.equal(m.confidence, undefined, "user-declared benefit should have no confidence");
+  }
+});

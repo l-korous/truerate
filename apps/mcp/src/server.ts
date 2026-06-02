@@ -10,9 +10,11 @@ import {
   matchBenefits,
   estimatePerkValue,
   estimatePerkValueAllBands,
+  PROGRAMS,
   type Membership,
   type StructuredPerk,
   type StarBand,
+  type ConfidenceLevel,
 } from "@truerate/core";
 
 // Kept for the /health endpoint in index.ts (reports enrichment mode).
@@ -37,6 +39,8 @@ export interface McpBenefitResult {
     perks: string[];
     structuredPerks: StructuredPerk[];
     conditions?: string;
+    /** Staleness/trustworthiness signal for this benefit's catalog entry. Never price-related. */
+    confidence?: { level: ConfidenceLevel; expiresAt: string; isExpired: boolean };
   }>;
   perkValueEstimates: Array<{
     perkType: string;
@@ -65,6 +69,9 @@ export function buildBenefitResult(
       perks: m.benefit.value.perks ?? [],
       structuredPerks,
       conditions: m.benefit.value.conditions,
+      confidence: m.confidence
+        ? { level: m.confidence.level, expiresAt: m.confidence.expiresAt, isExpired: m.confidence.isExpired }
+        : undefined,
     };
     if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
       item.discount = {
@@ -148,6 +155,15 @@ export function formatBenefitResult(r: McpBenefitResult): string {
     if (estLines.length) lines.push(`\nperk estimates: ${estLines.join("; ")}`);
   }
 
+  const staleLevels = new Set(r.matches.map((m) => m.confidence?.level).filter(Boolean));
+  if (staleLevels.has("stale") || staleLevels.has("low")) {
+    lines.push(
+      "\n⚠ Some benefit terms may be outdated. Confidence level: " +
+        (staleLevels.has("stale") ? "stale" : "low") +
+        ". Verify current terms with the provider before advising the user.",
+    );
+  }
+
   lines.push(noPrice);
   return lines.join("\n");
 }
@@ -201,12 +217,13 @@ export function buildServer(userId: string, correlationId: string = generateCorr
       const user = await repo.getById(userId);
       const memberships: Membership[] = user?.memberships ?? [];
 
+      const programsMap = new Map(PROGRAMS.map((p) => [p.id, p]));
       const matches = matchBenefits(memberships, {
         domain: args.domain,
         brand: args.brand,
         propertyName: args.hotel,
         category: "hotel",
-      });
+      }, { programs: programsMap });
 
       const context: McpBenefitResult["context"] = {
         hotel: args.hotel,

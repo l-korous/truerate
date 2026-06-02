@@ -25,6 +25,7 @@ test("en locale has all required keys", () => {
     "panelSignInPrompt", "panelOpenTrueRate", "panelLoading", "panelNoBenefits",
     "panelPerkEstimatesHeader", "panelPerkEstimatesNote",
     "panelActivePrefix", "panelDisclaimer", "panelCloseAriaLabel",
+    "panelStalenessNote", "panelLowConfidenceNote",
     "optionsTitle", "optionsAccountHeading", "optionsSignedIn", "optionsNotSignedIn",
     "optionsSignOutButton", "optionsSignInLink",
     "optionsPreferencesHeading", "optionsShowPanelLabel",

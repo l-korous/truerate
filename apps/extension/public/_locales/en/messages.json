@@ -73,6 +73,14 @@
     "message": "Close",
     "description": "Aria label for the panel close button"
   },
+  "panelStalenessNote": {
+    "message": "Terms data may be outdated — verify benefits with the provider.",
+    "description": "Warning shown when benefit terms confidence is stale"
+  },
+  "panelLowConfidenceNote": {
+    "message": "Some benefit terms are aging — verify with the provider.",
+    "description": "Note shown when benefit terms confidence is low"
+  },
 
   "optionsTitle": {
     "message": "TrueRate Settings",

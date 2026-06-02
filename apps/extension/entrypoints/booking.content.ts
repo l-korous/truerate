@@ -162,10 +162,18 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
     ? `<p class="tr-active">${t("panelActivePrefix")} ${[...new Set(r.matches.map((m) => esc(m.membershipLabel)))].join(", ")}</p>`
     : "";
 
+  const hasStale = r.matches.some((m) => m.confidence?.level === "stale" || m.confidence?.isExpired);
+  const hasLow = r.matches.some((m) => m.confidence?.level === "low");
+  const stalenessHtml =
+    hasStale || hasLow
+      ? `<div class="tr-stale">${esc(t(hasStale ? "panelStalenessNote" : "panelLowConfidenceNote"))}</div>`
+      : "";
+
   panel(s).innerHTML = head(true) + `<div class="tr-body">
       ${discountHtml}
       ${perksHtml}
       ${estimatesHtml}
+      ${stalenessHtml}
       ${active}
       <p class="tr-foot">${t("panelDisclaimer")}</p>
     </div>`;
@@ -204,6 +212,7 @@ function styleEl(): HTMLStyleElement {
     .tr-est-row{margin-bottom:6px}
     .tr-est-label{display:block;font-size:11px;color:#0c1b2e;font-weight:600}
     .tr-est-value{display:block;font-size:11px;color:#0f8a5f;font-weight:500}
-    .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}`;
+    .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}
+    .tr-stale{background:#fff8e6;border:1px solid #f5c842;border-radius:8px;padding:6px 10px;margin:6px 0;font-size:11px;color:#8a6a00}`;
   return s;
 }

@@ -83,3 +83,90 @@ test("buildBenefitResult strips prices and includes perk estimates", () => {
   assert.strictEqual(result.perkValueEstimates[0]!.isEstimate, true);
   assert.ok(result.perkValueEstimates[0]!.estimatedUsd[5] > 0);
 });
+
+// --- confidence annotation (issue #153) ---
+
+test("buildBenefitResult passes through confidence from matches", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "category" as const,
+        match: { categories: ["hotel" as const] },
+        value: { kind: "perk" as const, perks: ["Free breakfast"] },
+        source: "catalog" as const,
+        programId: "some_program",
+      },
+      membershipId: "m1",
+      membershipLabel: "Test Program",
+      confidence: { level: "stale" as const, score: 0.1, ageMonths: 24, expiresAt: "2025-01-01", isExpired: true },
+    },
+  ];
+  const result = buildBenefitResult(matches, { brand: "Any" });
+  assert.ok(result.matches[0]!.confidence, "confidence should be passed through");
+  assert.strictEqual(result.matches[0]!.confidence!.level, "stale");
+  assert.strictEqual(result.matches[0]!.confidence!.isExpired, true);
+});
+
+test("buildBenefitResult: confidence is absent when match has no confidence", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "property" as const,
+        match: { propertyNames: ["Hotel PECR"] },
+        value: { kind: "percentDiscount" as const, percentOff: 0.15 },
+        source: "user-declared" as const,
+      },
+      membershipId: "m1",
+      membershipLabel: "Hotel PECR",
+    },
+  ];
+  const result = buildBenefitResult(matches, { hotel: "Hotel PECR" });
+  assert.strictEqual(result.matches[0]!.confidence, undefined);
+});
+
+test("formatBenefitResult annotates stale confidence", () => {
+  const staleResult: McpBenefitResult = {
+    ...sample,
+    matches: [
+      {
+        ...sample.matches[0]!,
+        confidence: { level: "stale", expiresAt: "2025-01-01", isExpired: true },
+      },
+    ],
+  };
+  const text = formatBenefitResult(staleResult);
+  assert.match(text, /outdated|stale/i, "should mention staleness");
+  assert.match(text, /verify/i, "should suggest verification");
+  // The staleness annotation must not introduce any price-computation terms
+  assert.doesNotMatch(text, /member.*price|indicative.*price|totalAmount|nightlyAmount/i, "staleness note must not reference prices");
+});
+
+test("formatBenefitResult annotates low confidence", () => {
+  const lowResult: McpBenefitResult = {
+    ...sample,
+    matches: [
+      {
+        ...sample.matches[0]!,
+        confidence: { level: "low", expiresAt: "2026-06-01", isExpired: false },
+      },
+    ],
+  };
+  const text = formatBenefitResult(lowResult);
+  assert.match(text, /outdated|confidence/i, "should mention low confidence");
+});
+
+test("formatBenefitResult does not add staleness note for high/medium confidence", () => {
+  const highResult: McpBenefitResult = {
+    ...sample,
+    matches: [
+      {
+        ...sample.matches[0]!,
+        confidence: { level: "high", expiresAt: "2027-01-01", isExpired: false },
+      },
+    ],
+  };
+  const text = formatBenefitResult(highResult);
+  assert.doesNotMatch(text, /outdated|stale|verify.*terms/i, "high confidence should not trigger warning");
+});

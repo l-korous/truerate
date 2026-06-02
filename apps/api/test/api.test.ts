@@ -324,3 +324,45 @@ test("CORS: preflight for disallowed origin does not allow it", async () => {
   });
   assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
 });
+
+// --- Admin catalog confidence endpoint (issue #153) ---
+
+test("GET /admin/catalog/confidence returns catalog entries with confidence scores", async () => {
+  const app = await getApp();
+  const res = await app.request("/admin/catalog/confidence");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(Array.isArray(body.catalog), "catalog is an array");
+  assert.ok(body.catalog.length > 0, "catalog has entries");
+  assert.ok(typeof body.generatedAt === "string", "generatedAt is a string");
+
+  const entry = body.catalog[0];
+  assert.ok(typeof entry.id === "string", "entry has id");
+  assert.ok(typeof entry.name === "string", "entry has name");
+  assert.ok(typeof entry.category === "string", "entry has category");
+  assert.ok(entry.confidence, "entry has confidence");
+  assert.ok(["high", "medium", "low", "stale"].includes(entry.confidence.level), "confidence level is valid");
+  assert.ok(typeof entry.confidence.score === "number", "confidence score is a number");
+  assert.ok(typeof entry.confidence.expiresAt === "string", "confidence expiresAt is a string");
+  assert.ok(typeof entry.confidence.isExpired === "boolean", "confidence isExpired is a boolean");
+});
+
+test("GET /admin/catalog/confidence includes booking_genius entry", async () => {
+  const app = await getApp();
+  const res = await app.request("/admin/catalog/confidence");
+  const body = await res.json();
+  const genius = body.catalog.find((e: any) => e.id === "booking_genius");
+  assert.ok(genius, "booking_genius should be in catalog");
+  assert.equal(genius.category, "ota");
+  assert.ok(genius.asOf, "asOf should be present");
+  assert.ok(genius.sourceUrl, "sourceUrl should be present");
+});
+
+test("GET /admin/catalog/confidence never contains price data", async () => {
+  const app = await getApp();
+  const res = await app.request("/admin/catalog/confidence");
+  const text = await res.text();
+  assert.ok(!text.includes("nightlyAmount"), "no nightly amount");
+  assert.ok(!text.includes("totalAmount"), "no total amount");
+  assert.ok(!text.includes("publicOffer"), "no public offer");
+});
