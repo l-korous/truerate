@@ -88,7 +88,18 @@ export const PROGRAMS: Program[] = [
     benefits: {
       "*": [
         { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "direct booking only; stacks with promotions; not via OTAs" } },
-        { scope: "domain", value: { kind: "perk", perks: ["Priority early check-in", "Late check-out", "Complimentary room upgrade (when available)"] } },
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["Priority early check-in", "Late check-out", "Complimentary room upgrade (when available)"],
+            structuredPerks: [
+              { type: "early_check_in", label: "Priority early check-in", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+              { type: "late_check_out", label: "Late check-out", conditions: { bookingChannel: ["direct"] } },
+              { type: "room_upgrade", label: "Complimentary room upgrade when available", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+            ],
+          },
+        },
       ],
     },
   },
@@ -106,7 +117,19 @@ export const PROGRAMS: Program[] = [
     benefits: {
       "*": [
         { scope: "domain", value: { kind: "percentDiscount", percentOff: 0.2, conditions: "member rate, direct booking only; subject to availability on high-demand dates" } },
-        { scope: "domain", value: { kind: "perk", perks: ["Priority room upgrade (when available)", "20% off Pure Altitude spa treatments", "Complimentary early check-in / late check-out (when available)"] } },
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["Priority room upgrade (when available)", "20% off Pure Altitude spa treatments", "Complimentary early check-in / late check-out (when available)"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Priority room upgrade when available", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+              { type: "spa_credit", label: "20% off Pure Altitude spa treatments", conditions: { bookingChannel: ["direct"], notes: "Discount on spa treatments; not a cash credit" } },
+              { type: "early_check_in", label: "Complimentary early check-in when available", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+              { type: "late_check_out", label: "Complimentary late check-out when available", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+            ],
+          },
+        },
       ],
     },
   },
@@ -152,23 +175,78 @@ export const PROGRAMS: Program[] = [
       // conservative, indicative 5% base across the brand.
       Classic: [
         { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate (up to ~10% at participating hotels)" } },
-        { scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi", "Online check-in"] } },
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate", "Free Wi-Fi", "Online check-in"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+              { type: "other", label: "Online check-in" },
+            ],
+          },
+        },
       ],
       Silver: [
         { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
-        { scope: "brand", value: { kind: "perk", perks: ["Welcome drink", "Late check-out (when available)"] } },
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Welcome drink", "Late check-out (when available)"],
+            structuredPerks: [
+              { type: "welcome_amenity", label: "Welcome drink on arrival" },
+              { type: "late_check_out", label: "Late check-out when available", conditions: { subjectToAvailability: true } },
+            ],
+          },
+        },
       ],
       Gold: [
         { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
-        { scope: "brand", value: { kind: "perk", perks: ["Welcome drink", "Room upgrade (when available)", "Executive lounge access (at applicable hotels)"] } },
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Welcome drink", "Room upgrade (when available)", "Executive lounge access (at applicable hotels)"],
+            structuredPerks: [
+              { type: "welcome_amenity", label: "Welcome drink on arrival" },
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "lounge_access", label: "Executive lounge access at applicable hotels", conditions: { notes: "Available at hotels with executive lounge" } },
+            ],
+          },
+        },
       ],
       Platinum: [
         { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
-        { scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "2 suite-night upgrades", "Executive lounge access", "Guaranteed availability"] } },
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Room upgrade (when available)", "2 suite-night upgrades", "Executive lounge access", "Guaranteed availability"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "suite_upgrade", label: "2 suite-night upgrade certificates per year", conditions: { notes: "2 suite-night upgrade certificates per status year" } },
+              { type: "lounge_access", label: "Executive lounge access" },
+              { type: "guaranteed_availability", label: "Guaranteed room availability" },
+            ],
+          },
+        },
       ],
       Diamond: [
         { scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "member rate" } },
-        { scope: "brand", value: { kind: "perk", perks: ["Weekend breakfast worldwide", "Dining & spa vouchers", "Premium room upgrade", "Executive lounge access"] } },
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Weekend breakfast worldwide", "Dining & spa vouchers", "Premium room upgrade", "Executive lounge access"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Weekend breakfast worldwide", conditions: { notes: "Applies on weekend stays globally" } },
+              { type: "spa_credit", label: "Dining and spa vouchers", conditions: { notes: "Vouchers included with Diamond status" } },
+              { type: "room_upgrade", label: "Premium room upgrade" },
+              { type: "lounge_access", label: "Executive lounge access" },
+            ],
+          },
+        },
       ],
     },
   },
@@ -187,11 +265,73 @@ export const PROGRAMS: Program[] = [
     requiresCredential: false,
     fields: [{ key: "tier", label: "Status", type: "select", options: ["Club", "Silver Elite", "Gold Elite", "Platinum Elite", "Diamond Elite"] }],
     benefits: {
-      Club: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate (lowest available)", "Free Wi-Fi", "Earns points"] } }],
-      "Silver Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi", "20% bonus points"] } }],
-      "Gold Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Room upgrade (when available)", "40% bonus points"] } }],
-      "Platinum Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "Guaranteed room availability", "Welcome amenity"] } }],
-      "Diamond Elite": [{ scope: "brand", value: { kind: "perk", perks: ["Premium room upgrade", "Welcome amenity", "Dedicated support"] } }],
+      Club: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate (lowest available)", "Free Wi-Fi", "Earns points"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+              { type: "points_bonus", label: "Earns IHG One Rewards points" },
+            ],
+          },
+        },
+      ],
+      "Silver Elite": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate", "Free Wi-Fi", "20% bonus points"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+              { type: "points_bonus", label: "20% bonus points on top of base earn", conditions: { notes: "20% bonus on base point earn rate" } },
+            ],
+          },
+        },
+      ],
+      "Gold Elite": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate", "Room upgrade (when available)", "40% bonus points"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "points_bonus", label: "40% bonus points on top of base earn", conditions: { notes: "40% bonus on base point earn rate" } },
+            ],
+          },
+        },
+      ],
+      "Platinum Elite": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Room upgrade (when available)", "Guaranteed room availability", "Welcome amenity"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "guaranteed_availability", label: "Guaranteed room availability" },
+              { type: "welcome_amenity", label: "Welcome amenity on arrival" },
+            ],
+          },
+        },
+      ],
+      "Diamond Elite": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Premium room upgrade", "Welcome amenity", "Dedicated support"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Premium room upgrade" },
+              { type: "welcome_amenity", label: "Welcome amenity on arrival" },
+              { type: "priority_support", label: "Dedicated IHG One Rewards support" },
+            ],
+          },
+        },
+      ],
     },
   },
   {
@@ -212,12 +352,63 @@ export const PROGRAMS: Program[] = [
       { key: "membershipNumber", label: "Honors number (optional)", type: "text" },
     ],
     benefits: {
-      Member: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate (lowest available)", "Free Wi-Fi"] } }],
-      Silver: [{ scope: "brand", value: { kind: "perk", perks: ["Free Wi-Fi", "5th night free on points", "Bonus points"] } }],
+      Member: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate (lowest available)", "Free Wi-Fi"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+            ],
+          },
+        },
+      ],
+      Silver: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free Wi-Fi", "5th night free on points", "Bonus points"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+              { type: "other", label: "5th night free on points redemptions", conditions: { notes: "Every 5th night is free when redeeming points" } },
+              { type: "points_bonus", label: "Bonus points on stays" },
+            ],
+          },
+        },
+      ],
       // Hilton Gold genuinely includes free breakfast (or daily F&B credit at US
       // hotels) and space-available room upgrades — a real, high-value perk.
-      Gold: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (or daily F&B credit)", "Room upgrade (when available)", "Free Wi-Fi"] } }],
-      Diamond: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (or F&B credit)", "Executive lounge access", "Premium room upgrade", "48-hour guarantee"] } }],
+      Gold: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast (or daily F&B credit)", "Room upgrade (when available)", "Free Wi-Fi"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast or daily F&B credit", conditions: { notes: "Daily F&B credit at US properties instead of breakfast" } },
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+            ],
+          },
+        },
+      ],
+      Diamond: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast (or F&B credit)", "Executive lounge access", "Premium room upgrade", "48-hour guarantee"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast or F&B credit", conditions: { notes: "F&B credit depending on brand and property" } },
+              { type: "lounge_access", label: "Executive lounge access" },
+              { type: "room_upgrade", label: "Premium room upgrade" },
+              { type: "guaranteed_availability", label: "48-hour room guarantee", conditions: { notes: "Guaranteed room availability 48 hours before arrival" } },
+            ],
+          },
+        },
+      ],
     },
   },
   {
@@ -238,13 +429,78 @@ export const PROGRAMS: Program[] = [
       { key: "membershipNumber", label: "Bonvoy number (optional)", type: "text" },
     ],
     benefits: {
-      Member: [{ scope: "brand", value: { kind: "perk", perks: ["Member rate", "Free Wi-Fi"] } }],
-      Silver: [{ scope: "brand", value: { kind: "perk", perks: ["Late check-out (when available)", "10% bonus points"] } }],
+      Member: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Member rate", "Free Wi-Fi"],
+            structuredPerks: [
+              { type: "free_wifi", label: "Complimentary Wi-Fi" },
+            ],
+          },
+        },
+      ],
+      Silver: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Late check-out (when available)", "10% bonus points"],
+            structuredPerks: [
+              { type: "late_check_out", label: "Late check-out when available", conditions: { subjectToAvailability: true } },
+              { type: "points_bonus", label: "10% bonus points on stays", conditions: { notes: "10% bonus on base point earn rate" } },
+            ],
+          },
+        },
+      ],
       // NB: Marriott Gold does NOT include free breakfast — that begins at
       // Platinum (and is brand-dependent). Modelled accurately.
-      Gold: [{ scope: "brand", value: { kind: "perk", perks: ["Room upgrade (when available)", "2pm late check-out", "25% bonus points"] } }],
-      Platinum: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "4pm late check-out"] } }],
-      Titanium: [{ scope: "brand", value: { kind: "perk", perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "Guaranteed 4pm late check-out", "Choice benefit"] } }],
+      Gold: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Room upgrade (when available)", "2pm late check-out", "25% bonus points"],
+            structuredPerks: [
+              { type: "room_upgrade", label: "Room upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "late_check_out", label: "Guaranteed 2pm late check-out", conditions: { notes: "Guaranteed until 2pm" } },
+              { type: "points_bonus", label: "25% bonus points on stays", conditions: { notes: "25% bonus on base point earn rate" } },
+            ],
+          },
+        },
+      ],
+      Platinum: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "4pm late check-out"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast at most Marriott brands", conditions: { notes: "Most Marriott Bonvoy brands; some exclusions apply" } },
+              { type: "lounge_access", label: "Club lounge access" },
+              { type: "suite_upgrade", label: "Suite upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "late_check_out", label: "Guaranteed 4pm late check-out", conditions: { notes: "Guaranteed until 4pm" } },
+            ],
+          },
+        },
+      ],
+      Titanium: [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free breakfast (most brands)", "Lounge access", "Suite upgrade (when available)", "Guaranteed 4pm late check-out", "Choice benefit"],
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast at most Marriott brands", conditions: { notes: "Most Marriott Bonvoy brands; some exclusions apply" } },
+              { type: "lounge_access", label: "Club lounge access" },
+              { type: "suite_upgrade", label: "Suite upgrade when available", conditions: { subjectToAvailability: true } },
+              { type: "late_check_out", label: "Guaranteed 4pm late check-out", conditions: { subjectToAvailability: false, notes: "Guaranteed until 4pm" } },
+              { type: "other", label: "Annual Titanium choice benefit", conditions: { notes: "Select one annual benefit from Marriott's choice list" } },
+            ],
+          },
+        },
+      ],
     },
   },
 
@@ -264,8 +520,33 @@ export const PROGRAMS: Program[] = [
     fields: [],
     benefits: {
       "*": [
-        { scope: "global", value: { kind: "perk", perks: ["Marriott Bonvoy Gold status (when enrolled)", "Hilton Honors Gold status (when enrolled)"], conditions: "enrolment required; US card — benefits vary by market" } },
-        { scope: "global", value: { kind: "perk", perks: ["Fine Hotels + Resorts: free breakfast, room upgrade, late checkout, on-property credit", "Airport lounge access (Centurion / Priority Pass)"], conditions: "FH+R via Amex Travel" } },
+        {
+          scope: "global",
+          value: {
+            kind: "perk",
+            perks: ["Marriott Bonvoy Gold status (when enrolled)", "Hilton Honors Gold status (when enrolled)"],
+            conditions: "enrolment required; US card — benefits vary by market",
+            structuredPerks: [
+              { type: "other", label: "Marriott Bonvoy Gold status", conditions: { enrollmentRequired: true, notes: "US card; enrolment required via Amex; benefits vary by market" } },
+              { type: "other", label: "Hilton Honors Gold status", conditions: { enrollmentRequired: true, notes: "US card; enrolment required via Amex; benefits vary by market" } },
+            ],
+          },
+        },
+        {
+          scope: "global",
+          value: {
+            kind: "perk",
+            perks: ["Fine Hotels + Resorts: free breakfast, room upgrade, late checkout, on-property credit", "Airport lounge access (Centurion / Priority Pass)"],
+            conditions: "FH+R via Amex Travel",
+            structuredPerks: [
+              { type: "free_breakfast", label: "Free breakfast via Fine Hotels + Resorts", conditions: { notes: "Booked via Amex Fine Hotels + Resorts programme" } },
+              { type: "room_upgrade", label: "Room upgrade via Fine Hotels + Resorts", conditions: { notes: "Booked via Amex Fine Hotels + Resorts programme" } },
+              { type: "late_check_out", label: "Late check-out via Fine Hotels + Resorts", conditions: { notes: "Booked via Amex Fine Hotels + Resorts programme" } },
+              { type: "spa_credit", label: "On-property credit via Fine Hotels + Resorts", conditions: { notes: "On-property credit; amount varies by property" } },
+              { type: "lounge_access", label: "Airport lounge access (Centurion and Priority Pass)", conditions: { notes: "Access to Centurion Lounges and Priority Pass network" } },
+            ],
+          },
+        },
       ],
     },
   },
@@ -285,13 +566,53 @@ export const PROGRAMS: Program[] = [
     fields: [{ key: "tier", label: "Plan", type: "select", options: ["Standard", "Plus", "Premium", "Metal", "Ultra"] }],
     benefits: {
       Premium: [
-        { scope: "global", value: { kind: "perk", perks: ["Unlimited interbank FX", "Fee-free ATM withdrawals (monthly limit)", "Partner subscriptions (e.g. Headspace)", "Purchase protection"] } },
+        {
+          scope: "global",
+          value: {
+            kind: "perk",
+            perks: ["Unlimited interbank FX", "Fee-free ATM withdrawals (monthly limit)", "Partner subscriptions (e.g. Headspace)", "Purchase protection"],
+            structuredPerks: [
+              { type: "other", label: "Unlimited interbank foreign exchange" },
+              { type: "other", label: "Fee-free ATM withdrawals up to monthly limit" },
+              { type: "other", label: "Partner subscription benefits (e.g. Headspace)" },
+              { type: "other", label: "Purchase protection insurance" },
+            ],
+          },
+        },
       ],
       Metal: [
-        { scope: "global", value: { kind: "perk", perks: ["Unlimited interbank FX", "Free Financial Times & The Athletic", "WeWork & ClassPass credits", "Discounted airport lounge access", "Travel & purchase insurance", "Higher cashback/points"] } },
+        {
+          scope: "global",
+          value: {
+            kind: "perk",
+            perks: ["Unlimited interbank FX", "Free Financial Times & The Athletic", "WeWork & ClassPass credits", "Discounted airport lounge access", "Travel & purchase insurance", "Higher cashback/points"],
+            structuredPerks: [
+              { type: "other", label: "Unlimited interbank foreign exchange" },
+              { type: "other", label: "Free Financial Times and The Athletic subscriptions" },
+              { type: "other", label: "WeWork and ClassPass credits" },
+              { type: "lounge_access", label: "Discounted airport lounge access", conditions: { notes: "Discounted rate; not complimentary" } },
+              { type: "other", label: "Travel and purchase insurance" },
+              { type: "points_bonus", label: "Higher cashback and rewards earn" },
+            ],
+          },
+        },
       ],
       Ultra: [
-        { scope: "global", value: { kind: "perk", perks: ["Fee-free international transfers", "Unlimited worldwide airport lounge access", "Comprehensive travel & medical insurance", "Free eSIM data allowance", "Premium partner subscriptions", "Top-tier points earn"] } },
+        {
+          scope: "global",
+          value: {
+            kind: "perk",
+            perks: ["Fee-free international transfers", "Unlimited worldwide airport lounge access", "Comprehensive travel & medical insurance", "Free eSIM data allowance", "Premium partner subscriptions", "Top-tier points earn"],
+            structuredPerks: [
+              { type: "other", label: "Fee-free international transfers" },
+              { type: "lounge_access", label: "Unlimited worldwide airport lounge access", conditions: { notes: "Unlimited access to worldwide lounge network" } },
+              { type: "other", label: "Comprehensive travel and medical insurance" },
+              { type: "other", label: "Free eSIM data allowance" },
+              { type: "other", label: "Premium partner subscription benefits" },
+              { type: "points_bonus", label: "Top-tier points and cashback earn" },
+            ],
+          },
+        },
       ],
     },
   },
@@ -305,7 +626,21 @@ export const PROGRAMS: Program[] = [
     defaultMatch: { brands: ["Lufthansa", "Austrian Airlines", "SWISS", "Brussels Airlines"], domains: ["lufthansa.com"] },
     requiresCredential: false,
     fields: [{ key: "membershipNumber", label: "Card number (optional)", type: "text" }],
-    benefits: { "*": [{ scope: "brand", value: { kind: "pointsEarn", pointsPerUnit: 1, perks: ["Earns award miles"] } }] },
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 1,
+            perks: ["Earns award miles"],
+            structuredPerks: [
+              { type: "points_bonus", label: "Earns Lufthansa Group award miles" },
+            ],
+          },
+        },
+      ],
+    },
   },
 ];
 
