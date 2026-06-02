@@ -127,6 +127,9 @@ importers:
       '@playwright/test':
         specifier: ^1.47.2
         version: 1.60.0
+      '@truerate/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       '@types/node':
         specifier: ^20.16.10
         version: 20.19.41
