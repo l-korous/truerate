@@ -89,6 +89,57 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// --- Admin catalog types -----------------------------------------------------
+
+export interface CatalogProvenance {
+  source: "manual-seed" | "scrape-proposal" | "partner-submission";
+  sourceUrl?: string;
+  asOf: string;
+  scrapedAt?: string;
+  submittedBy?: string;
+  notes?: string;
+}
+
+export interface BenefitTemplate {
+  scope: string;
+  match?: { brands?: string[]; domains?: string[]; propertyNames?: string[]; categories?: string[] };
+  value: BenefitValue;
+}
+
+export interface CatalogEntry {
+  id: string;
+  programId: string;
+  version: number;
+  isCurrent: boolean;
+  status: "draft" | "in-review" | "published" | "archived";
+  provenance: CatalogProvenance;
+  region: string;
+  name: string;
+  category: string;
+  defaultMatch: { brands?: string[]; domains?: string[]; propertyNames?: string[]; categories?: string[] };
+  tiers?: string[];
+  requiresCredential: boolean;
+  fields: ProgramField[];
+  benefits: Record<string, BenefitTemplate[]>;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string;
+  archivedAt?: string;
+}
+
+export interface CatalogEntryInput {
+  programId: string;
+  provenance: CatalogProvenance;
+  region: string;
+  name: string;
+  category: string;
+  defaultMatch: { brands?: string[]; domains?: string[]; propertyNames?: string[]; categories?: string[] };
+  tiers?: string[];
+  requiresCredential: boolean;
+  fields: ProgramField[];
+  benefits: Record<string, BenefitTemplate[]>;
+}
+
 export interface PerkBandEstimate {
   perkType: string;
   starBand: 3 | 4 | 5;
@@ -142,4 +193,40 @@ export const api = {
   /** Emit an activation milestone event from the web client (fire-and-forget). */
   trackActivation: (event: "signup" | "membership_added" | "mcp_url_obtained" | "extension_connected") =>
     req<void>("/events/activation", { method: "POST", body: JSON.stringify({ event }) }).catch(() => undefined),
+};
+
+// --- Admin catalog API (via Next.js proxy routes) ----------------------------
+
+const ADMIN_BASE = "/api/admin/catalog";
+
+async function adminReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${ADMIN_BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export const adminCatalogApi = {
+  list: (status?: string) =>
+    adminReq<{ entries: CatalogEntry[]; count: number }>(status ? `?status=${status}` : ""),
+  create: (input: CatalogEntryInput) =>
+    adminReq<{ entry: CatalogEntry }>("", { method: "POST", body: JSON.stringify(input) }),
+  get: (programId: string) =>
+    adminReq<{ entry: CatalogEntry }>(`/${programId}`),
+  update: (programId: string, input: CatalogEntryInput) =>
+    adminReq<{ entry: CatalogEntry }>(`/${programId}`, { method: "PUT", body: JSON.stringify(input) }),
+  archive: (programId: string) =>
+    adminReq<void>(`/${programId}`, { method: "DELETE" }),
+  publish: (programId: string) =>
+    adminReq<{ entry: CatalogEntry }>(`/${programId}/publish`, { method: "POST" }),
+  history: (programId: string) =>
+    adminReq<{ history: CatalogEntry[]; programId: string }>(`/${programId}/history`),
+  restore: (programId: string, version: number) =>
+    adminReq<{ entry: CatalogEntry }>(`/${programId}/restore/${version}`, { method: "POST" }),
 };
