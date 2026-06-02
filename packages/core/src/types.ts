@@ -303,12 +303,39 @@ export interface PageContext {
   };
 }
 
+/**
+ * An estimated monetary value for a structured perk matched on a page.
+ *
+ * Values are illustrative estimates at each hotel star band — they are
+ * explicitly NOT prices or discounts (isEstimate: true always).
+ */
+export interface MatchedPerkEstimate {
+  perkType: PerkType;
+  /** Human-readable perk label from the catalog. */
+  label: string;
+  /** Estimated USD replacement-cost value at 3★ / 4★ / 5★ hotel bands. */
+  estimatedUsd: { 3: number; 4: number; 5: number };
+  /** Which membership this perk comes from. */
+  membershipLabel: string;
+  /** Structured conditions qualifying when the perk applies. */
+  conditions?: PerkConditions;
+  /** Always true — this is NOT a price or a discount amount. */
+  isEstimate: true;
+}
+
 export interface PageMatchResult {
   domain: string;
   /** Benefits from the user's memberships that apply to this page/property. */
   matches: MatchedBenefit[];
   /** Perks (no price change) applicable here. */
   perks: string[];
+  /**
+   * Estimated monetary value for each structured perk matched on this page,
+   * across the 3★ / 4★ / 5★ hotel star bands.
+   * All estimates are labeled isEstimate: true and must never be presented
+   * as a price or subtracted from any price the user sees.
+   */
+  perkEstimates: MatchedPerkEstimate[];
 }
 
 // --- Client-side error reporting ---------------------------------------------

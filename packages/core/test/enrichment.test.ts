@@ -140,3 +140,102 @@ test("matchPage: perks surface even with no property context", () => {
   assert.ok(res.perks.some((x) => /breakfast/i.test(x)));
   assert.ok(!("indicativeOffer" in res), "no indicativeOffer field");
 });
+
+// --- perkEstimates (issue #139) ---
+
+test("matchPage: perkEstimates present and typed isEstimate:true", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 3")],
+  );
+  assert.ok(Array.isArray(res.perkEstimates), "perkEstimates is an array");
+  assert.ok(res.perkEstimates.length > 0, "Genius Level 3 has structured perks");
+  for (const e of res.perkEstimates) {
+    assert.equal(e.isEstimate, true, "isEstimate must be true");
+    assert.ok(typeof e.estimatedUsd[3] === "number", "3★ estimate is a number");
+    assert.ok(typeof e.estimatedUsd[4] === "number", "4★ estimate is a number");
+    assert.ok(typeof e.estimatedUsd[5] === "number", "5★ estimate is a number");
+    // must never contain any 'price' keys
+    assert.ok(!("price" in e), "no price field");
+    assert.ok(!("finalPrice" in e), "no finalPrice field");
+  }
+});
+
+test("matchPage: perkEstimates include free_breakfast for Genius Level 3", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 3")],
+  );
+  const breakfast = res.perkEstimates.find((e) => e.perkType === "free_breakfast");
+  assert.ok(breakfast, "free_breakfast estimate should be present for Genius L3");
+  // free_breakfast table: 3★=$15, 4★=$25, 5★=$50
+  assert.equal(breakfast!.estimatedUsd[3], 15);
+  assert.equal(breakfast!.estimatedUsd[4], 25);
+  assert.equal(breakfast!.estimatedUsd[5], 50);
+  assert.equal(breakfast!.membershipLabel, "Booking.com Genius - Level 3");
+});
+
+test("matchPage: perkEstimates include room_upgrade for Genius Level 3", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 3")],
+  );
+  const upgrade = res.perkEstimates.find((e) => e.perkType === "room_upgrade");
+  assert.ok(upgrade, "room_upgrade estimate should be present for Genius L3");
+  // room_upgrade table: 3★=$30, 4★=$60, 5★=$120
+  assert.equal(upgrade!.estimatedUsd[3], 30);
+  assert.equal(upgrade!.estimatedUsd[4], 60);
+  assert.equal(upgrade!.estimatedUsd[5], 120);
+});
+
+test("matchPage: perkEstimates excludes zero-value perks (priority_support = 0)", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 3")],
+  );
+  // priority_support has 0 value at all bands — should be excluded
+  const support = res.perkEstimates.find((e) => e.perkType === "priority_support");
+  assert.equal(support, undefined, "priority_support has no monetary estimate and should not appear");
+});
+
+test("matchPage: perkEstimates empty for benefits with only free-text perks (no structuredPerks)", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  // Marriott Platinum has free-text perks but no structuredPerks
+  const res = engine.matchPage(
+    { domain: "marriott.com", property: { name: "Marriott", brand: "Marriott" } },
+    [membership("marriott_bonvoy", "Platinum")],
+  );
+  assert.equal(res.perkEstimates.length, 0, "no structuredPerks -> no perkEstimates");
+});
+
+test("matchPage: perkEstimates empty for custom discount with no structuredPerks", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "pecr.cz", property: { name: "Hotel PECR" } },
+    [customDiscount(0.15)],
+  );
+  assert.equal(res.perkEstimates.length, 0);
+});
+
+test("matchPage: Genius Level 2 also has perkEstimates (structured perks defined)", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 2")],
+  );
+  assert.ok(res.perkEstimates.length > 0, "Level 2 has structuredPerks too");
+});
+
+test("matchPage: Genius Level 1 has no perkEstimates (no structuredPerks)", () => {
+  const engine = new EnrichmentEngine([new BookingProvider()]);
+  const res = engine.matchPage(
+    { domain: "booking.com" },
+    [membership("booking_genius", "Level 1")],
+  );
+  // Level 1 only has a percentDiscount benefit, no structuredPerks
+  assert.equal(res.perkEstimates.length, 0);
+});
