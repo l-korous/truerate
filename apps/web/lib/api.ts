@@ -139,4 +139,7 @@ export const api = {
     req<{ user: PublicUser }>(`/memberships/${id}`, { method: "PATCH", body: JSON.stringify(body) }).then((r) => r.user),
   perkEstimates: () =>
     req<{ estimates: PerkEstimates }>("/perks/estimates").then((r) => r.estimates),
+  /** Emit an activation milestone event from the web client (fire-and-forget). */
+  trackActivation: (event: "signup" | "membership_added" | "mcp_url_obtained" | "extension_connected") =>
+    req<void>("/events/activation", { method: "POST", body: JSON.stringify({ event }) }).catch(() => undefined),
 };

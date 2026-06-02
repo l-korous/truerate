@@ -25,6 +25,7 @@ import {
   type Membership,
   type User,
   type PerkType,
+  type ActivationEventName,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 
@@ -148,6 +149,7 @@ app.post("/auth/register", async (c) => {
     market: mkt,
     currency: mkt === "us" ? "USD" : "EUR",
   };
+  markActivation(user, "signup");
   await repo.create(user);
   c.get("logger").info("user registered", { userIdHash: hashUserId(user.id), market: mkt });
   return c.json({ token: await issueToken(user.id, user.email), user: publicUser(user) });
@@ -238,7 +240,9 @@ app.post("/memberships", requireAuth, async (c) => {
   }
 
   user.memberships.push(membership);
+  markActivation(user, "membership_added");
   await saveUser(user);
+  c.get("logger").info("membership added", { userIdHash: hashUserId(user.id), count: user.memberships.length });
   return c.json({ user: publicUser(user) });
 });
 
@@ -329,6 +333,10 @@ app.post("/benefits/match", requireAuth, async (c) => {
   const parsed = await parseBody(PageContextSchema, c);
   if (parsed instanceof Response) return parsed;
   const user = await loadUser(c.get("userId"));
+  if (markActivation(user, "extension_connected")) {
+    await saveUser(user);
+    c.get("logger").info("activation milestone", { event: "extension_connected", userIdHash: hashUserId(user.id) });
+  }
   return c.json(engine.matchPage(parsed, user.memberships));
 });
 
@@ -362,6 +370,52 @@ app.post("/client-errors", async (c) => {
     clientContext: safeContext,
   });
   return c.body(null, 204);
+});
+
+// --- Activation tracking ---------------------------------------------------
+
+const ACTIVATION_EVENT_VALUES = ["signup", "membership_added", "mcp_url_obtained", "extension_connected"] as const satisfies ActivationEventName[];
+
+const ActivationEventSchema = z.object({
+  event: z.enum(ACTIVATION_EVENT_VALUES),
+});
+
+/**
+ * Set a milestone on the user document if not already set.
+ * Returns true if the milestone was newly set (i.e. needs a save), false if already present.
+ */
+function markActivation(user: User, event: ActivationEventName): boolean {
+  if (user.activationMilestones?.[event]) return false;
+  if (!user.activationMilestones) user.activationMilestones = {};
+  user.activationMilestones[event] = new Date().toISOString();
+  return true;
+}
+
+// POST /events/activation — client-side activation event (e.g. mcp_url_obtained).
+// Requires auth so events are tied to a real user.
+app.post("/events/activation", requireAuth, async (c) => {
+  const parsed = await parseBody(ActivationEventSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const user = await loadUser(c.get("userId"));
+  if (markActivation(user, parsed.event)) {
+    await saveUser(user);
+    c.get("logger").info("activation milestone", { event: parsed.event, userIdHash: hashUserId(user.id) });
+  }
+  return c.body(null, 204);
+});
+
+// GET /admin/funnel/activation — aggregate funnel counts across all users.
+// Protected by ADMIN_SECRET header; returns 401 when the secret is absent or wrong.
+app.get("/admin/funnel/activation", async (c) => {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret || c.req.header("x-admin-secret") !== adminSecret) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const { getUserRepo } = await import("@truerate/core");
+  const repo = await getUserRepo();
+  const counts = await repo.funnelCounts();
+  return c.json({ funnel: counts, generatedAt: new Date().toISOString() });
 });
 
 // --- helpers ----------------------------------------------------------------
