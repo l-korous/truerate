@@ -5,10 +5,11 @@ WORKDIR /repo
 
 FROM base AS build
 COPY pnpm-workspace.yaml package.json tsconfig.base.json turbo.json ./
-COPY packages/core/package.json packages/core/
+# Copy ALL workspace packages so pnpm can resolve every workspace dep
+# (core, harness, future ones) — selective copies broke when new packages landed.
+COPY packages packages
 COPY apps/mcp/package.json apps/mcp/
 RUN pnpm install --frozen-lockfile=false
-COPY packages/core packages/core
 COPY apps/mcp apps/mcp
 RUN pnpm --filter @truerate/core build && pnpm --filter @truerate/mcp build
 RUN pnpm --filter @truerate/mcp --prod deploy /export
