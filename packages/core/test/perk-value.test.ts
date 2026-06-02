@@ -168,3 +168,99 @@ test("estimates increase monotonically from 3★ to 5★ for all tangible perk t
     assert.ok(v5 >= v4, `${pt}: 5★ (${v5}) should be >= 4★ (${v4})`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Exact value verification for all 15 perk types at all 3 star bands
+// (documents the canonical estimation table; guards against accidental drift)
+// ---------------------------------------------------------------------------
+
+test("exact values: free_breakfast — 3★=$15, 4★=$25, 5★=$50", () => {
+  assert.equal(estimatePerkValue("free_breakfast", 3).estimatedUsd, 15);
+  assert.equal(estimatePerkValue("free_breakfast", 4).estimatedUsd, 25);
+  assert.equal(estimatePerkValue("free_breakfast", 5).estimatedUsd, 50);
+});
+
+test("exact values: room_upgrade — 3★=$30, 4★=$60, 5★=$120", () => {
+  assert.equal(estimatePerkValue("room_upgrade", 3).estimatedUsd, 30);
+  assert.equal(estimatePerkValue("room_upgrade", 4).estimatedUsd, 60);
+  assert.equal(estimatePerkValue("room_upgrade", 5).estimatedUsd, 120);
+});
+
+test("exact values: suite_upgrade — 3★=$80, 4★=$150, 5★=$300", () => {
+  assert.equal(estimatePerkValue("suite_upgrade", 3).estimatedUsd, 80);
+  assert.equal(estimatePerkValue("suite_upgrade", 4).estimatedUsd, 150);
+  assert.equal(estimatePerkValue("suite_upgrade", 5).estimatedUsd, 300);
+});
+
+test("exact values: lounge_access — 3★=$0, 4★=$30, 5★=$60", () => {
+  assert.equal(estimatePerkValue("lounge_access", 3).estimatedUsd, 0);
+  assert.equal(estimatePerkValue("lounge_access", 4).estimatedUsd, 30);
+  assert.equal(estimatePerkValue("lounge_access", 5).estimatedUsd, 60);
+});
+
+test("exact values: welcome_amenity — 3★=$10, 4★=$20, 5★=$40", () => {
+  assert.equal(estimatePerkValue("welcome_amenity", 3).estimatedUsd, 10);
+  assert.equal(estimatePerkValue("welcome_amenity", 4).estimatedUsd, 20);
+  assert.equal(estimatePerkValue("welcome_amenity", 5).estimatedUsd, 40);
+});
+
+test("exact values: free_wifi — 3★=$5, 4★=$10, 5★=$15", () => {
+  assert.equal(estimatePerkValue("free_wifi", 3).estimatedUsd, 5);
+  assert.equal(estimatePerkValue("free_wifi", 4).estimatedUsd, 10);
+  assert.equal(estimatePerkValue("free_wifi", 5).estimatedUsd, 15);
+});
+
+test("exact values: airport_transfer — 3★=$20, 4★=$40, 5★=$80", () => {
+  assert.equal(estimatePerkValue("airport_transfer", 3).estimatedUsd, 20);
+  assert.equal(estimatePerkValue("airport_transfer", 4).estimatedUsd, 40);
+  assert.equal(estimatePerkValue("airport_transfer", 5).estimatedUsd, 80);
+});
+
+test("exact values: parking — 3★=$10, 4★=$20, 5★=$40", () => {
+  assert.equal(estimatePerkValue("parking", 3).estimatedUsd, 10);
+  assert.equal(estimatePerkValue("parking", 4).estimatedUsd, 20);
+  assert.equal(estimatePerkValue("parking", 5).estimatedUsd, 40);
+});
+
+test("exact values: spa_credit — 3★=$20, 4★=$50, 5★=$100", () => {
+  assert.equal(estimatePerkValue("spa_credit", 3).estimatedUsd, 20);
+  assert.equal(estimatePerkValue("spa_credit", 4).estimatedUsd, 50);
+  assert.equal(estimatePerkValue("spa_credit", 5).estimatedUsd, 100);
+});
+
+test("exact values: points_bonus — 3★=$5, 4★=$10, 5★=$20", () => {
+  assert.equal(estimatePerkValue("points_bonus", 3).estimatedUsd, 5);
+  assert.equal(estimatePerkValue("points_bonus", 4).estimatedUsd, 10);
+  assert.equal(estimatePerkValue("points_bonus", 5).estimatedUsd, 20);
+});
+
+test("exact values: other — 3★=$10, 4★=$20, 5★=$40", () => {
+  assert.equal(estimatePerkValue("other", 3).estimatedUsd, 10);
+  assert.equal(estimatePerkValue("other", 4).estimatedUsd, 20);
+  assert.equal(estimatePerkValue("other", 5).estimatedUsd, 40);
+});
+
+test("exact values: guaranteed_availability and priority_support are 0 at all bands", () => {
+  for (const band of [3, 4, 5] as StarBand[]) {
+    assert.equal(estimatePerkValue("guaranteed_availability", band).estimatedUsd, 0);
+    assert.equal(estimatePerkValue("priority_support", band).estimatedUsd, 0);
+  }
+});
+
+test("suite_upgrade has the highest estimate at every star band among all perk types", () => {
+  const allTypes: PerkType[] = [
+    "early_check_in", "late_check_out", "free_breakfast", "room_upgrade",
+    "lounge_access", "welcome_amenity", "free_wifi", "airport_transfer",
+    "parking", "spa_credit", "guaranteed_availability", "points_bonus",
+    "priority_support", "other",
+  ];
+  for (const band of [3, 4, 5] as StarBand[]) {
+    const suiteValue = estimatePerkValue("suite_upgrade", band).estimatedUsd;
+    for (const pt of allTypes) {
+      assert.ok(
+        suiteValue >= estimatePerkValue(pt, band).estimatedUsd,
+        `suite_upgrade (${suiteValue}) should be >= ${pt} at ${band}★`,
+      );
+    }
+  }
+});
