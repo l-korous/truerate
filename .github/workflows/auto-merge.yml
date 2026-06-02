@@ -85,9 +85,15 @@ jobs:
               continue
             fi
 
-            # Re-verify EVERY check on the head commit (belt and suspenders).
+            # Re-verify the checks on the head commit (belt and suspenders).
+            # IMPORTANT: a single check name can have multiple runs on one SHA
+            # (e.g. CI's concurrency cancels a superseded run, leaving a CANCELLED
+            # alongside the real SUCCESS). Collapse to the LATEST run per check name
+            # (by started_at) before judging, so phantom cancelled/superseded
+            # duplicates don't make a genuinely-green PR look red.
             checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate \
-                       --jq '[.check_runs[] | {status, conclusion}]' 2>/dev/null || echo '[]')
+                       --jq '[.check_runs[] | {name, status, conclusion, started: .started_at}]
+                             | group_by(.name) | map(sort_by(.started) | last)' 2>/dev/null || echo '[]')
             total=$(echo "$checks"   | jq 'length')
             pending=$(echo "$checks" | jq '[.[] | select(.status != "completed")] | length')
             bad=$(echo "$checks"     | jq '[.[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length')
