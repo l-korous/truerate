@@ -33,12 +33,20 @@ param jwtSecret string
 @secure()
 param credKey string
 
+@description('Previous AES-256 credential key kept during rotation (<version-id>:<base64-32-bytes>). Empty = not set.')
+@secure()
+param credKeyPrev string = ''
+
+@description('Re-encryption job image. CI replaces this with ghcr.io/<owner>/truerate-reencrypt-job:<sha>.')
+param reencryptJobImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 var suffix = uniqueString(resourceGroup().id)
 var kvName = take(toLower('${namePrefix}kv${suffix}'), 24)
 var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var laName = '${namePrefix}-logs'
 var envName = '${namePrefix}-env'
 var miName = '${namePrefix}-identity'
+var credKeyPrevSecretName = 'cred-key-prev'
 
 // ─── Managed identity ────────────────────────────────────────────────────────
 
@@ -75,6 +83,12 @@ resource credKeyRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'cred-key'
   properties: { value: credKey }
+}
+
+resource credKeyPrevRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(credKeyPrev)) {
+  parent: kv
+  name: 'cred-key-prev'
+  properties: { value: credKeyPrev }
 }
 
 // Key Vault Secrets User for the identity
@@ -172,6 +186,13 @@ var kvSecrets = [
   { name: 'jwt-secret', keyVaultUrl: jwtSecretRes.properties.secretUri, identity: mi.id }
   { name: 'cred-key', keyVaultUrl: credKeyRes.properties.secretUri, identity: mi.id }
 ]
+// When credKeyPrev is supplied, add it as an additional KV-backed secret for the job.
+var credKeyPrevSecretEntry = {
+  name: credKeyPrevSecretName
+  keyVaultUrl: empty(credKeyPrev) ? '' : credKeyPrevRes.properties.secretUri
+  identity: mi.id
+}
+var jobSecrets = empty(credKeyPrev) ? kvSecrets : concat(kvSecrets, [credKeyPrevSecretEntry])
 var cosmosEnv = [
   { name: 'COSMOS_ENDPOINT', value: cosmos.properties.documentEndpoint }
   { name: 'COSMOS_DATABASE', value: 'truerate' }
@@ -181,6 +202,9 @@ var secretEnv = [
   { name: 'TRUERATE_JWT_SECRET', secretRef: 'jwt-secret' }
   { name: 'TRUERATE_CRED_KEY', secretRef: 'cred-key' }
 ]
+var prevKeyEnv = empty(credKeyPrev)
+  ? []
+  : [{ name: 'TRUERATE_CRED_KEY_PREV', secretRef: credKeyPrevSecretName }]
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-api'
@@ -336,8 +360,48 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ─── Re-encryption Container Apps Job ───────────────────────────────────────
+//
+// Manually triggered; run during key rotation to migrate all encryptedCredential
+// blobs from the previous key version to the active key version.
+// Trigger with: az containerapp job start -n <job-name> -g <rg>
+// Pass DRY_RUN=true to preview without writing:
+//   az containerapp job start -n <job-name> -g <rg> \
+//     --env-vars DRY_RUN=true
+
+resource reencryptJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${namePrefix}-reencrypt-job'
+  location: location
+  identity: miConfig
+  properties: {
+    environmentId: env.id
+    configuration: {
+      triggerType: 'Manual'
+      replicaTimeout: 1800 // 30-minute cap; a full user-table scan should finish in seconds
+      replicaRetryLimit: 0 // fail fast; re-run manually after investigating errors
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      secrets: jobSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'reencrypt'
+          image: reencryptJobImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat(cosmosEnv, [{ name: 'TRUERATE_CRED_KEY', secretRef: 'cred-key' }], prevKeyEnv)
+        }
+      ]
+    }
+  }
+  dependsOn: [ kvSecretsUser, cosmosDataRole ]
+}
+
 output apiUrl string = 'https://${api.properties.configuration.ingress.fqdn}'
 output mcpUrl string = 'https://${mcp.properties.configuration.ingress.fqdn}/mcp'
 output webUrl string = 'https://${web.properties.configuration.ingress.fqdn}'
 output identityClientId string = mi.properties.clientId
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
+output reencryptJobName string = reencryptJob.name

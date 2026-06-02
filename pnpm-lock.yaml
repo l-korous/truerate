@@ -93,6 +93,25 @@ importers:
         specifier: ^5.6.2
         version: 5.9.3
 
+  apps/reencrypt-job:
+    dependencies:
+      '@azure/cosmos':
+        specifier: ^4.1.1
+        version: 4.9.3(@azure/core-client@1.10.1)
+      '@azure/identity':
+        specifier: ^4.4.1
+        version: 4.13.1
+      '@truerate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      '@types/node':
+        specifier: ^20.16.10
+        version: 20.19.41
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+
   apps/web:
     dependencies:
       next:
