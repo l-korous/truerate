@@ -251,6 +251,69 @@ test("no price UI is present anywhere in the web app", async ({ page }) => {
   await expect(page.getByText(/reveal my rates/i)).not.toBeVisible();
   await expect(page.getByText(/member price/i)).not.toBeVisible();
   await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+
+  // Value tab — no prices.
+  await page.getByTestId("tab-value").click();
+  await expect(page.getByText(/indicative member savings/i)).not.toBeVisible();
+  await expect(page.getByText(/reveal my rates/i)).not.toBeVisible();
+  await expect(page.getByText(/member price/i)).not.toBeVisible();
+  await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+});
+
+test("value tab: empty state when no memberships", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("tab-value").click();
+  await expect(page.getByTestId("value-explainer-empty")).toBeVisible();
+  await expect(page.getByTestId("value-explainer")).not.toBeVisible();
+});
+
+test("value tab: shows estimated rollup for a membership with perks", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-marriott_bonvoy").click();
+  await page.locator("select").selectOption("Platinum");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("tab-value").click();
+  await expect(page.getByTestId("value-explainer")).toBeVisible();
+
+  // Band cards shown with ≈$ prefix — not raw prices.
+  await expect(page.getByTestId("band-card-5")).toBeVisible();
+  await expect(page.getByTestId("band-total-5")).toContainText("≈$");
+
+  // Methodology section visible.
+  await expect(page.getByTestId("value-methodology")).toBeVisible();
+  await expect(page.getByTestId("value-methodology")).toContainText(/replacement cost/i);
+
+  // Disclaimer visible and mentions "not prices".
+  await expect(page.getByTestId("value-disclaimer")).toBeVisible();
+  await expect(page.getByTestId("value-disclaimer")).toContainText(/not prices/i);
+
+  // "See your full perk inventory" link works.
+  await page.getByTestId("value-view-inventory").click();
+  await expect(page.getByTestId("perk-inventory")).toBeVisible();
+});
+
+test("value tab: band totals labeled as estimated, not as prices", async ({ page }) => {
+  await register(page);
+
+  await page.getByTestId("add-membership").click();
+  await page.getByTestId("program-booking_genius").click();
+  await page.locator("select").selectOption("Level 3");
+  await page.getByRole("button", { name: "Add membership" }).click();
+
+  await page.getByTestId("tab-value").click();
+  await expect(page.getByTestId("value-explainer")).toBeVisible();
+
+  // No price-pattern text: must not say "member price" or "final price".
+  await expect(page.getByText(/member price/i)).not.toBeVisible();
+  await expect(page.getByText(/final price/i)).not.toBeVisible();
+  await expect(page.getByText(/post.discount/i)).not.toBeVisible();
+
+  // Band labels say "estimated".
+  await expect(page.getByText(/per stay, estimated/i).first()).toBeVisible();
 });
 
 test("perk inventory tab: empty state when no memberships", async ({ page }) => {
