@@ -29,7 +29,7 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
-  actions: read # the pick step queries workflow runs (1-in-flight guard)
+  actions: write # pick step queries runs; final step chains the next run
 
 jobs:
   run:
@@ -135,3 +135,34 @@ jobs:
           if [ "$existing" -ge 1 ]; then echo "PR already open for $branch."; exit 0; fi
           gh pr create --repo "$REPO" --base main --head "$branch" \
             --title "agent: implement #$ISSUE" --body "Closes #$ISSUE" || echo "Could not auto-open PR (open it manually)."
+
+      # Keep the loop continuous instead of waiting on the (throttled) cron:
+      # if there is still eligible agent-ready work AND we are below the in-flight
+      # cap, immediately chain another run. Tight guards prevent a runaway loop —
+      # it stops when the queue is drained or at capacity (auto-merge re-triggers
+      # the runner after it merges a PR and frees a slot).
+      - name: Chain the next run
+        if: steps.pick.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          inflight=$(gh pr list --repo "$REPO" --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
+          MAX_INFLIGHT=6
+          if [ "$inflight" -ge "$MAX_INFLIGHT" ]; then
+            echo "At capacity (in-flight=$inflight/$MAX_INFLIGHT). Not chaining; auto-merge re-triggers after a merge."
+            exit 0
+          fi
+          next=""
+          for n in $(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
+              --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | .[].number'); do
+            br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
+            if [ "${br:-0}" -eq 0 ]; then next="$n"; break; fi
+          done
+          if [ -z "$next" ]; then echo "No more eligible agent-ready work — chain stops here."; exit 0; fi
+          echo "Eligible work remains (#$next) and capacity free — chaining another runner."
+          for i in 1 2 3; do
+            gh workflow run "Backlog runner" --repo "$REPO" && { echo "chained."; break; } || { echo "dispatch attempt $i failed; retrying"; sleep 5; }
+          done
