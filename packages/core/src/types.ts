@@ -246,6 +246,12 @@ export interface MatchedBenefit {
   benefit: Benefit;
   membershipId: string;
   membershipLabel: string;
+  /**
+   * Staleness/trustworthiness signal for the catalog entry this benefit came
+   * from. Present only when a programs map is supplied to matchBenefits().
+   * Never derived from or related to any price.
+   */
+  confidence?: import("./confidence.js").ConfidenceScore;
 }
 
 export interface HotelSearchQuery {
