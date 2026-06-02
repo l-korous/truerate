@@ -11,6 +11,12 @@ COPY packages packages
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile=false
 COPY apps/web apps/web
+# Build workspace deps before web: `next build` typechecks apps/web/e2e/*,
+# which import types from @truerate/harness (and @truerate/core), and those
+# packages expose their types from dist/. Without this the build fails with
+# "Cannot find module '@truerate/harness'". Mirrors the CI `build` job.
+# (Follow-up: decouple the web production build from the e2e harness.)
+RUN pnpm --filter @truerate/core build && pnpm --filter @truerate/harness build
 # NEXT_PUBLIC_* is inlined at build time; pass it as a build arg in CI.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8787
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
