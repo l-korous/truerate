@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { verify } from "hono/jwt";
 import { createLogger, generateCorrelationId } from "@truerate/core";
 import { buildServer, engine } from "./server.js";
+import { mcpLimiter } from "./rate-limit.js";
 
 const startupLog = createLogger({ service: "mcp" });
 
@@ -61,6 +62,20 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
     reqLog.warn("mcp request rejected: missing or invalid bearer token");
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Connect TrueRate with a valid bearer token." }));
+    return;
+  }
+
+  const rlResult = mcpLimiter.check(`uid:${userId}`);
+  const maxRequests = Number(process.env.RATE_LIMIT_MAX ?? 30);
+  const resetSec = Math.ceil(rlResult.resetMs / 1000);
+  res.setHeader("X-RateLimit-Limit", String(maxRequests));
+  res.setHeader("X-RateLimit-Remaining", String(rlResult.remaining));
+  res.setHeader("X-RateLimit-Reset", String(resetSec));
+  if (!rlResult.allowed) {
+    reqLog.warn("mcp request rate limited", { userId });
+    res.setHeader("Retry-After", String(Math.ceil((rlResult.resetMs - Date.now()) / 1000)));
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "rate_limit_exceeded", retryAfter: resetSec }));
     return;
   }
 

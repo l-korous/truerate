@@ -28,6 +28,7 @@ import {
   type ActivationEventName,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
+import { rateLimitMiddleware } from "./rate-limit.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
 
@@ -60,6 +61,7 @@ function buildAllowedOrigins(): Set<string> {
 const allowedOrigins = buildAllowedOrigins();
 
 app.use("*", cors({ origin: (o) => (allowedOrigins.has(o) ? o : null), credentials: true }));
+app.use("*", rateLimitMiddleware);
 
 // Correlation ID: accept from inbound header or generate; attach to every log line.
 app.use("*", async (c, next) => {

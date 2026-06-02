@@ -11,3 +11,5 @@ export * from "./perk-value.js";
 export * from "./partner.js";
 export { BookingProvider } from "./providers/booking.js";
 export type { HotelProvider, ProviderProperty } from "./providers/types.js";
+export { RateLimiter, createRateLimiter } from "./rate-limiter.js";
+export type { RateLimiterConfig, RateLimitResult } from "./rate-limiter.js";
