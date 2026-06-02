@@ -15,6 +15,8 @@ export interface UserRepo {
   init(): Promise<void>;
   getById(id: string): Promise<User | null>;
   getByEmail(email: string): Promise<User | null>;
+  /** Find a user by the SHA-256 hash of their per-user MCP URL token (#82). Null if none/revoked. */
+  getByMcpTokenHash(hash: string): Promise<User | null>;
   create(user: User): Promise<User>;
   update(user: User): Promise<User>;
   /** Count users that have reached each activation milestone. Admin / observability use only. */
@@ -88,6 +90,16 @@ class CosmosUserRepo implements UserRepo {
     return resources[0] ?? null;
   }
 
+  async getByMcpTokenHash(hash: string): Promise<User | null> {
+    const { resources } = await this.container.items
+      .query<User>({
+        query: "SELECT * FROM c WHERE c.mcpToken.hash = @hash",
+        parameters: [{ name: "@hash", value: hash }],
+      })
+      .fetchAll();
+    return resources[0] ?? null;
+  }
+
   async create(user: User): Promise<User> {
     const { resource } = await this.container.items.create<User>(user);
     return resource as User;
@@ -120,6 +132,11 @@ class MemoryUserRepo implements UserRepo {
   async getByEmail(email: string): Promise<User | null> {
     const target = email.toLowerCase();
     for (const u of this.byId.values()) if (u.email === target) return u;
+    return null;
+  }
+
+  async getByMcpTokenHash(hash: string): Promise<User | null> {
+    for (const u of this.byId.values()) if (u.mcpToken?.hash === hash) return u;
     return null;
   }
 
