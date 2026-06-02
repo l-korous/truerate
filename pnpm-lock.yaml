@@ -58,6 +58,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.47.2
+        version: 1.60.0
       tsx:
         specifier: ^4.19.1
         version: 4.22.3
