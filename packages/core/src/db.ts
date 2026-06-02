@@ -1,6 +1,7 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
 import { DefaultAzureCredential } from "@azure/identity";
 import type { ActivationEventName, ActivationMilestones, User } from "./types.js";
+import { USER_SCHEMA_VERSION } from "./types.js";
 
 // Data access for TrueRate. The store is Azure Cosmos DB (NoSQL, serverless):
 // fully managed, scales with usage, no servers or Redis to operate. Users are
@@ -19,6 +20,44 @@ export interface UserRepo {
   update(user: User): Promise<User>;
   /** Count users that have reached each activation milestone. Admin / observability use only. */
   funnelCounts(): Promise<Record<ActivationEventName, number>>;
+}
+
+// ─── Schema normalization ────────────────────────────────────────────────────
+//
+// During a canary rollout both the old and new revision of a Container App read
+// from the same Cosmos container.  A document written by the old revision may
+// lack fields added in the new one, and vice-versa.  `normalizeUser` applies
+// safe defaults so callers always receive a fully-shaped User regardless of
+// which revision originally wrote the document.
+//
+// Rules (per docs/SCHEMA-MIGRATION.md):
+//   • New fields are OPTIONAL in the TypeScript type until a subsequent "contract"
+//     deploy removes legacy code paths.
+//   • `normalizeUser` fills missing fields with their documented defaults.
+//   • `schemaVersion` is set to USER_SCHEMA_VERSION on every write so the
+//     document is self-describing for future migrations.
+//
+// When to update this function:
+//   Add a new case whenever USER_SCHEMA_VERSION is incremented.
+
+export function normalizeUser(raw: User): User {
+  const version = raw.schemaVersion ?? 1;
+
+  // v1 → current: fill in any fields that were missing before schemaVersion
+  // was introduced. Today schemaVersion is the only such field, but future
+  // migrations add cases here.
+  if (version < USER_SCHEMA_VERSION) {
+    // No structural changes between v1 and current beyond schemaVersion itself.
+  }
+
+  return {
+    ...raw,
+    // Ensure every stored doc carries the current version so subsequent reads
+    // (from the same or an older revision) see a self-describing document.
+    schemaVersion: USER_SCHEMA_VERSION,
+    // activationMilestones is optional; keep as-is (may be undefined on old docs).
+    activationMilestones: raw.activationMilestones,
+  };
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -72,7 +111,7 @@ class CosmosUserRepo implements UserRepo {
   async getById(id: string): Promise<User | null> {
     try {
       const { resource } = await this.container.item(id, id).read<User>();
-      return resource ?? null;
+      return resource ? normalizeUser(resource) : null;
     } catch {
       return null;
     }
@@ -85,17 +124,20 @@ class CosmosUserRepo implements UserRepo {
         parameters: [{ name: "@email", value: email.toLowerCase() }],
       })
       .fetchAll();
-    return resources[0] ?? null;
+    const doc = resources[0];
+    return doc ? normalizeUser(doc) : null;
   }
 
   async create(user: User): Promise<User> {
-    const { resource } = await this.container.items.create<User>(user);
-    return resource as User;
+    const versioned = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    const { resource } = await this.container.items.create<User>(versioned);
+    return normalizeUser(resource as User);
   }
 
   async update(user: User): Promise<User> {
-    const { resource } = await this.container.item(user.id, user.id).replace<User>(user);
-    return resource as User;
+    const versioned = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    const { resource } = await this.container.item(user.id, user.id).replace<User>(versioned);
+    return normalizeUser(resource as User);
   }
 
   async funnelCounts(): Promise<Record<ActivationEventName, number>> {
@@ -114,23 +156,28 @@ class MemoryUserRepo implements UserRepo {
   async init(): Promise<void> {}
 
   async getById(id: string): Promise<User | null> {
-    return this.byId.get(id) ?? null;
+    const doc = this.byId.get(id);
+    return doc ? normalizeUser(doc) : null;
   }
 
   async getByEmail(email: string): Promise<User | null> {
     const target = email.toLowerCase();
-    for (const u of this.byId.values()) if (u.email === target) return u;
+    for (const u of this.byId.values()) {
+      if (u.email === target) return normalizeUser(u);
+    }
     return null;
   }
 
   async create(user: User): Promise<User> {
-    this.byId.set(user.id, user);
-    return user;
+    const versioned = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    this.byId.set(versioned.id, versioned);
+    return normalizeUser(versioned);
   }
 
   async update(user: User): Promise<User> {
-    this.byId.set(user.id, user);
-    return user;
+    const versioned = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    this.byId.set(versioned.id, versioned);
+    return normalizeUser(versioned);
   }
 
   async funnelCounts(): Promise<Record<ActivationEventName, number>> {

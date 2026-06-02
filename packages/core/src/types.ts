@@ -246,6 +246,18 @@ export interface ActivationMilestones {
   extension_connected?: string;
 }
 
+/**
+ * Current schema version for User documents stored in Cosmos DB.
+ *
+ * Increment this constant in a new deploy whenever a non-optional field is added
+ * or the document shape changes in any other additive way. Old documents lacking
+ * `schemaVersion` are implicitly version 1 and are normalised by `normalizeUser()`
+ * in db.ts before being returned to callers.
+ *
+ * See docs/SCHEMA-MIGRATION.md for the full expand-then-contract policy.
+ */
+export const USER_SCHEMA_VERSION = 1 as const;
+
 export interface User {
   id: string;
   email: string;
@@ -256,6 +268,16 @@ export interface User {
   currency: string;
   /** Onboarding funnel milestones; absent on legacy documents (treat as all unset). */
   activationMilestones?: ActivationMilestones;
+  /**
+   * Document schema version. Absent on documents written before this field was
+   * introduced (treat as version 1). Always written as USER_SCHEMA_VERSION on
+   * create/update going forward.
+   *
+   * During a canary rollout both old and new revisions run against the same
+   * Cosmos container. Consumers MUST tolerate documents at any version ≤ the
+   * current version; `normalizeUser()` in db.ts handles this transparently.
+   */
+  schemaVersion?: number;
 }
 
 // --- Matching + enrichment I/O -----------------------------------------------

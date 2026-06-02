@@ -133,6 +133,17 @@ There is no Azure container registry; images are on ghcr.io (free for public
 packages). The Log Analytics daily cap is a hard ceiling — once hit, ingestion
 stops for the day, so a misbehaving container can't surprise-bill you.
 
+## Cosmos schema changes
+
+During a canary rollout both the stable and new revision run against the same
+Cosmos container. **All schema changes must follow the expand-then-contract
+policy** documented in
+**[`docs/SCHEMA-MIGRATION.md`](./SCHEMA-MIGRATION.md)**.
+
+In brief: add optional fields first (expand deploy), migrate reads, then remove
+old fields later (contract deploy). Never change existing field semantics in a
+single deploy. See the policy doc for the full checklist and version history.
+
 ## Rotating secrets
 
 See **[`docs/RUNBOOK-secret-rotation.md`](./RUNBOOK-secret-rotation.md)** for the full procedure.
