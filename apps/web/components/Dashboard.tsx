@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, clearToken, type Benefit, type Program, type PublicUser } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import { AddMembership } from "./AddMembership";
 import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
@@ -213,7 +214,13 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
 
       {adding && (
         <AddMembership programs={programs} onClose={() => setAdding(false)}
-          onAdded={(u) => { setUser(u); setAdding(false); showToast("Membership added"); }} />
+          onAdded={(u, kind) => {
+            const isFirst = user.memberships.length === 0;
+            setUser(u);
+            setAdding(false);
+            showToast("Membership added");
+            track({ name: "membership_added", properties: { is_first: isFirst, kind: kind ?? "catalog" } });
+          }} />
       )}
 
       {editingMembership && (

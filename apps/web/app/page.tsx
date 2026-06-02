@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, getToken, type PublicUser } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import { AuthScreen } from "@/components/Auth";
 import { Dashboard } from "@/components/Dashboard";
 
@@ -10,6 +11,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    track({ name: "landing_visit" });
     // Restore session from a stored token, if any.
     if (!getToken()) {
       setLoading(false);

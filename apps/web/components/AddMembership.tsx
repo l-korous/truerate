@@ -14,7 +14,7 @@ export function AddMembership({
   programs, onAdded, onClose,
 }: {
   programs: Program[];
-  onAdded: (u: PublicUser) => void;
+  onAdded: (u: PublicUser, kind: "catalog" | "custom") => void;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("pick");
@@ -47,7 +47,7 @@ export function AddMembership({
     if (!program) return;
     setBusy(true); setErr("");
     try {
-      onAdded(await api.addCatalogMembership({ programId: program.id, tier, attributes: values }));
+      onAdded(await api.addCatalogMembership({ programId: program.id, tier, attributes: values }), "catalog");
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
 
@@ -61,7 +61,7 @@ export function AddMembership({
       const match: Record<string, string[]> = {};
       if (cDomain.trim()) match.domains = [cDomain.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "")];
       match.propertyNames = [cLabel.trim()];
-      onAdded(await api.addCustomMembership({ label: cLabel.trim(), benefits: [{ scope: "property", match, value }] }));
+      onAdded(await api.addCustomMembership({ label: cLabel.trim(), benefits: [{ scope: "property", match, value }] }), "custom");
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
 
