@@ -246,6 +246,20 @@ export interface ActivationMilestones {
   extension_connected?: string;
 }
 
+/**
+ * A user's active per-user MCP URL token, stored hashed (issue #82).
+ * Only the SHA-256 hash is persisted — the raw token is shown once at issue
+ * time and never stored, so a database read can't reconstruct a working URL.
+ */
+export interface McpTokenRecord {
+  /** SHA-256 (hex) of the opaque token. */
+  hash: string;
+  /** ISO-8601 timestamp the current token was issued. */
+  createdAt: string;
+  /** ISO-8601 timestamp the token was last used to authenticate an MCP request. */
+  lastUsedAt?: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -256,6 +270,8 @@ export interface User {
   currency: string;
   /** Onboarding funnel milestones; absent on legacy documents (treat as all unset). */
   activationMilestones?: ActivationMilestones;
+  /** Active per-user MCP URL token, hashed. Absent until the user mints one (#82). */
+  mcpToken?: McpTokenRecord;
 }
 
 // --- Matching + enrichment I/O -----------------------------------------------
