@@ -202,14 +202,15 @@ test("matchPage: perkEstimates excludes zero-value perks (priority_support = 0)"
   assert.equal(support, undefined, "priority_support has no monetary estimate and should not appear");
 });
 
-test("matchPage: perkEstimates empty for benefits with only free-text perks (no structuredPerks)", () => {
+test("matchPage: perkEstimates present for Marriott Platinum (structuredPerks migrated)", () => {
   const engine = new EnrichmentEngine([new BookingProvider()]);
-  // Marriott Platinum has free-text perks but no structuredPerks
+  // Marriott Platinum now has structuredPerks (migrated from free-text in #161)
   const res = engine.matchPage(
     { domain: "marriott.com", property: { name: "Marriott", brand: "Marriott" } },
     [membership("marriott_bonvoy", "Platinum")],
   );
-  assert.equal(res.perkEstimates.length, 0, "no structuredPerks -> no perkEstimates");
+  assert.ok(res.perkEstimates.length > 0, "Marriott Platinum has structuredPerks -> perkEstimates should be non-empty");
+  assert.ok(res.perkEstimates.some((e) => e.perkType === "free_breakfast"), "Platinum should surface free_breakfast estimate");
 });
 
 test("matchPage: perkEstimates empty for custom discount with no structuredPerks", () => {
