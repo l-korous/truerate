@@ -148,6 +148,48 @@ test("/benefits/match returns matched discount % for a declared domain discount 
   assert.ok(!("publicOffer" in out), "no publicOffer");
 });
 
+test("/benefits/match with Genius L3 catalog membership returns perkEstimates (extension rendering path)", async () => {
+  const app = await getApp();
+  const { token } = await registerUser(app);
+  await app.request("/memberships", { method: "POST", headers: authed(token),
+    body: JSON.stringify({ programId: "booking_genius", tier: "Level 3", attributes: {} }) });
+
+  // Simulate the extension context: hotel detail page on Booking.com
+  const res = await app.request("/benefits/match", { method: "POST", headers: authed(token),
+    body: JSON.stringify({ domain: "booking.com", property: { name: "Hotel Central Prague" } }) });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+
+  // Genius L3 discount match must be present
+  const discountMatch = out.matches.find((m: any) => m.benefit.value.kind === "percentDiscount");
+  assert.ok(discountMatch, "Genius L3 20% discount match must be present");
+  assert.equal(Math.round(discountMatch.benefit.value.percentOff * 100), 20);
+
+  // perkEstimates must contain free_breakfast and room_upgrade (tangible perks with monetary value)
+  assert.ok(Array.isArray(out.perkEstimates), "perkEstimates must be an array");
+  const breakfast = out.perkEstimates.find((e: any) => e.perkType === "free_breakfast");
+  assert.ok(breakfast, "free_breakfast perk estimate must be present for Genius L3");
+  assert.strictEqual(breakfast.isEstimate, true, "isEstimate must be true");
+  assert.ok(typeof breakfast.estimatedUsd === "object", "estimatedUsd must be an object with star-band keys");
+  assert.ok(breakfast.estimatedUsd["4"] > 0, "free_breakfast estimate at 4★ must be positive");
+
+  const upgrade = out.perkEstimates.find((e: any) => e.perkType === "room_upgrade");
+  assert.ok(upgrade, "room_upgrade perk estimate must be present for Genius L3");
+  assert.strictEqual(upgrade.isEstimate, true);
+
+  // priority_support is intangible (zero value) — must not produce an estimate entry
+  const support = out.perkEstimates.find((e: any) => e.perkType === "priority_support");
+  assert.ok(!support, "priority_support must not appear in perkEstimates (intangible, zero monetary value)");
+
+  // No price fields anywhere in the response (product rule #1)
+  const raw = JSON.stringify(out);
+  assert.ok(!raw.includes("finalPrice"), "no finalPrice");
+  assert.ok(!raw.includes("memberPrice"), "no memberPrice");
+  assert.ok(!raw.includes("indicativeOffer"), "no indicativeOffer");
+  assert.ok(!raw.includes("publicOffer"), "no publicOffer");
+  assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount");
+});
+
 test("search validates required fields", async () => {
   const app = await getApp();
   const { token } = await registerUser(app);
