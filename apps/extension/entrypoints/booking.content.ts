@@ -1,5 +1,5 @@
 import type { PageContext, PageMatchResult } from "@truerate/core";
-import { detectPageType, extractHotelName } from "../utils/booking-context";
+import { detectPageType, extractHotelName, detectGeniusActive } from "../utils/booking-context";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
 import { esc, perkEstimateRow } from "../utils/render-helpers";
@@ -63,7 +63,8 @@ async function runPanel(): Promise<void> {
   const context = await buildContext(pageType);
   const resp = await sendTrMessage({ type: "TR_MATCH", context });
   if (!resp.ok) return renderError(shadow, resp.error ?? "Could not load benefits");
-  renderResult(shadow, resp.result);
+  const geniusActive = detectGeniusActive(document);
+  renderResult(shadow, resp.result, geniusActive);
 }
 
 // --- Context builder ---------------------------------------------------------
@@ -125,9 +126,13 @@ function renderError(s: ShadowRoot, msg: string) {
   panel(s).innerHTML = head() + `<div class="tr-body"><p class="tr-muted">${esc(msg)}</p></div>`;
 }
 
-function renderResult(s: ShadowRoot, r: PageMatchResult) {
+function renderResult(s: ShadowRoot, r: PageMatchResult, geniusActive = false) {
+  const geniusNoteHtml = geniusActive
+    ? `<div class="tr-genius-note">${t("panelGeniusActiveNote")}</div>`
+    : "";
+
   if (!r.matches.length && !r.perks.length) {
-    panel(s).innerHTML = head(true) + `<div class="tr-body"><p class="tr-muted">${t("panelNoBenefits")}</p></div>`;
+    panel(s).innerHTML = head(true) + `<div class="tr-body">${geniusNoteHtml}<p class="tr-muted">${t("panelNoBenefits")}</p></div>`;
     wireClose(s);
     return;
   }
@@ -163,6 +168,7 @@ function renderResult(s: ShadowRoot, r: PageMatchResult) {
     : "";
 
   panel(s).innerHTML = head(true) + `<div class="tr-body">
+      ${geniusNoteHtml}
       ${discountHtml}
       ${perksHtml}
       ${estimatesHtml}
@@ -204,6 +210,7 @@ function styleEl(): HTMLStyleElement {
     .tr-est-row{margin-bottom:6px}
     .tr-est-label{display:block;font-size:11px;color:#0c1b2e;font-weight:600}
     .tr-est-value{display:block;font-size:11px;color:#0f8a5f;font-weight:500}
-    .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}`;
+    .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}
+    .tr-genius-note{background:#f0f4ff;border:1px solid #c0d0f0;border-radius:8px;padding:6px 10px;font-size:11px;color:#1a3a7a;margin-bottom:8px}`;
   return s;
 }
