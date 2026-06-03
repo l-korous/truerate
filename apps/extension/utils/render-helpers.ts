@@ -1,8 +1,28 @@
-import type { MatchedPerkEstimate } from "@truerate/core";
+import type { MatchedBenefit, MatchedPerkEstimate } from "@truerate/core";
 
 /** Escape HTML special characters to prevent XSS in innerHTML. */
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+/**
+ * Determine the worst staleness level across a set of matched benefits.
+ *
+ * Returns:
+ *   "stale"  — at least one benefit's catalog entry has passed its TTL
+ *   "low"    — at least one benefit is low-confidence (no stale entries)
+ *   null     — all entries are medium/high confidence or confidence is unknown
+ *
+ * Terms-freshness only; never related to prices.
+ */
+export function worstStalenessLevel(matches: MatchedBenefit[]): "stale" | "low" | null {
+  let hasLow = false;
+  for (const m of matches) {
+    const level = m.confidence?.level;
+    if (level === "stale" || m.confidence?.isExpired) return "stale";
+    if (level === "low") hasLow = true;
+  }
+  return hasLow ? "low" : null;
 }
 
 /**

@@ -10,9 +10,11 @@ import {
   matchBenefits,
   estimatePerkValue,
   estimatePerkValueAllBands,
+  PROGRAMS,
   type Membership,
   type StructuredPerk,
   type StarBand,
+  type ConfidenceLevel,
 } from "@truerate/core";
 
 // Kept for the /health endpoint in index.ts (reports enrichment mode).
@@ -37,6 +39,12 @@ export interface McpBenefitResult {
     perks: string[];
     structuredPerks: StructuredPerk[];
     conditions?: string;
+    /**
+     * Staleness level for the catalog entry behind this benefit.
+     * "high"/"medium" = fresh; "low" = getting old; "stale" = past TTL.
+     * Applies to terms/conditions freshness only — never to prices.
+     */
+    termsConfidenceLevel?: ConfidenceLevel;
   }>;
   perkValueEstimates: Array<{
     perkType: string;
@@ -46,6 +54,12 @@ export interface McpBenefitResult {
   }>;
   programsApplied: string[];
   generatedAt: string;
+  /**
+   * Human-readable staleness warnings for any matches whose catalog entry is
+   * low-confidence or stale. Empty array when all terms are fresh.
+   * These apply to terms/conditions freshness only, never to prices.
+   */
+  stalenessWarnings: string[];
 }
 
 export function buildBenefitResult(
@@ -53,6 +67,7 @@ export function buildBenefitResult(
   context: McpBenefitResult["context"],
 ): McpBenefitResult {
   const programs = new Set<string>();
+  const stalenessWarnings: string[] = [];
 
   const matchItems = matches.map((m) => {
     programs.add(m.benefit.programId ?? m.benefit.id);
@@ -65,12 +80,22 @@ export function buildBenefitResult(
       perks: m.benefit.value.perks ?? [],
       structuredPerks,
       conditions: m.benefit.value.conditions,
+      termsConfidenceLevel: m.confidence?.level,
     };
     if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
       item.discount = {
         percentOff: m.benefit.value.percentOff,
         conditions: m.benefit.value.conditions,
       };
+    }
+    if (m.confidence?.level === "stale" || m.confidence?.isExpired) {
+      stalenessWarnings.push(
+        `Terms for "${m.membershipLabel}" may be outdated (last verified: ${m.confidence.expiresAt ?? "unknown"}). Verify at the program website.`,
+      );
+    } else if (m.confidence?.level === "low") {
+      stalenessWarnings.push(
+        `Terms for "${m.membershipLabel}" were verified some time ago — conditions may have changed.`,
+      );
     }
     return item;
   });
@@ -103,6 +128,7 @@ export function buildBenefitResult(
     perkValueEstimates,
     programsApplied: [...programs],
     generatedAt: new Date().toISOString(),
+    stalenessWarnings,
   };
 }
 
@@ -146,6 +172,11 @@ export function formatBenefitResult(r: McpBenefitResult): string {
       .filter((e) => e.estimatedUsd[band] > 0)
       .map((e) => `${e.label} ≈ $${e.estimatedUsd[band]} (${band}★)`);
     if (estLines.length) lines.push(`\nperk estimates: ${estLines.join("; ")}`);
+  }
+
+  if (r.stalenessWarnings.length) {
+    lines.push(`\nTerms freshness notes:`);
+    for (const w of r.stalenessWarnings) lines.push(`  ⚠ ${w}`);
   }
 
   lines.push(noPrice);
@@ -200,13 +231,14 @@ export function buildServer(userId: string, correlationId: string = generateCorr
       const repo = await getUserRepo();
       const user = await repo.getById(userId);
       const memberships: Membership[] = user?.memberships ?? [];
+      const programsMap = new Map(PROGRAMS.map((p) => [p.id, p]));
 
       const matches = matchBenefits(memberships, {
         domain: args.domain,
         brand: args.brand,
         propertyName: args.hotel,
         category: "hotel",
-      });
+      }, { programs: programsMap });
 
       const context: McpBenefitResult["context"] = {
         hotel: args.hotel,
