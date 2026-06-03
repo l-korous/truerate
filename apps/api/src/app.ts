@@ -49,9 +49,11 @@ import {
   type PartnerOrgStatus,
   type SubmissionStatus,
   type PartnerProgramDraft,
+  type PartnerRole,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
+import { createEmailSender } from "./email.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
 
@@ -78,6 +80,20 @@ export function resetAppCatalog(): void {
 
 /** Reset partner workflow state — for tests only. */
 export { resetPartnerWorkflow as resetAppPartner };
+
+// Email sender — resolved once, then reused.
+// In production, ACS_EMAIL_ENDPOINT/ACS_EMAIL_SENDER configure the ACS sender.
+// When absent, a no-op sender is used (zero cost, notifications still captured in repo).
+let _emailSender: Awaited<ReturnType<typeof createEmailSender>> | null = null;
+async function getEmailSender() {
+  if (!_emailSender) _emailSender = await createEmailSender();
+  return _emailSender;
+}
+
+async function getAppPartnerWorkflow() {
+  const sender = await getEmailSender();
+  return getPartnerWorkflow(sender);
+}
 
 /** Reset audit repo state — for tests only. */
 export function resetAppAudit(): void {
@@ -920,7 +936,7 @@ app.post("/admin/partners/:id/approve", async (c) => {
   if (parsed instanceof Response) return parsed;
 
   const actor = adminActor(c);
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   try {
     const org = await workflow.approveOrg(c.req.param("id"), parsed.adminId ?? actor);
 
@@ -953,7 +969,7 @@ app.post("/admin/partners/:id/reject", async (c) => {
   if (parsed instanceof Response) return parsed;
 
   const actor = adminActor(c);
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   try {
     const org = await workflow.rejectOrg(c.req.param("id"), parsed.adminId ?? actor, parsed.reason);
 
@@ -1021,7 +1037,7 @@ app.post("/admin/submissions/:id/approve", async (c) => {
   if (parsed instanceof Response) return parsed;
 
   const actor = adminActor(c);
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   try {
     const submission = await workflow.approve(
       c.req.param("id"),
@@ -1058,7 +1074,7 @@ app.post("/admin/submissions/:id/reject", async (c) => {
   if (parsed instanceof Response) return parsed;
 
   const actor = adminActor(c);
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   try {
     const submission = await workflow.reject(
       c.req.param("id"),
@@ -1310,7 +1326,7 @@ app.post("/partner/orgs", requireAuth, async (c) => {
   if (parsed instanceof Response) return parsed;
 
   const orgRepo = await getPartnerOrgRepo();
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   const orgId = `org-${userId}-${Date.now()}`;
   const org = await orgRepo.createOrg({
     id: orgId,
@@ -1364,7 +1380,7 @@ app.post("/partner/submissions", requireAuth, async (c) => {
     );
   }
   const { orgId, ...draft } = result.data;
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   const submissionId = `sub-${userId}-${Date.now()}`;
   try {
     const submission = await workflow.createDraft(userId, orgId, draft as PartnerProgramDraft, submissionId, "partner");
@@ -1424,13 +1440,99 @@ app.put("/partner/submissions/:id", requireAuth, async (c) => {
 // POST /partner/submissions/:id/submit — submit a draft for admin review
 app.post("/partner/submissions/:id/submit", requireAuth, async (c) => {
   const userId = c.get("userId");
-  const workflow = await getPartnerWorkflow();
+  const workflow = await getAppPartnerWorkflow();
   try {
     const submission = await workflow.submitForReview(userId, c.req.param("id"));
     return c.json({ submission });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
       const status = err.code === "submission_not_found" ? 404 : err.code === "not_a_member" ? 403 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// --- Partner org member management (issue #138) ------------------------------
+// Owner-only routes for managing org membership.
+// GET /partner/orgs/:id/members is readable by any org member.
+
+const AddMemberSchema = z.object({
+  userId: z.string().min(1, "userId is required"),
+  role: z.enum(["owner", "editor"]),
+});
+
+const UpdateMemberRoleSchema = z.object({
+  role: z.enum(["owner", "editor"]),
+});
+
+// GET /partner/orgs/:id/members — list all members of an org (any member may read)
+app.get("/partner/orgs/:id/members", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgId = c.req.param("id");
+  const orgRepo = await getPartnerOrgRepo();
+
+  const callerMember = await orgRepo.getMember(userId, orgId);
+  if (!callerMember) return c.json({ error: "forbidden" }, 403);
+
+  const members = await orgRepo.listMembers(orgId);
+  return c.json({ members, count: members.length });
+});
+
+// POST /partner/orgs/:id/members — add a member (owner only)
+app.post("/partner/orgs/:id/members", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgId = c.req.param("id");
+  const parsed = await parseBody(AddMemberSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getAppPartnerWorkflow();
+  try {
+    const member = await workflow.addMember(userId, orgId, parsed.userId, parsed.role as PartnerRole);
+    return c.json({ member }, 201);
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "not_a_member" ? 403 : err.code === "not_an_owner" ? 403 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// PATCH /partner/orgs/:id/members/:userId — update a member's role (owner only)
+app.patch("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgId = c.req.param("id");
+  const targetUserId = c.req.param("memberId");
+  const parsed = await parseBody(UpdateMemberRoleSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getAppPartnerWorkflow();
+  try {
+    const member = await workflow.updateMemberRole(userId, orgId, targetUserId, parsed.role as PartnerRole);
+    return c.json({ member });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "not_a_member" ? 403 : err.code === "not_an_owner" ? 403 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// DELETE /partner/orgs/:id/members/:userId — remove a member (owner only)
+app.delete("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgId = c.req.param("id");
+  const targetUserId = c.req.param("memberId");
+
+  const workflow = await getAppPartnerWorkflow();
+  try {
+    await workflow.removeMember(userId, orgId, targetUserId);
+    return c.body(null, 204);
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "not_a_member" ? 403 : err.code === "not_an_owner" ? 403 : 400;
       return c.json({ error: err.code, message: err.message }, status);
     }
     throw err;
