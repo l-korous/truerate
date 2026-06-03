@@ -127,5 +127,10 @@
   "panelHonorsActiveNote": {
     "message": "Na této stránce je aktivní Hilton Honors. TrueRate zobrazuje, co vaše členství přidávají navíc.",
     "description": "Note shown when Hilton Honors DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelOneKeyActiveNote": {
+    "message": "Na této stránce je aktivní One Key. TrueRate zobrazuje, co vaše ostatní členství přidávají navíc.",
+    "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
   }
 }
