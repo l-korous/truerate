@@ -289,6 +289,19 @@ export interface McpTokenRecord {
   lastUsedAt?: string;
 }
 
+/**
+ * Current document schema version for User documents stored in Cosmos.
+ *
+ * Version history:
+ *   undefined / 0 — original shape (no schemaVersion field)
+ *   1             — schemaVersion field added; all new docs written at v1
+ *
+ * When reading a document, always pass it through normalizeUser() from db.ts
+ * so that callers work against the current shape regardless of the stored version.
+ * See docs/SCHEMA-MIGRATION.md for the expand/migrate/contract policy.
+ */
+export const USER_SCHEMA_VERSION = 1;
+
 export interface User {
   id: string;
   email: string;
@@ -297,6 +310,12 @@ export interface User {
   createdAt: string;
   market: string;
   currency: string;
+  /**
+   * Document schema version. Absent on documents written before versioning was
+   * introduced (treat as version 0). Always written as USER_SCHEMA_VERSION on
+   * new documents. See docs/SCHEMA-MIGRATION.md.
+   */
+  schemaVersion?: number;
   /** Onboarding funnel milestones; absent on legacy documents (treat as all unset). */
   activationMilestones?: ActivationMilestones;
   /** Active per-user MCP URL token, hashed. Absent until the user mints one (#82). */
