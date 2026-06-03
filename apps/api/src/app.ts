@@ -33,11 +33,17 @@ import {
   getPartnerSubmissionRepo,
   getPartnerWorkflow,
   resetPartnerWorkflow,
+  resetCatalogRepo,
   PartnerWorkflowError,
+  assertNoPriceFields,
   type CatalogCache,
+  type CatalogEntryInput,
   type Logger,
   type Benefit,
+  type BenefitMatch,
+  type BenefitTemplate,
   type Membership,
+  type PartnerSubmission,
   type User,
   type PerkType,
   type ActivationEventName,
@@ -69,6 +75,7 @@ async function getAppCatalogCache(): Promise<CatalogCache> {
 export function resetAppCatalog(): void {
   _catalogCache = null;
   resetCatalogCache();
+  resetCatalogRepo();
 }
 
 /** Reset partner workflow state — for tests only. */
@@ -902,7 +909,9 @@ app.get("/admin/submissions/:id", async (c) => {
 });
 
 const SubmissionApproveSchema = z.object({
-  publishedProgramId: z.string().min(1, "publishedProgramId is required"),
+  // Optional override — when omitted the endpoint auto-generates a programId
+  // from the submission draft and publishes it via the catalog versioning path.
+  publishedProgramId: z.string().min(1).optional(),
   adminId: z.string().min(1).optional(),
 });
 
@@ -911,7 +920,143 @@ const SubmissionRejectSchema = z.object({
   adminId: z.string().min(1).optional(),
 });
 
-// POST /admin/submissions/:id/approve — approve a submission (makes it available to catalog editor)
+const SubmissionProgramDraftSchema = z.object({
+  name: z.string().min(1),
+  category: z.enum(["hotel", "airline", "rail", "carRental", "ota", "card", "subscription"]),
+  region: z.string().min(1),
+  sourceUrl: z.string().optional(),
+  tiers: z.array(z.string()).optional(),
+  fields: z.array(z.object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    type: z.enum(["text", "select", "secret"]),
+    options: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
+    secret: z.boolean().optional(),
+  })),
+  benefits: z.record(z.array(z.object({
+    scope: z.enum(["property", "brand", "domain", "category", "global"]),
+    match: z.object({
+      brands: z.array(z.string()).optional(),
+      domains: z.array(z.string()).optional(),
+      propertyNames: z.array(z.string()).optional(),
+      categories: z.array(z.enum(["hotel", "airline", "rail", "carRental", "ota", "card", "subscription"])).optional(),
+    }).optional(),
+    value: z.object({
+      kind: z.enum(["percentDiscount", "fixedDiscount", "perk", "pointsEarn"]),
+      percentOff: z.number().min(0).max(1).optional(),
+      amountOff: z.number().min(0).optional(),
+      currency: z.string().optional(),
+      perks: z.array(z.string()).optional(),
+      pointsPerUnit: z.number().min(0).optional(),
+      conditions: z.string().optional(),
+    }),
+  }))),
+});
+
+/**
+ * Derive a BenefitMatch for the program-level defaultMatch by aggregating all
+ * brands and domains referenced in the draft's benefit templates.
+ * Falls back to using the program name as a brand when none are found.
+ */
+function deriveProgramDefaultMatch(draft: PartnerSubmission["programDraft"]): BenefitMatch {
+  const brands = new Set<string>();
+  const domains = new Set<string>();
+  for (const templates of Object.values(draft.benefits) as BenefitTemplate[][]) {
+    for (const t of templates) {
+      t.match?.brands?.forEach((b) => brands.add(b));
+      t.match?.domains?.forEach((d) => domains.add(d));
+    }
+  }
+  if (brands.size === 0 && domains.size === 0) return { brands: [draft.name] };
+  return {
+    ...(brands.size > 0 ? { brands: [...brands] } : {}),
+    ...(domains.size > 0 ? { domains: [...domains] } : {}),
+  };
+}
+
+/**
+ * Convert a PartnerSubmission's programDraft into a CatalogEntryInput ready
+ * for upsertDraft + publish. Provenance is set to "partner-submission" with
+ * orgId as submittedBy.
+ * No price fields are included (enforced by assertNoPriceFields upstream).
+ */
+function submissionToCatalogInput(sub: PartnerSubmission, programId: string): CatalogEntryInput {
+  const draft = sub.programDraft;
+  return {
+    programId,
+    provenance: {
+      source: "partner-submission",
+      sourceUrl: draft.sourceUrl,
+      asOf: new Date().toISOString().slice(0, 7),
+      submittedBy: sub.orgId,
+    },
+    region: draft.region,
+    name: draft.name,
+    category: draft.category,
+    defaultMatch: deriveProgramDefaultMatch(draft),
+    tiers: draft.tiers,
+    requiresCredential: draft.fields.length > 0,
+    fields: draft.fields,
+    benefits: draft.benefits,
+  };
+}
+
+// PUT /admin/submissions/:id — edit the programDraft of a pending/submitted/in_review submission
+app.put("/admin/submissions/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const priceField = findPriceField(raw);
+  if (priceField) {
+    return c.json({ error: "validation_failed", issues: [{ path: [priceField], message: "price fields are not permitted (see product rule #1)" }] }, 400);
+  }
+
+  const result = SubmissionProgramDraftSchema.safeParse((raw as Record<string, unknown>)?.programDraft ?? raw);
+  if (!result.success) {
+    return c.json({ error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) }, 400);
+  }
+
+  const repo = await getPartnerSubmissionRepo();
+  const sub = await repo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "not_found" }, 404);
+  if (!["draft", "submitted", "in_review"].includes(sub.status)) {
+    return c.json({ error: "invalid_transition", message: `Cannot edit a submission in status '${sub.status}'` }, 400);
+  }
+
+  try {
+    assertNoPriceFields(result.data);
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) return c.json({ error: err.code, message: err.message }, 400);
+    throw err;
+  }
+
+  const updated = await repo.update({ ...sub, programDraft: result.data, updatedAt: new Date().toISOString() });
+  return c.json({ submission: updated });
+});
+
+// POST /admin/submissions/:id/mark-in-review — transition submitted → in_review
+app.post("/admin/submissions/:id/mark-in-review", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const raw = await (c.req.json() as Promise<unknown>).catch(() => ({}));
+    const adminId = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).adminId as string | undefined : undefined;
+    const submission = await workflow.markInReview(c.req.param("id"), adminId ?? "admin");
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/submissions/:id/approve — approve + auto-publish to catalog via versioning path
 app.post("/admin/submissions/:id/approve", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
@@ -919,14 +1064,37 @@ app.post("/admin/submissions/:id/approve", async (c) => {
   const parsed = await parseBody(SubmissionApproveSchema, c);
   if (parsed instanceof Response) return parsed;
 
+  const submissionRepo = await getPartnerSubmissionRepo();
+  const sub = await submissionRepo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "submission_not_found", message: "Submission not found" }, 404);
+
+  // Determine the programId — use the provided override, otherwise derive from submission id
+  const programId = parsed.publishedProgramId ?? `partner-${sub.id}`;
+
+  // Publish the draft to the catalog (upsert draft → publish)
+  let catalogEntry;
+  try {
+    const catalogRepo = await getCatalogRepo();
+    const input = submissionToCatalogInput(sub, programId);
+    await catalogRepo.upsertDraft(input);
+    catalogEntry = await catalogRepo.publish(programId);
+
+    // Invalidate cache so channels pick up the new program immediately
+    const cache = await getAppCatalogCache();
+    cache.invalidate(programId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "catalog publish failed";
+    return c.json({ error: "catalog_publish_failed", message: msg }, 500);
+  }
+
   const workflow = await getPartnerWorkflow();
   try {
     const submission = await workflow.approve(
       c.req.param("id"),
-      parsed.publishedProgramId,
+      programId,
       parsed.adminId ?? "admin",
     );
-    return c.json({ submission });
+    return c.json({ submission, catalogEntry });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
       const status = err.code === "submission_not_found" ? 404 : 400;

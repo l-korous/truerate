@@ -346,9 +346,28 @@ export class PartnerWorkflow {
   }
 
   /**
+   * Mark a submitted submission as in-review.
+   * Admin-only action — moves the submission from submitted to in_review.
+   */
+  async markInReview(submissionId: string, adminId?: string): Promise<PartnerSubmission> {
+    const sub = await this.getSubmissionOrThrow(submissionId);
+    if (sub.status !== "submitted") {
+      throw new PartnerWorkflowError("invalid_transition", `Cannot mark in-review a submission in status '${sub.status}'`);
+    }
+    const updated: PartnerSubmission = {
+      ...sub,
+      status: "in_review",
+      updatedAt: new Date().toISOString(),
+      ...(adminId ? { approvedBy: adminId } : {}),
+    };
+    return this.submissions.update(updated);
+  }
+
+  /**
    * Approve a submission and publish to catalog.
    * Admin-only: no org membership check (admin acts outside any org).
-   * Returns the published program id.
+   * The caller (API layer) performs the catalog upsert+publish and passes the
+   * resulting programId here so the submission record is linked.
    */
   async approve(submissionId: string, publishedProgramId: string, adminId?: string): Promise<PartnerSubmission> {
     const sub = await this.getSubmissionOrThrow(submissionId);

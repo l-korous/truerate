@@ -25,10 +25,13 @@ async function getApp() {
 }
 
 beforeEach(async () => {
-  const { resetAppPartner } = await import("../src/app.js");
+  const { resetAppPartner, resetAppCatalog } = await import("../src/app.js");
   const { resetPartnerWorkflow } = await import("@truerate/core");
+  const { apiLimiter } = await import("../src/rate-limit.js");
   resetAppPartner();
   resetPartnerWorkflow();
+  resetAppCatalog();
+  apiLimiter.reset("ip:unknown");
 });
 
 const adminHeader = { "x-admin-secret": ADMIN_SECRET };
@@ -448,15 +451,19 @@ describe("submission approve", () => {
     assert.equal(submission.approvedBy, "admin-user-1");
   });
 
-  test("POST /admin/submissions/:id/approve — 400 without publishedProgramId", async () => {
+  test("POST /admin/submissions/:id/approve — auto-generates programId when not provided", async () => {
     const app = await getApp();
     await seedSubmission(app);
     const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
       method: "POST",
       headers: { ...adminHeader, ...JSON_CT },
-      body: JSON.stringify({ publishedProgramId: "" }),
+      body: JSON.stringify({ adminId: "admin-user-auto" }),
     });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 200);
+    const { submission } = await res.json();
+    assert.equal(submission.status, "approved");
+    assert.ok(submission.publishedProgramId, "publishedProgramId auto-generated");
+    assert.ok(submission.publishedProgramId.startsWith("partner-"), "uses partner- prefix");
   });
 
   test("POST /admin/submissions/:id/approve — 404 for unknown submission", async () => {
@@ -600,5 +607,271 @@ describe("submission reject", () => {
     assert.ok(!raw.includes("memberPrice"), "no memberPrice");
     assert.ok(!raw.includes("finalPrice"), "no finalPrice");
     assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount");
+  });
+});
+
+// ─── Auto-publish to catalog on approve ──────────────────────────────────────
+
+describe("approve publishes to catalog", () => {
+  test("approve creates and publishes a catalog entry with partner-submission provenance", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-catalog-check" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    // Submission is linked to the published program
+    assert.equal(body.submission.status, "approved");
+    assert.ok(body.submission.publishedProgramId, "publishedProgramId set");
+
+    // catalogEntry returned in response
+    assert.ok(body.catalogEntry, "catalogEntry in response");
+    assert.equal(body.catalogEntry.status, "published");
+    assert.equal(body.catalogEntry.provenance.source, "partner-submission");
+    assert.equal(body.catalogEntry.provenance.submittedBy, sampleSubmission.orgId);
+    assert.equal(body.catalogEntry.name, sampleSubmission.programDraft.name);
+    assert.equal(body.catalogEntry.region, sampleSubmission.programDraft.region);
+    assert.equal(body.catalogEntry.isCurrent, true);
+  });
+
+  test("approve with explicit publishedProgramId uses that id for the catalog entry", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const customProgramId = "partner-custom-program-id";
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: customProgramId, adminId: "admin-user-1" }),
+    });
+    assert.equal(res.status, 200);
+    const { submission, catalogEntry } = await res.json();
+    assert.equal(submission.publishedProgramId, customProgramId);
+    assert.equal(catalogEntry.programId, customProgramId);
+    assert.equal(catalogEntry.status, "published");
+  });
+
+  test("catalog entry published on approve is discoverable via GET /admin/catalog/:id", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const approveRes = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-discover" }),
+    });
+    const { submission } = await approveRes.json();
+    const programId = submission.publishedProgramId;
+
+    const catalogRes = await app.request(`/admin/catalog/${programId}`, { headers: adminHeader });
+    assert.equal(catalogRes.status, 200);
+    const { entry } = await catalogRes.json();
+    assert.equal(entry.status, "published");
+    assert.equal(entry.provenance.source, "partner-submission");
+  });
+
+  test("catalog entry contains no price fields", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-price-guard" }),
+    });
+    assert.equal(res.status, 200);
+    const raw = JSON.stringify(await res.json());
+    assert.ok(!raw.includes("memberPrice"), "no memberPrice");
+    assert.ok(!raw.includes("finalPrice"), "no finalPrice");
+    assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount");
+    assert.ok(!raw.includes("totalAmount"), "no totalAmount");
+  });
+});
+
+// ─── Submission edit ──────────────────────────────────────────────────────────
+
+describe("submission edit", () => {
+  test("PUT /admin/submissions/:id — edits programDraft of a submitted submission", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const updatedDraft = {
+      ...sampleSubmission.programDraft,
+      name: "Updated Loyalty Program Name",
+      region: "DE",
+    };
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: updatedDraft }),
+    });
+    assert.equal(res.status, 200);
+    const { submission } = await res.json();
+    assert.equal(submission.programDraft.name, "Updated Loyalty Program Name");
+    assert.equal(submission.programDraft.region, "DE");
+    assert.ok(submission.updatedAt > sampleSubmission.updatedAt, "updatedAt advanced");
+  });
+
+  test("PUT /admin/submissions/:id — 401 without admin secret", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...JSON_CT },
+      body: JSON.stringify({ programDraft: sampleSubmission.programDraft }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test("PUT /admin/submissions/:id — 404 for unknown submission", async () => {
+    const app = await getApp();
+    const res = await app.request("/admin/submissions/does-not-exist", {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: sampleSubmission.programDraft }),
+    });
+    assert.equal(res.status, 404);
+  });
+
+  test("PUT /admin/submissions/:id — 400 when already approved", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-user-1" }),
+    });
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: sampleSubmission.programDraft }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, "invalid_transition");
+  });
+
+  test("PUT /admin/submissions/:id — 400 with price field in draft", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    const draftWithPrice = {
+      ...sampleSubmission.programDraft,
+      memberPrice: 99,
+    };
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: draftWithPrice }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test("PUT /admin/submissions/:id — also accepts flat programDraft (no wrapper)", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify(sampleSubmission.programDraft),
+    });
+    assert.equal(res.status, 200);
+    const { submission } = await res.json();
+    assert.equal(submission.programDraft.name, sampleSubmission.programDraft.name);
+  });
+});
+
+// ─── Mark in-review ───────────────────────────────────────────────────────────
+
+describe("mark in-review", () => {
+  test("POST /admin/submissions/:id/mark-in-review — transitions submitted → in_review", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-reviewer" }),
+    });
+    assert.equal(res.status, 200);
+    const { submission } = await res.json();
+    assert.equal(submission.status, "in_review");
+  });
+
+  test("POST /admin/submissions/:id/mark-in-review — 401 without admin secret", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test("POST /admin/submissions/:id/mark-in-review — 404 for unknown submission", async () => {
+    const app = await getApp();
+    const res = await app.request("/admin/submissions/does-not-exist/mark-in-review", {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 404);
+  });
+
+  test("POST /admin/submissions/:id/mark-in-review — 400 when already in_review", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, "invalid_transition");
+  });
+
+  test("in_review submission can be approved and published", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ adminId: "admin-final" }),
+    });
+    assert.equal(res.status, 200);
+    const { submission, catalogEntry } = await res.json();
+    assert.equal(submission.status, "approved");
+    assert.equal(catalogEntry.status, "published");
+  });
+
+  test("in_review submission appears in ?status=in_review list", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    await app.request(`/admin/submissions/${sampleSubmission.id}/mark-in-review`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({}),
+    });
+
+    const res = await app.request("/admin/submissions?status=in_review", { headers: adminHeader });
+    assert.equal(res.status, 200);
+    const { submissions } = await res.json();
+    assert.ok(submissions.some((s: { id: string }) => s.id === sampleSubmission.id));
   });
 });
