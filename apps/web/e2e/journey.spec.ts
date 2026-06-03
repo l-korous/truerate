@@ -8,6 +8,9 @@ const uniqueEmail = () => `e2e+${Date.now()}${Math.floor(Math.random() * 1000)}@
 
 async function register(page: any) {
   await page.goto("/");
+  // Explicitly wait for the auth form before filling — guards against the
+  // cold-start race where the TCP port is up but Next.js hydration is lagging.
+  await page.getByPlaceholder("you@example.com").waitFor({ state: "visible" });
   await page.getByPlaceholder("you@example.com").fill(uniqueEmail());
   await page.getByPlaceholder("••••••••").fill("pw123456");
   await page.getByTestId("auth-submit").click();
@@ -184,7 +187,7 @@ test("edit catalog membership tier from detail view", async ({ page }) => {
   await page.getByTestId("detail-edit").click();
 
   // Edit modal appears; change tier to Level 3.
-  await page.locator("[data-testid='benefit-summary-edit']").waitFor();
+  await page.locator("[data-testid='benefit-summary-edit']").waitFor({ state: "visible" });
   await page.locator("select").selectOption("Level 3");
   await expect(page.getByTestId("benefit-summary-edit")).toContainText("20% off");
 
