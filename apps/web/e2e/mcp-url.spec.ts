@@ -24,6 +24,9 @@ const uniqueEmail = () =>
 
 async function register(page: any) {
   await page.goto("/");
+  // Wait for the auth form explicitly so cold-start compilation lag doesn't
+  // cause the first fill() to race against a not-yet-hydrated DOM.
+  await page.getByPlaceholder("you@example.com").waitFor({ state: "visible" });
   await page.getByPlaceholder("you@example.com").fill(uniqueEmail());
   await page.getByPlaceholder("••••••••").fill("pw123456");
   await page.getByTestId("auth-submit").click();
