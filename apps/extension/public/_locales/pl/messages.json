@@ -1,0 +1,113 @@
+{
+  "extName": {
+    "message": "TrueRate",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Zobacz stawki, które naprawdę odblokowują Twoje programy lojalnościowe – bezpośrednio na stronie wyników wyszukiwania.",
+    "description": "Extension description"
+  },
+
+  "popupSignInSub": {
+    "message": "Zaloguj się, aby zobaczyć swoje stawki członkowskie na Booking.com.",
+    "description": "Popup subtitle shown when signed out"
+  },
+  "popupEmailPlaceholder": {
+    "message": "E-mail",
+    "description": "Email input placeholder"
+  },
+  "popupPasswordPlaceholder": {
+    "message": "Hasło",
+    "description": "Password input placeholder"
+  },
+  "popupSignInButton": {
+    "message": "Zaloguj się",
+    "description": "Sign in button label"
+  },
+  "popupSignedInSub": {
+    "message": "Połączono. Otwórz wyszukiwanie na Booking.com, aby zobaczyć swoje stawki.",
+    "description": "Popup subtitle shown when signed in"
+  },
+  "popupSignOutButton": {
+    "message": "Wyloguj się",
+    "description": "Sign out button label"
+  },
+  "popupOptionsLink": {
+    "message": "Ustawienia",
+    "description": "Link to options page"
+  },
+
+  "panelSignInPrompt": {
+    "message": "Zaloguj się, aby zobaczyć swoje korzyści tutaj.",
+    "description": "Content panel message when user is not signed in"
+  },
+  "panelOpenTrueRate": {
+    "message": "Otwórz TrueRate",
+    "description": "Link text to open the TrueRate web app"
+  },
+  "panelLoading": {
+    "message": "Sprawdzam Twoje korzyści…",
+    "description": "Content panel loading message"
+  },
+  "panelNoBenefits": {
+    "message": "Nie ma jeszcze żadnych korzyści dla tej strony.",
+    "description": "Content panel message when no benefits are available"
+  },
+  "panelPerkEstimatesHeader": {
+    "message": "Szacowana wartość korzyści",
+    "description": "Header for the perk estimates section"
+  },
+  "panelPerkEstimatesNote": {
+    "message": "(orientacyjna, nie jest ceną)",
+    "description": "Note clarifying perk estimates are not prices"
+  },
+  "panelActivePrefix": {
+    "message": "Aktywne tutaj:",
+    "description": "Prefix shown before the list of active memberships"
+  },
+  "panelDisclaimer": {
+    "message": "Rabaty i korzyści pochodzą z Twoich zadeklarowanych członkostw. Zastosuj rabaty do wyświetlanej ceny.",
+    "description": "Footer disclaimer in the content panel"
+  },
+  "panelCloseAriaLabel": {
+    "message": "Zamknij",
+    "description": "Aria label for the panel close button"
+  },
+  "panelGeniusActiveNote": {
+    "message": "Booking Genius jest aktywny na tej stronie. TrueRate pokazuje, co Twoje członkostwa dodają ponad to.",
+    "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "optionsTitle": {
+    "message": "Ustawienia TrueRate",
+    "description": "Options page title"
+  },
+  "optionsAccountHeading": {
+    "message": "Konto",
+    "description": "Account section heading on options page"
+  },
+  "optionsSignedIn": {
+    "message": "Zalogowany/a",
+    "description": "Account status when signed in"
+  },
+  "optionsNotSignedIn": {
+    "message": "Niezalogowany/a",
+    "description": "Account status when not signed in"
+  },
+  "optionsSignOutButton": {
+    "message": "Wyloguj się",
+    "description": "Sign out button on options page"
+  },
+  "optionsSignInLink": {
+    "message": "Zaloguj się przez TrueRate",
+    "description": "Link to sign in via the web app"
+  },
+  "optionsPreferencesHeading": {
+    "message": "Preferencje",
+    "description": "Preferences section heading on options page"
+  },
+  "optionsShowPanelLabel": {
+    "message": "Pokaż panel korzyści na Booking.com",
+    "description": "Toggle label for showing the benefits panel"
+  }
+}

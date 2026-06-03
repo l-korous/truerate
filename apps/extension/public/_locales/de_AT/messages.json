@@ -1,0 +1,26 @@
+{
+  "popupSignInButton": {
+    "message": "Einloggen",
+    "description": "Sign in button label — Austrian preference: 'einloggen' over 'anmelden'"
+  },
+  "popupSignOutButton": {
+    "message": "Ausloggen",
+    "description": "Sign out button label — Austrian preference: 'ausloggen' over 'abmelden'"
+  },
+  "optionsSignedIn": {
+    "message": "Eingeloggt",
+    "description": "Account status when signed in — Austrian preference: 'eingeloggt' over 'angemeldet'"
+  },
+  "optionsNotSignedIn": {
+    "message": "Nicht eingeloggt",
+    "description": "Account status when not signed in — Austrian preference: 'nicht eingeloggt' over 'nicht angemeldet'"
+  },
+  "optionsSignOutButton": {
+    "message": "Ausloggen",
+    "description": "Sign out button on options page — Austrian preference: 'ausloggen' over 'abmelden'"
+  },
+  "optionsSignInLink": {
+    "message": "Bei TrueRate einloggen",
+    "description": "Link to sign in via the web app — Austrian preference: 'einloggen' over 'anmelden'"
+  }
+}

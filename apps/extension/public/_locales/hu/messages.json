@@ -1,0 +1,113 @@
+{
+  "extName": {
+    "message": "TrueRate",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Tekintse meg a hűségtagságai által ténylegesen feloldott tarifákat – közvetlenül a keresési oldalon.",
+    "description": "Extension description"
+  },
+
+  "popupSignInSub": {
+    "message": "Jelentkezzen be, hogy megtekinthesse a tagdíjas tarifáit a Booking.com oldalon.",
+    "description": "Popup subtitle shown when signed out"
+  },
+  "popupEmailPlaceholder": {
+    "message": "E-mail",
+    "description": "Email input placeholder"
+  },
+  "popupPasswordPlaceholder": {
+    "message": "Jelszó",
+    "description": "Password input placeholder"
+  },
+  "popupSignInButton": {
+    "message": "Bejelentkezés",
+    "description": "Sign in button label"
+  },
+  "popupSignedInSub": {
+    "message": "Csatlakozva. Nyisson meg egy Booking.com keresést a tarifái megtekintéséhez.",
+    "description": "Popup subtitle shown when signed in"
+  },
+  "popupSignOutButton": {
+    "message": "Kijelentkezés",
+    "description": "Sign out button label"
+  },
+  "popupOptionsLink": {
+    "message": "Beállítások",
+    "description": "Link to options page"
+  },
+
+  "panelSignInPrompt": {
+    "message": "Jelentkezzen be, hogy megtekinthesse az itt elérhető juttatásait.",
+    "description": "Content panel message when user is not signed in"
+  },
+  "panelOpenTrueRate": {
+    "message": "TrueRate megnyitása",
+    "description": "Link text to open the TrueRate web app"
+  },
+  "panelLoading": {
+    "message": "Juttatásainak ellenőrzése…",
+    "description": "Content panel loading message"
+  },
+  "panelNoBenefits": {
+    "message": "Ennél a webhelynél még nincsenek juttatások.",
+    "description": "Content panel message when no benefits are available"
+  },
+  "panelPerkEstimatesHeader": {
+    "message": "Becsült juttatásérték",
+    "description": "Header for the perk estimates section"
+  },
+  "panelPerkEstimatesNote": {
+    "message": "(tájékoztató jellegű, nem ár)",
+    "description": "Note clarifying perk estimates are not prices"
+  },
+  "panelActivePrefix": {
+    "message": "Itt aktív:",
+    "description": "Prefix shown before the list of active memberships"
+  },
+  "panelDisclaimer": {
+    "message": "A kedvezmények és juttatások az Ön deklarált tagságaiból származnak. A kedvezményeket a látható árhoz alkalmazza.",
+    "description": "Footer disclaimer in the content panel"
+  },
+  "panelCloseAriaLabel": {
+    "message": "Bezárás",
+    "description": "Aria label for the panel close button"
+  },
+  "panelGeniusActiveNote": {
+    "message": "A Booking Genius aktív ezen az oldalon. A TrueRate azt mutatja, mit adnak hozzá a tagságai.",
+    "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "optionsTitle": {
+    "message": "TrueRate beállítások",
+    "description": "Options page title"
+  },
+  "optionsAccountHeading": {
+    "message": "Fiók",
+    "description": "Account section heading on options page"
+  },
+  "optionsSignedIn": {
+    "message": "Bejelentkezve",
+    "description": "Account status when signed in"
+  },
+  "optionsNotSignedIn": {
+    "message": "Nincs bejelentkezve",
+    "description": "Account status when not signed in"
+  },
+  "optionsSignOutButton": {
+    "message": "Kijelentkezés",
+    "description": "Sign out button on options page"
+  },
+  "optionsSignInLink": {
+    "message": "Bejelentkezés a TrueRate oldalon",
+    "description": "Link to sign in via the web app"
+  },
+  "optionsPreferencesHeading": {
+    "message": "Beállítások",
+    "description": "Preferences section heading on options page"
+  },
+  "optionsShowPanelLabel": {
+    "message": "Juttatások panel megjelenítése a Booking.com oldalon",
+    "description": "Toggle label for showing the benefits panel"
+  }
+}
