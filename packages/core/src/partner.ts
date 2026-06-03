@@ -11,6 +11,7 @@
 // MemoryPartnerSubmissionRepo when those issues land. The interface contracts
 // here are the stable surface that tests and channels program against.
 
+import type { EmailSender } from "./email.js";
 import type {
   BenefitTemplate,
   ProgramCategory,
@@ -136,8 +137,11 @@ export interface PartnerOrgRepo {
   getOrg(id: string): Promise<PartnerOrg | null>;
   updateOrg(org: PartnerOrg): Promise<PartnerOrg>;
   listByStatus(status: PartnerOrgStatus): Promise<PartnerOrg[]>;
+  /** Upsert a member record (keyed on userId:orgId). */
   addMember(member: PartnerOrgMember): Promise<void>;
   getMember(userId: string, orgId: string): Promise<PartnerOrgMember | null>;
+  /** Remove a member from an org. No-op if not present. */
+  removeMember(userId: string, orgId: string): Promise<void>;
   listMembers(orgId: string): Promise<PartnerOrgMember[]>;
   /** Return all org memberships for a given user (reverse lookup). */
   listOrgMemberships(userId: string): Promise<PartnerOrgMember[]>;
@@ -188,6 +192,10 @@ export class MemoryPartnerOrgRepo implements PartnerOrgRepo {
 
   async getMember(userId: string, orgId: string): Promise<PartnerOrgMember | null> {
     return this.members.get(`${userId}:${orgId}`) ?? null;
+  }
+
+  async removeMember(userId: string, orgId: string): Promise<void> {
+    this.members.delete(`${userId}:${orgId}`);
   }
 
   async listByStatus(status: PartnerOrgStatus): Promise<PartnerOrg[]> {
@@ -256,16 +264,74 @@ export class PartnerWorkflow {
     private readonly orgs: PartnerOrgRepo,
     private readonly submissions: PartnerSubmissionRepo,
     private readonly notifications: PartnerNotificationRepo,
+    private readonly emailSender?: EmailSender,
   ) {}
 
   /**
    * Associate a user with a partner org.
    * If the org has no other members yet, the first user becomes owner.
+   * Admin/system-level — no ownership check (used during onboarding).
    */
   async associateUser(userId: string, orgId: string, role: PartnerRole): Promise<void> {
     const org = await this.orgs.getOrg(orgId);
     if (!org) throw new PartnerWorkflowError("org_not_found", "Organization not found");
     await this.orgs.addMember({ userId, orgId, role, addedAt: new Date().toISOString() });
+  }
+
+  /**
+   * Add a member to an org.  Requires the calling user to be an owner.
+   */
+  async addMember(actorId: string, orgId: string, newUserId: string, role: PartnerRole): Promise<PartnerOrgMember> {
+    await this.assertOwner(actorId, orgId);
+    const existing = await this.orgs.getMember(newUserId, orgId);
+    if (existing) {
+      throw new PartnerWorkflowError("invalid_transition", "User is already a member of this organization");
+    }
+    const member: PartnerOrgMember = { userId: newUserId, orgId, role, addedAt: new Date().toISOString() };
+    await this.orgs.addMember(member);
+    return member;
+  }
+
+  /**
+   * Remove a member from an org.  Requires the calling user to be an owner.
+   * An owner cannot remove themselves if they are the last owner.
+   */
+  async removeMember(actorId: string, orgId: string, targetUserId: string): Promise<void> {
+    await this.assertOwner(actorId, orgId);
+    const target = await this.orgs.getMember(targetUserId, orgId);
+    if (!target) throw new PartnerWorkflowError("not_a_member", "Target user is not a member of this organization");
+
+    // Prevent removing the last owner
+    if (target.role === "owner") {
+      const owners = (await this.orgs.listMembers(orgId)).filter((m) => m.role === "owner");
+      if (owners.length <= 1) {
+        throw new PartnerWorkflowError("invalid_transition", "Cannot remove the last owner of an organization");
+      }
+    }
+
+    await this.orgs.removeMember(targetUserId, orgId);
+  }
+
+  /**
+   * Update a member's role.  Requires the calling user to be an owner.
+   * An owner cannot downgrade themselves if they are the last owner.
+   */
+  async updateMemberRole(actorId: string, orgId: string, targetUserId: string, newRole: PartnerRole): Promise<PartnerOrgMember> {
+    await this.assertOwner(actorId, orgId);
+    const target = await this.orgs.getMember(targetUserId, orgId);
+    if (!target) throw new PartnerWorkflowError("not_a_member", "Target user is not a member of this organization");
+
+    // Prevent downgrading the last owner
+    if (target.role === "owner" && newRole !== "owner") {
+      const owners = (await this.orgs.listMembers(orgId)).filter((m) => m.role === "owner");
+      if (owners.length <= 1) {
+        throw new PartnerWorkflowError("invalid_transition", "Cannot demote the last owner of an organization");
+      }
+    }
+
+    const updated: PartnerOrgMember = { ...target, role: newRole };
+    await this.orgs.addMember(updated); // addMember is upsert-by-key in all repo impls
+    return updated;
   }
 
   /**
@@ -407,24 +473,88 @@ export class PartnerWorkflow {
     return member;
   }
 
+  private async assertOwner(userId: string, orgId: string): Promise<PartnerOrgMember> {
+    const member = await this.orgs.getMember(userId, orgId);
+    if (!member) throw new PartnerWorkflowError("not_a_member", "User is not a member of this organization");
+    if (member.role !== "owner") throw new PartnerWorkflowError("not_an_owner", "Only org owners can perform this action");
+    return member;
+  }
+
   private async sendNotification(sub: PartnerSubmission, event: NotificationEvent): Promise<void> {
     const org = await this.orgs.getOrg(sub.orgId);
     const recipientEmail = org?.contactEmail ?? "unknown";
+    const payload: Record<string, unknown> = {
+      submissionId: sub.id,
+      programName: sub.programDraft.name,
+      status: sub.status,
+      ...(sub.rejectReason ? { rejectReason: sub.rejectReason } : {}),
+      ...(sub.publishedProgramId ? { publishedProgramId: sub.publishedProgramId } : {}),
+    };
+
     await this.notifications.record({
       id: `notif-${sub.id}-${event}`,
       event,
       orgId: sub.orgId,
       submissionId: sub.id,
       recipientEmail,
-      payload: {
-        submissionId: sub.id,
-        programName: sub.programDraft.name,
-        status: sub.status,
-        ...(sub.rejectReason ? { rejectReason: sub.rejectReason } : {}),
-        ...(sub.publishedProgramId ? { publishedProgramId: sub.publishedProgramId } : {}),
-      },
+      payload,
       sentAt: new Date().toISOString(),
     });
+
+    if (this.emailSender && recipientEmail !== "unknown") {
+      const { subject, text } = buildEmailContent(event, sub.programDraft.name, sub.rejectReason, sub.publishedProgramId);
+      // Fire-and-forget: email delivery failures don't break the workflow transaction.
+      this.emailSender.send({ to: recipientEmail, subject, text }).catch(() => { /* logged by transport */ });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email content builder (product rule #1: no prices in any notification)
+// ---------------------------------------------------------------------------
+
+function buildEmailContent(
+  event: NotificationEvent,
+  programName: string,
+  rejectReason?: string,
+  publishedProgramId?: string,
+): { subject: string; text: string } {
+  switch (event) {
+    case "submission_received":
+      return {
+        subject: `TrueRate: Submission received — ${programName}`,
+        text: [
+          `Your submission for "${programName}" has been received and is pending review.`,
+          "",
+          "You will be notified when the status changes.",
+          "",
+          "— The TrueRate team",
+        ].join("\n"),
+      };
+    case "submission_approved":
+      return {
+        subject: `TrueRate: Submission approved — ${programName}`,
+        text: [
+          `Great news! Your submission for "${programName}" has been approved and published to the TrueRate catalog.`,
+          ...(publishedProgramId ? [``, `Program ID: ${publishedProgramId}`] : []),
+          "",
+          "Thank you for contributing to TrueRate.",
+          "",
+          "— The TrueRate team",
+        ].join("\n"),
+      };
+    case "submission_rejected":
+      return {
+        subject: `TrueRate: Submission not approved — ${programName}`,
+        text: [
+          `Unfortunately, your submission for "${programName}" was not approved.`,
+          ...(rejectReason ? [``, `Reason: ${rejectReason}`] : []),
+          "",
+          "Please update your submission and resubmit, or contact support if you have questions.",
+          "",
+          "— The TrueRate team",
+        ].join("\n"),
+      };
   }
 }
 
@@ -436,6 +566,7 @@ export type PartnerWorkflowErrorCode =
   | "org_not_found"
   | "submission_not_found"
   | "not_a_member"
+  | "not_an_owner"
   | "invalid_transition"
   | "price_field_in_draft"
   | "org_already_processed";
@@ -515,14 +646,14 @@ export function resetPartnerRepos(): void {
 
 let _workflow: PartnerWorkflow | null = null;
 
-export async function getPartnerWorkflow(): Promise<PartnerWorkflow> {
+export async function getPartnerWorkflow(emailSender?: EmailSender): Promise<PartnerWorkflow> {
   if (_workflow) return _workflow;
   const [orgs, subs, notifs] = await Promise.all([
     getPartnerOrgRepo(),
     getPartnerSubmissionRepo(),
     getPartnerNotificationRepo(),
   ]);
-  _workflow = new PartnerWorkflow(orgs, subs, notifs);
+  _workflow = new PartnerWorkflow(orgs, subs, notifs, emailSender);
   return _workflow;
 }
 
