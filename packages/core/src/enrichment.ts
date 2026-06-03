@@ -1,5 +1,6 @@
 import { collectPerks, matchBenefits } from "./match.js";
 import { estimatePerkValueAllBands, perkHasMonetaryEstimate } from "./perk-value.js";
+import { PROGRAMS } from "./programs.js";
 import { BookingProvider } from "./providers/booking.js";
 import type { HotelProvider } from "./providers/types.js";
 import type {
@@ -104,12 +105,13 @@ export class EnrichmentEngine {
    * context the extension scraped (domain, optional property name/brand).
    */
   matchPage(context: PageContext, memberships: Membership[]): PageMatchResult {
+    const programsMap = new Map(PROGRAMS.map((p) => [p.id, p]));
     const matched = matchBenefits(memberships, {
       domain: context.domain,
       brand: context.property?.brand,
       propertyName: context.property?.name,
       category: "hotel",
-    });
+    }, { programs: programsMap });
 
     const perkEstimates: MatchedPerkEstimate[] = [];
     for (const m of matched) {

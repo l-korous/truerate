@@ -33,6 +33,7 @@ const sample: McpBenefitResult = {
   ],
   programsApplied: ["booking_genius"],
   generatedAt: new Date().toISOString(),
+  stalenessWarnings: [],
 };
 
 test("formatBenefitResult surfaces context, discounts, perks and estimates — no prices", () => {
@@ -82,4 +83,130 @@ test("buildBenefitResult strips prices and includes perk estimates", () => {
   assert.strictEqual(result.perkValueEstimates[0]!.perkType, "free_wifi");
   assert.strictEqual(result.perkValueEstimates[0]!.isEstimate, true);
   assert.ok(result.perkValueEstimates[0]!.estimatedUsd[5] > 0);
+});
+
+// --- Staleness annotations ---
+
+test("buildBenefitResult produces empty stalenessWarnings when no confidence data", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "category" as const,
+        match: { categories: ["hotel" as const] },
+        value: { kind: "perk" as const, perks: ["Free breakfast"] },
+        source: "catalog" as const,
+        programId: "some_program",
+      },
+      membershipId: "m1",
+      membershipLabel: "Some Program",
+      confidence: undefined,
+    },
+  ];
+  const result = buildBenefitResult(matches, {});
+  assert.deepStrictEqual(result.stalenessWarnings, []);
+});
+
+test("buildBenefitResult adds staleness warning for stale confidence", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "category" as const,
+        match: { categories: ["hotel" as const] },
+        value: { kind: "perk" as const, perks: ["Free breakfast"] },
+        source: "catalog" as const,
+        programId: "some_program",
+      },
+      membershipId: "m1",
+      membershipLabel: "Stale Program",
+      confidence: {
+        level: "stale" as const,
+        score: 0.1,
+        ageMonths: 24,
+        expiresAt: "2024-01-01",
+        isExpired: true,
+      },
+    },
+  ];
+  const result = buildBenefitResult(matches, {});
+  assert.strictEqual(result.matches[0]!.termsConfidenceLevel, "stale");
+  assert.strictEqual(result.stalenessWarnings.length, 1);
+  assert.match(result.stalenessWarnings[0]!, /Stale Program/);
+  assert.match(result.stalenessWarnings[0]!, /outdated/i);
+});
+
+test("buildBenefitResult adds advisory warning for low confidence", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "category" as const,
+        match: { categories: ["hotel" as const] },
+        value: { kind: "perk" as const, perks: ["Parking"] },
+        source: "catalog" as const,
+        programId: "some_program",
+      },
+      membershipId: "m1",
+      membershipLabel: "Low-Confidence Program",
+      confidence: {
+        level: "low" as const,
+        score: 0.3,
+        ageMonths: 8,
+        expiresAt: "2026-06-01",
+        isExpired: false,
+      },
+    },
+  ];
+  const result = buildBenefitResult(matches, {});
+  assert.strictEqual(result.matches[0]!.termsConfidenceLevel, "low");
+  assert.strictEqual(result.stalenessWarnings.length, 1);
+  assert.match(result.stalenessWarnings[0]!, /Low-Confidence Program/);
+  assert.match(result.stalenessWarnings[0]!, /changed/i);
+});
+
+test("formatBenefitResult includes staleness warning section when warnings exist", () => {
+  const resultWithWarning: McpBenefitResult = {
+    ...sample,
+    stalenessWarnings: ["Terms for \"Old Program\" may be outdated."],
+  };
+  const text = formatBenefitResult(resultWithWarning);
+  assert.match(text, /Terms freshness notes/i);
+  assert.match(text, /Old Program/);
+});
+
+test("formatBenefitResult omits staleness section when no warnings", () => {
+  const resultClean: McpBenefitResult = {
+    ...sample,
+    stalenessWarnings: [],
+  };
+  const text = formatBenefitResult(resultClean);
+  assert.doesNotMatch(text, /Terms freshness notes/i);
+});
+
+test("buildBenefitResult never includes price fields in staleness warnings", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "category" as const,
+        match: { categories: ["hotel" as const] },
+        value: { kind: "perk" as const, perks: ["Lounge access"] },
+        source: "catalog" as const,
+        programId: "some_program",
+      },
+      membershipId: "m1",
+      membershipLabel: "Stale Program",
+      confidence: {
+        level: "stale" as const,
+        score: 0.1,
+        ageMonths: 30,
+        expiresAt: "2023-01-01",
+        isExpired: true,
+      },
+    },
+  ];
+  const result = buildBenefitResult(matches, {});
+  const warning = result.stalenessWarnings[0] ?? "";
+  assert.doesNotMatch(warning, /price|amount|nightly|total|member.*rate/i);
 });

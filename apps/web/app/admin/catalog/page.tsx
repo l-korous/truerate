@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { adminCatalogApi, type CatalogEntry } from "@/lib/api";
+import { computeStalenessLevel, type ConfidenceLevel } from "@/lib/catalog-confidence";
 
 type StatusFilter = "all" | "draft" | "in-review" | "published" | "archived";
+
+const CONFIDENCE_BADGE: Record<ConfidenceLevel, { label: string; className: string }> = {
+  high:   { label: "Fresh",       className: "bg-green-100 text-green-800" },
+  medium: { label: "OK",          className: "bg-green-50  text-green-700" },
+  low:    { label: "Getting old", className: "bg-yellow-100 text-yellow-800" },
+  stale:  { label: "Stale",       className: "bg-red-100   text-red-700" },
+};
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-yellow-100 text-yellow-800",
@@ -96,6 +104,7 @@ export default function CatalogAdminPage() {
                     <p className="font-medium text-ink">{entry.name}</p>
                     <p className="text-xs text-ink-muted">
                       {entry.programId} · {entry.category} · {entry.region} · v{entry.version}
+                      {entry.provenance.asOf && ` · as of ${entry.provenance.asOf}`}
                     </p>
                   </div>
                   <span
@@ -103,6 +112,20 @@ export default function CatalogAdminPage() {
                   >
                     {entry.status}
                   </span>
+                  {(() => {
+                    const level = computeStalenessLevel(entry.provenance.asOf, entry.category);
+                    const badge = CONFIDENCE_BADGE[level];
+                    if (level === "high" || level === "medium") return null;
+                    return (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
+                        title={`Terms confidence: ${level}. asOf: ${entry.provenance.asOf ?? "unknown"}`}
+                        data-testid={`confidence-badge-${entry.programId}`}
+                      >
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-3">
                   <Link

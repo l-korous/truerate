@@ -2,7 +2,7 @@ import type { PageContext, PageMatchResult } from "@truerate/core";
 import { detectPageType, extractHotelName, detectGeniusActive } from "../utils/booking-context";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
-import { esc, perkEstimateRow } from "../utils/render-helpers";
+import { esc, perkEstimateRow, worstStalenessLevel } from "../utils/render-helpers";
 import { t } from "../utils/i18n";
 
 // Content script for Booking.com.
@@ -163,6 +163,13 @@ function renderResult(s: ShadowRoot, r: PageMatchResult, geniusActive = false) {
       </div>`
     : "";
 
+  const stalenessLevel = worstStalenessLevel(r.matches);
+  const stalenessHtml = stalenessLevel === "stale"
+    ? `<div class="tr-stale-note tr-stale-warn">${t("panelTermsStaleNote")}</div>`
+    : stalenessLevel === "low"
+    ? `<div class="tr-stale-note">${t("panelTermsLowConfidenceNote")}</div>`
+    : "";
+
   const active = r.matches.length
     ? `<p class="tr-active">${t("panelActivePrefix")} ${[...new Set(r.matches.map((m) => esc(m.membershipLabel)))].join(", ")}</p>`
     : "";
@@ -172,6 +179,7 @@ function renderResult(s: ShadowRoot, r: PageMatchResult, geniusActive = false) {
       ${discountHtml}
       ${perksHtml}
       ${estimatesHtml}
+      ${stalenessHtml}
       ${active}
       <p class="tr-foot">${t("panelDisclaimer")}</p>
     </div>`;
@@ -211,6 +219,8 @@ function styleEl(): HTMLStyleElement {
     .tr-est-label{display:block;font-size:11px;color:#0c1b2e;font-weight:600}
     .tr-est-value{display:block;font-size:11px;color:#0f8a5f;font-weight:500}
     .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}
-    .tr-genius-note{background:#f0f4ff;border:1px solid #c0d0f0;border-radius:8px;padding:6px 10px;font-size:11px;color:#1a3a7a;margin-bottom:8px}`;
+    .tr-genius-note{background:#f0f4ff;border:1px solid #c0d0f0;border-radius:8px;padding:6px 10px;font-size:11px;color:#1a3a7a;margin-bottom:8px}
+    .tr-stale-note{background:#fdf8e1;border:1px solid #e8d87a;border-radius:8px;padding:6px 10px;font-size:11px;color:#7a6800;margin-top:6px}
+    .tr-stale-warn{background:#fff3f0;border-color:#f0b8a8;color:#8b2500}`;
   return s;
 }
