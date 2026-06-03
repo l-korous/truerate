@@ -132,5 +132,10 @@
   "panelOneKeyActiveNote": {
     "message": "Na této stránce je aktivní One Key. TrueRate zobrazuje, co vaše ostatní členství přidávají navíc.",
     "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelBonvoyActiveNote": {
+    "message": "Na této stránce je aktivní Marriott Bonvoy. TrueRate zobrazuje, co vaše členství přidávají navíc.",
+    "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   }
 }
