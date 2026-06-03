@@ -36,6 +36,8 @@ import {
   PartnerWorkflowError,
   getAuditRepo,
   resetAuditRepo,
+  type AuditAction,
+  type AuditFilter,
   type CatalogCache,
   type Logger,
   type Benefit,
@@ -626,6 +628,12 @@ function requireCatalogEditor(c: any): Response | null {
   return null;
 }
 
+/** Extract actor identity from the request. Uses x-admin-actor header when present; falls back to "admin". */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adminActor(c: any): string {
+  return c.req.header("x-admin-actor") ?? "admin";
+}
+
 // GET /admin/catalog — list catalog entries, optionally filtered by ?status=
 app.get("/admin/catalog", async (c) => {
   const authErr = requireCatalogEditor(c);
@@ -659,6 +667,16 @@ app.post("/admin/catalog", async (c) => {
 
   const repo = await getCatalogRepo();
   const entry = await repo.upsertDraft(parsed);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.catalog.draft.create",
+    targetId: entry.programId,
+    targetType: "catalog",
+    after: { programId: entry.programId, version: entry.version, status: entry.status },
+  });
+
   return c.json({ entry }, 201);
 });
 
@@ -696,7 +714,19 @@ app.put("/admin/catalog/:id", async (c) => {
   }
 
   const repo = await getCatalogRepo();
+  const before = await repo.getCurrent(programId);
   const entry = await repo.upsertDraft(parsed);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.catalog.draft.update",
+    targetId: entry.programId,
+    targetType: "catalog",
+    before: before ? { version: before.version, status: before.status } : undefined,
+    after: { version: entry.version, status: entry.status },
+  });
+
   return c.json({ entry });
 });
 
@@ -715,6 +745,16 @@ app.delete("/admin/catalog/:id", async (c) => {
   // Invalidate cache so channels stop serving this program immediately
   const cache = await getAppCatalogCache();
   cache.invalidate(programId);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.catalog.archive",
+    targetId: programId,
+    targetType: "catalog",
+    before: { version: current.version, status: current.status },
+    after: { status: "archived" },
+  });
 
   return c.body(null, 204);
 });
@@ -738,6 +778,15 @@ app.post("/admin/catalog/:id/publish", async (c) => {
   // Invalidate cache so channels pick up the new published version immediately
   const cache = await getAppCatalogCache();
   cache.invalidate(programId);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.catalog.publish",
+    targetId: programId,
+    targetType: "catalog",
+    after: { version: entry.version, status: entry.status, publishedAt: entry.publishedAt },
+  });
 
   return c.json({ entry });
 });
@@ -773,6 +822,15 @@ app.post("/admin/catalog/:id/restore/:version", async (c) => {
   // Build a new draft from the snapshot's content (no id/version/status/timestamps)
   const { id: _id, version: _v, isCurrent: _c, status: _s, createdAt: _ca, updatedAt: _ua, publishedAt: _pa, archivedAt: _aa, ...content } = snapshot;
   const draft = await repo.upsertDraft(content);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.catalog.restore",
+    targetId: programId,
+    targetType: "catalog",
+    notes: `restored from version ${versionNum} as new draft version ${draft.version}`,
+  });
 
   return c.json({ entry: draft }, 201);
 });
@@ -831,6 +889,16 @@ app.post("/admin/partners", async (c) => {
     status: parsed.status ?? "pending",
     createdAt: new Date().toISOString(),
   });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: adminActor(c),
+    action: "admin.partner.create",
+    targetId: org.id,
+    targetType: "partner",
+    after: { name: org.name, country: org.country, status: org.status },
+  });
+
   return c.json({ org }, 201);
 });
 
@@ -851,9 +919,21 @@ app.post("/admin/partners/:id/approve", async (c) => {
   const parsed = await parseBody(OrgActionSchema, c);
   if (parsed instanceof Response) return parsed;
 
+  const actor = adminActor(c);
   const workflow = await getPartnerWorkflow();
   try {
-    const org = await workflow.approveOrg(c.req.param("id"), parsed.adminId ?? "admin");
+    const org = await workflow.approveOrg(c.req.param("id"), parsed.adminId ?? actor);
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.partner.approve",
+      targetId: org.id,
+      targetType: "partner",
+      before: { status: "pending" },
+      after: { status: org.status, approvedAt: org.approvedAt },
+    });
+
     return c.json({ org });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
@@ -872,9 +952,22 @@ app.post("/admin/partners/:id/reject", async (c) => {
   const parsed = await parseBody(OrgRejectSchema, c);
   if (parsed instanceof Response) return parsed;
 
+  const actor = adminActor(c);
   const workflow = await getPartnerWorkflow();
   try {
-    const org = await workflow.rejectOrg(c.req.param("id"), parsed.adminId ?? "admin", parsed.reason);
+    const org = await workflow.rejectOrg(c.req.param("id"), parsed.adminId ?? actor, parsed.reason);
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.partner.reject",
+      targetId: org.id,
+      targetType: "partner",
+      before: { status: "pending" },
+      after: { status: org.status, rejectedAt: org.rejectedAt },
+      notes: `reason: ${parsed.reason}`,
+    });
+
     return c.json({ org });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
@@ -927,13 +1020,25 @@ app.post("/admin/submissions/:id/approve", async (c) => {
   const parsed = await parseBody(SubmissionApproveSchema, c);
   if (parsed instanceof Response) return parsed;
 
+  const actor = adminActor(c);
   const workflow = await getPartnerWorkflow();
   try {
     const submission = await workflow.approve(
       c.req.param("id"),
       parsed.publishedProgramId,
-      parsed.adminId ?? "admin",
+      parsed.adminId ?? actor,
     );
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.submission.approve",
+      targetId: submission.id,
+      targetType: "submission",
+      before: { status: "submitted" },
+      after: { status: submission.status, publishedProgramId: submission.publishedProgramId },
+    });
+
     return c.json({ submission });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
@@ -952,13 +1057,26 @@ app.post("/admin/submissions/:id/reject", async (c) => {
   const parsed = await parseBody(SubmissionRejectSchema, c);
   if (parsed instanceof Response) return parsed;
 
+  const actor = adminActor(c);
   const workflow = await getPartnerWorkflow();
   try {
     const submission = await workflow.reject(
       c.req.param("id"),
       parsed.reason,
-      parsed.adminId ?? "admin",
+      parsed.adminId ?? actor,
     );
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.submission.reject",
+      targetId: submission.id,
+      targetType: "submission",
+      before: { status: "submitted" },
+      after: { status: submission.status },
+      notes: `reason: ${parsed.reason}`,
+    });
+
     return c.json({ submission });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
@@ -1115,14 +1233,30 @@ app.get("/admin/users/:id/audit", async (c) => {
   return c.json({ entries, count: entries.length });
 });
 
-// GET /admin/audit — list recent audit log entries (any target)
+// GET /admin/audit — list audit log entries with optional filtering
+// ?actor=<actor>  ?action=<action>  ?targetId=<id>  ?targetType=<type>
+// ?since=<ISO>    ?until=<ISO>      ?limit=<n>  (max 200, default 50)
 app.get("/admin/audit", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
 
   const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10), 200);
   const audit = await getAuditRepo();
-  const entries = await audit.listRecent(limit);
+
+  const actor = c.req.query("actor");
+  const action = c.req.query("action") as AuditAction | undefined;
+  const targetId = c.req.query("targetId");
+  const targetType = c.req.query("targetType");
+  const since = c.req.query("since");
+  const until = c.req.query("until");
+
+  const hasFilter = actor || action || targetId || targetType || since || until;
+  const filter: AuditFilter = { actor, action, targetId, targetType, since, until };
+
+  const entries = hasFilter
+    ? await audit.listFiltered(filter, limit)
+    : await audit.listRecent(limit);
+
   return c.json({ entries, count: entries.length });
 });
 
