@@ -4,123 +4,122 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "See the rates your loyalty memberships actually unlock — right on the search page.",
+    "message": "Tekintse meg a hűségprogram-tagsága által valóban feloldott árakat – közvetlenül a keresési oldalon.",
     "description": "Extension description"
   },
 
   "popupSignInSub": {
-    "message": "Sign in to surface your member rates on Booking.com.",
+    "message": "Jelentkezzen be, hogy lássa a tagárait a Booking.com-on.",
     "description": "Popup subtitle shown when signed out"
   },
   "popupEmailPlaceholder": {
-    "message": "Email",
+    "message": "E-mail",
     "description": "Email input placeholder"
   },
   "popupPasswordPlaceholder": {
-    "message": "Password",
+    "message": "Jelszó",
     "description": "Password input placeholder"
   },
   "popupSignInButton": {
-    "message": "Sign in",
+    "message": "Bejelentkezés",
     "description": "Sign in button label"
   },
   "popupSignedInSub": {
-    "message": "Connected. Open a Booking.com search to see your rates.",
+    "message": "Csatlakozva. Nyisson meg egy Booking.com keresést, hogy lássa az árait.",
     "description": "Popup subtitle shown when signed in"
   },
   "popupSignOutButton": {
-    "message": "Sign out",
+    "message": "Kijelentkezés",
     "description": "Sign out button label"
   },
   "popupOptionsLink": {
-    "message": "Settings",
+    "message": "Beállítások",
     "description": "Link to options page"
   },
 
   "panelSignInPrompt": {
-    "message": "Sign in to see the benefits you hold here.",
+    "message": "Jelentkezzen be, hogy lássa az itt rendelkezésre álló kedvezményeit.",
     "description": "Content panel message when user is not signed in"
   },
   "panelOpenTrueRate": {
-    "message": "Open TrueRate",
+    "message": "TrueRate megnyitása",
     "description": "Link text to open the TrueRate web app"
   },
   "panelLoading": {
-    "message": "Checking your benefits…",
+    "message": "Kedvezmények ellenőrzése…",
     "description": "Content panel loading message"
   },
   "panelNoBenefits": {
-    "message": "No benefits on file for this site yet.",
+    "message": "Ehhez az oldalhoz még nincsenek rögzített kedvezmények.",
     "description": "Content panel message when no benefits are available"
   },
   "panelPerkEstimatesHeader": {
-    "message": "Estimated perk value",
+    "message": "Becsült juttatásérték",
     "description": "Header for the perk estimates section"
   },
   "panelPerkEstimatesNote": {
-    "message": "(indicative, not a price)",
+    "message": "(tájékoztató jellegű, nem ár)",
     "description": "Note clarifying perk estimates are not prices"
   },
   "panelActivePrefix": {
-    "message": "Active here:",
+    "message": "Aktív itt:",
     "description": "Prefix shown before the list of active memberships"
   },
   "panelDisclaimer": {
-    "message": "Discounts and perks are from your declared memberships. Apply discounts to the price you see.",
+    "message": "A kedvezmények és juttatások a megadott tagságaiból származnak. Az engedményeket a látható árra alkalmazza.",
     "description": "Footer disclaimer in the content panel"
   },
   "panelCloseAriaLabel": {
-    "message": "Close",
+    "message": "Bezárás",
     "description": "Aria label for the panel close button"
   },
   "panelGeniusActiveNote": {
-    "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
+    "message": "A Booking Genius aktív ezen az oldalon. A TrueRate azt mutatja, amit a tagságai ehhez hozzáadnak.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
   "panelTermsStaleNote": {
-    "message": "Some benefit terms may be outdated — verify at the program website.",
+    "message": "Egyes kedvezmény-feltételek elavultak lehetnek – ellenőrizze a program weboldalán.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."
   },
   "panelTermsLowConfidenceNote": {
-    "message": "Some benefit terms were last verified a while ago — conditions may have changed.",
+    "message": "Egyes kedvezmény-feltételeket egy ideje nem ellenőrizték – a feltételek változhattak.",
     "description": "Advisory note shown when one or more matched benefit catalog entries have low confidence. Terms freshness only, not prices."
+  },
+  "panelErrorGeneric": {
+    "message": "Nem sikerült betölteni a kedvezményeket",
+    "description": "Fallback message shown in the content panel when the benefits request fails"
   },
 
   "optionsTitle": {
-    "message": "TrueRate Settings",
+    "message": "TrueRate beállítások",
     "description": "Options page title"
   },
   "optionsAccountHeading": {
-    "message": "Account",
+    "message": "Fiók",
     "description": "Account section heading on options page"
   },
   "optionsSignedIn": {
-    "message": "Signed in",
+    "message": "Bejelentkezve",
     "description": "Account status when signed in"
   },
   "optionsNotSignedIn": {
-    "message": "Not signed in",
+    "message": "Nincs bejelentkezve",
     "description": "Account status when not signed in"
   },
   "optionsSignOutButton": {
-    "message": "Sign out",
+    "message": "Kijelentkezés",
     "description": "Sign out button on options page"
   },
   "optionsSignInLink": {
-    "message": "Sign in at TrueRate",
+    "message": "Bejelentkezés a TrueRate-en",
     "description": "Link to sign in via the web app"
   },
   "optionsPreferencesHeading": {
-    "message": "Preferences",
+    "message": "Beállítások",
     "description": "Preferences section heading on options page"
   },
   "optionsShowPanelLabel": {
-    "message": "Show benefits panel on Booking.com",
+    "message": "Kedvezménypanel megjelenítése a Booking.com-on",
     "description": "Toggle label for showing the benefits panel"
-  },
-
-  "panelErrorGeneric": {
-    "message": "Could not load benefits",
-    "description": "Fallback message shown in the content panel when the benefits request fails"
   }
 }

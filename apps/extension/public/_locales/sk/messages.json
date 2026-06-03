@@ -4,123 +4,122 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "See the rates your loyalty memberships actually unlock — right on the search page.",
+    "message": "Pozrite si sadzby, ktoré skutočne odomykajú vaše vernostné členstvá – priamo na stránke s výsledkami vyhľadávania.",
     "description": "Extension description"
   },
 
   "popupSignInSub": {
-    "message": "Sign in to surface your member rates on Booking.com.",
+    "message": "Prihláste sa a zobrazte si členské sadzby na Booking.com.",
     "description": "Popup subtitle shown when signed out"
   },
   "popupEmailPlaceholder": {
-    "message": "Email",
+    "message": "E-mail",
     "description": "Email input placeholder"
   },
   "popupPasswordPlaceholder": {
-    "message": "Password",
+    "message": "Heslo",
     "description": "Password input placeholder"
   },
   "popupSignInButton": {
-    "message": "Sign in",
+    "message": "Prihlásiť sa",
     "description": "Sign in button label"
   },
   "popupSignedInSub": {
-    "message": "Connected. Open a Booking.com search to see your rates.",
+    "message": "Pripojené. Otvorte vyhľadávanie na Booking.com a zobrazte si svoje sadzby.",
     "description": "Popup subtitle shown when signed in"
   },
   "popupSignOutButton": {
-    "message": "Sign out",
+    "message": "Odhlásiť sa",
     "description": "Sign out button label"
   },
   "popupOptionsLink": {
-    "message": "Settings",
+    "message": "Nastavenia",
     "description": "Link to options page"
   },
 
   "panelSignInPrompt": {
-    "message": "Sign in to see the benefits you hold here.",
+    "message": "Prihláste sa a zobrazte si výhody, ktoré tu máte.",
     "description": "Content panel message when user is not signed in"
   },
   "panelOpenTrueRate": {
-    "message": "Open TrueRate",
+    "message": "Otvoriť TrueRate",
     "description": "Link text to open the TrueRate web app"
   },
   "panelLoading": {
-    "message": "Checking your benefits…",
+    "message": "Kontrola vašich výhod…",
     "description": "Content panel loading message"
   },
   "panelNoBenefits": {
-    "message": "No benefits on file for this site yet.",
+    "message": "Pre túto stránku zatiaľ nemáme žiadne výhody.",
     "description": "Content panel message when no benefits are available"
   },
   "panelPerkEstimatesHeader": {
-    "message": "Estimated perk value",
+    "message": "Odhadovaná hodnota výhody",
     "description": "Header for the perk estimates section"
   },
   "panelPerkEstimatesNote": {
-    "message": "(indicative, not a price)",
+    "message": "(orientačná, nie je to cena)",
     "description": "Note clarifying perk estimates are not prices"
   },
   "panelActivePrefix": {
-    "message": "Active here:",
+    "message": "Aktívne tu:",
     "description": "Prefix shown before the list of active memberships"
   },
   "panelDisclaimer": {
-    "message": "Discounts and perks are from your declared memberships. Apply discounts to the price you see.",
+    "message": "Zľavy a výhody pochádzajú z vašich deklarovaných členstviev. Zľavy uplatňujte na zobrazenú cenu.",
     "description": "Footer disclaimer in the content panel"
   },
   "panelCloseAriaLabel": {
-    "message": "Close",
+    "message": "Zavrieť",
     "description": "Aria label for the panel close button"
   },
   "panelGeniusActiveNote": {
-    "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
+    "message": "Na tejto stránke je aktívny Booking Genius. TrueRate zobrazuje, čo vaše členstvá pridávajú navyše.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
   "panelTermsStaleNote": {
-    "message": "Some benefit terms may be outdated — verify at the program website.",
+    "message": "Niektoré podmienky výhod môžu byť zastarané – overte na webstránke programu.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."
   },
   "panelTermsLowConfidenceNote": {
-    "message": "Some benefit terms were last verified a while ago — conditions may have changed.",
+    "message": "Niektoré podmienky výhod neboli nedávno overené – podmienky sa mohli zmeniť.",
     "description": "Advisory note shown when one or more matched benefit catalog entries have low confidence. Terms freshness only, not prices."
+  },
+  "panelErrorGeneric": {
+    "message": "Výhody sa nepodarilo načítať",
+    "description": "Fallback message shown in the content panel when the benefits request fails"
   },
 
   "optionsTitle": {
-    "message": "TrueRate Settings",
+    "message": "Nastavenia TrueRate",
     "description": "Options page title"
   },
   "optionsAccountHeading": {
-    "message": "Account",
+    "message": "Účet",
     "description": "Account section heading on options page"
   },
   "optionsSignedIn": {
-    "message": "Signed in",
+    "message": "Prihlásený/á",
     "description": "Account status when signed in"
   },
   "optionsNotSignedIn": {
-    "message": "Not signed in",
+    "message": "Neprihlásený/á",
     "description": "Account status when not signed in"
   },
   "optionsSignOutButton": {
-    "message": "Sign out",
+    "message": "Odhlásiť sa",
     "description": "Sign out button on options page"
   },
   "optionsSignInLink": {
-    "message": "Sign in at TrueRate",
+    "message": "Prihlásiť sa cez TrueRate",
     "description": "Link to sign in via the web app"
   },
   "optionsPreferencesHeading": {
-    "message": "Preferences",
+    "message": "Predvoľby",
     "description": "Preferences section heading on options page"
   },
   "optionsShowPanelLabel": {
-    "message": "Show benefits panel on Booking.com",
+    "message": "Zobraziť panel výhod na Booking.com",
     "description": "Toggle label for showing the benefits panel"
-  },
-
-  "panelErrorGeneric": {
-    "message": "Could not load benefits",
-    "description": "Fallback message shown in the content panel when the benefits request fails"
   }
 }
