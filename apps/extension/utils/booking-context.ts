@@ -1,4 +1,7 @@
 import type { PageContext } from "@truerate/core";
+import type { DocLike } from "./doc-like";
+
+export type { DocLike };
 
 // Pure helpers for Booking.com page-type detection and property-context
 // extraction. Kept free of browser globals so they can be unit-tested directly.
@@ -28,11 +31,6 @@ const DETAIL_NAME_SELECTORS = [
   "h2.pp-header__title",
   ".pp-header__title",
 ] as const;
-
-export interface DocLike {
-  querySelector(selector: string): { textContent: string | null; getAttribute(name: string): string | null } | null;
-  title: string;
-}
 
 export function extractHotelName(doc: DocLike): string | undefined {
   for (const selector of DETAIL_NAME_SELECTORS) {

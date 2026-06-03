@@ -122,5 +122,10 @@
   "panelErrorGeneric": {
     "message": "Výhody se nepodařilo načíst",
     "description": "Fallback message shown in the content panel when the benefits request fails"
+  },
+
+  "panelHonorsActiveNote": {
+    "message": "Na této stránce je aktivní Hilton Honors. TrueRate zobrazuje, co vaše členství přidávají navíc.",
+    "description": "Note shown when Hilton Honors DOM signals are detected; communicates incremental TrueRate value"
   }
 }
