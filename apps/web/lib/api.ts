@@ -193,6 +193,20 @@ export const api = {
   /** Emit an activation milestone event from the web client (fire-and-forget). */
   trackActivation: (event: "signup" | "membership_added" | "mcp_url_obtained" | "extension_connected") =>
     req<void>("/events/activation", { method: "POST", body: JSON.stringify({ event }) }).catch(() => undefined),
+
+  // ── MCP URL ────────────────────────────────────────────────────────────────
+  /**
+   * Issues or rotates the user's personal MCP URL.
+   * Returns the raw URL + token exactly ONCE — the caller must save it.
+   */
+  issueMcpUrl: () =>
+    req<{ url: string; token: string; createdAt: string }>("/me/mcp-url", { method: "POST" }),
+  /** Returns status only — never returns the raw URL/token after initial issue. */
+  getMcpUrlStatus: () =>
+    req<{ active: false } | { active: true; createdAt: string; lastUsedAt?: string }>("/me/mcp-url"),
+  /** Revokes the user's MCP URL token. */
+  revokeMcpUrl: () =>
+    req<void>("/me/mcp-url", { method: "DELETE" }),
 };
 
 // --- Admin catalog API (via Next.js proxy routes) ----------------------------
