@@ -4,123 +4,122 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "See the rates your loyalty memberships actually unlock — right on the search page.",
+    "message": "Zobacz stawki, które naprawdę odblokowuje Twoje członkostwo w programach lojalnościowych – bezpośrednio na stronie wyników wyszukiwania.",
     "description": "Extension description"
   },
 
   "popupSignInSub": {
-    "message": "Sign in to surface your member rates on Booking.com.",
+    "message": "Zaloguj się, aby zobaczyć swoje stawki członkowskie na Booking.com.",
     "description": "Popup subtitle shown when signed out"
   },
   "popupEmailPlaceholder": {
-    "message": "Email",
+    "message": "E-mail",
     "description": "Email input placeholder"
   },
   "popupPasswordPlaceholder": {
-    "message": "Password",
+    "message": "Hasło",
     "description": "Password input placeholder"
   },
   "popupSignInButton": {
-    "message": "Sign in",
+    "message": "Zaloguj się",
     "description": "Sign in button label"
   },
   "popupSignedInSub": {
-    "message": "Connected. Open a Booking.com search to see your rates.",
+    "message": "Połączono. Otwórz wyszukiwanie na Booking.com, aby zobaczyć swoje stawki.",
     "description": "Popup subtitle shown when signed in"
   },
   "popupSignOutButton": {
-    "message": "Sign out",
+    "message": "Wyloguj się",
     "description": "Sign out button label"
   },
   "popupOptionsLink": {
-    "message": "Settings",
+    "message": "Ustawienia",
     "description": "Link to options page"
   },
 
   "panelSignInPrompt": {
-    "message": "Sign in to see the benefits you hold here.",
+    "message": "Zaloguj się, aby zobaczyć swoje korzyści tutaj.",
     "description": "Content panel message when user is not signed in"
   },
   "panelOpenTrueRate": {
-    "message": "Open TrueRate",
+    "message": "Otwórz TrueRate",
     "description": "Link text to open the TrueRate web app"
   },
   "panelLoading": {
-    "message": "Checking your benefits…",
+    "message": "Sprawdzanie Twoich korzyści…",
     "description": "Content panel loading message"
   },
   "panelNoBenefits": {
-    "message": "No benefits on file for this site yet.",
+    "message": "Brak korzyści dla tej strony w pliku.",
     "description": "Content panel message when no benefits are available"
   },
   "panelPerkEstimatesHeader": {
-    "message": "Estimated perk value",
+    "message": "Szacowana wartość korzyści",
     "description": "Header for the perk estimates section"
   },
   "panelPerkEstimatesNote": {
-    "message": "(indicative, not a price)",
+    "message": "(orientacyjna, nie cena)",
     "description": "Note clarifying perk estimates are not prices"
   },
   "panelActivePrefix": {
-    "message": "Active here:",
+    "message": "Aktywne tutaj:",
     "description": "Prefix shown before the list of active memberships"
   },
   "panelDisclaimer": {
-    "message": "Discounts and perks are from your declared memberships. Apply discounts to the price you see.",
+    "message": "Rabaty i korzyści pochodzą z Twoich zadeklarowanych członkostw. Stosuj rabaty do widocznej ceny.",
     "description": "Footer disclaimer in the content panel"
   },
   "panelCloseAriaLabel": {
-    "message": "Close",
+    "message": "Zamknij",
     "description": "Aria label for the panel close button"
   },
   "panelGeniusActiveNote": {
-    "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
+    "message": "Booking Genius jest aktywny na tej stronie. TrueRate pokazuje, co Twoje członkostwa dodają ponad to.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
   "panelTermsStaleNote": {
-    "message": "Some benefit terms may be outdated — verify at the program website.",
+    "message": "Niektóre warunki korzyści mogą być nieaktualne – sprawdź na stronie programu.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."
   },
   "panelTermsLowConfidenceNote": {
-    "message": "Some benefit terms were last verified a while ago — conditions may have changed.",
+    "message": "Niektóre warunki korzyści były weryfikowane jakiś czas temu – warunki mogły się zmienić.",
     "description": "Advisory note shown when one or more matched benefit catalog entries have low confidence. Terms freshness only, not prices."
+  },
+  "panelErrorGeneric": {
+    "message": "Nie można załadować korzyści",
+    "description": "Fallback message shown in the content panel when the benefits request fails"
   },
 
   "optionsTitle": {
-    "message": "TrueRate Settings",
+    "message": "Ustawienia TrueRate",
     "description": "Options page title"
   },
   "optionsAccountHeading": {
-    "message": "Account",
+    "message": "Konto",
     "description": "Account section heading on options page"
   },
   "optionsSignedIn": {
-    "message": "Signed in",
+    "message": "Zalogowano",
     "description": "Account status when signed in"
   },
   "optionsNotSignedIn": {
-    "message": "Not signed in",
+    "message": "Nie zalogowano",
     "description": "Account status when not signed in"
   },
   "optionsSignOutButton": {
-    "message": "Sign out",
+    "message": "Wyloguj się",
     "description": "Sign out button on options page"
   },
   "optionsSignInLink": {
-    "message": "Sign in at TrueRate",
+    "message": "Zaloguj się przez TrueRate",
     "description": "Link to sign in via the web app"
   },
   "optionsPreferencesHeading": {
-    "message": "Preferences",
+    "message": "Preferencje",
     "description": "Preferences section heading on options page"
   },
   "optionsShowPanelLabel": {
-    "message": "Show benefits panel on Booking.com",
+    "message": "Pokaż panel korzyści na Booking.com",
     "description": "Toggle label for showing the benefits panel"
-  },
-
-  "panelErrorGeneric": {
-    "message": "Could not load benefits",
-    "description": "Fallback message shown in the content panel when the benefits request fails"
   }
 }

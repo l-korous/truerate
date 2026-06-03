@@ -4,123 +4,122 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "See the rates your loyalty memberships actually unlock — right on the search page.",
+    "message": "Sehen Sie die Preise, die Ihre Treueprogramm-Mitgliedschaften wirklich freischalten – direkt auf der Suchseite.",
     "description": "Extension description"
   },
 
   "popupSignInSub": {
-    "message": "Sign in to surface your member rates on Booking.com.",
+    "message": "Melden Sie sich an, um Ihre Mitgliederpreise auf Booking.com zu sehen.",
     "description": "Popup subtitle shown when signed out"
   },
   "popupEmailPlaceholder": {
-    "message": "Email",
+    "message": "E-Mail",
     "description": "Email input placeholder"
   },
   "popupPasswordPlaceholder": {
-    "message": "Password",
+    "message": "Passwort",
     "description": "Password input placeholder"
   },
   "popupSignInButton": {
-    "message": "Sign in",
+    "message": "Anmelden",
     "description": "Sign in button label"
   },
   "popupSignedInSub": {
-    "message": "Connected. Open a Booking.com search to see your rates.",
+    "message": "Verbunden. Öffnen Sie eine Booking.com-Suche, um Ihre Preise zu sehen.",
     "description": "Popup subtitle shown when signed in"
   },
   "popupSignOutButton": {
-    "message": "Sign out",
+    "message": "Abmelden",
     "description": "Sign out button label"
   },
   "popupOptionsLink": {
-    "message": "Settings",
+    "message": "Einstellungen",
     "description": "Link to options page"
   },
 
   "panelSignInPrompt": {
-    "message": "Sign in to see the benefits you hold here.",
+    "message": "Melden Sie sich an, um Ihre Vorteile hier zu sehen.",
     "description": "Content panel message when user is not signed in"
   },
   "panelOpenTrueRate": {
-    "message": "Open TrueRate",
+    "message": "TrueRate öffnen",
     "description": "Link text to open the TrueRate web app"
   },
   "panelLoading": {
-    "message": "Checking your benefits…",
+    "message": "Vorteile werden geprüft…",
     "description": "Content panel loading message"
   },
   "panelNoBenefits": {
-    "message": "No benefits on file for this site yet.",
+    "message": "Für diese Seite sind noch keine Vorteile gespeichert.",
     "description": "Content panel message when no benefits are available"
   },
   "panelPerkEstimatesHeader": {
-    "message": "Estimated perk value",
+    "message": "Geschätzter Vorteilswert",
     "description": "Header for the perk estimates section"
   },
   "panelPerkEstimatesNote": {
-    "message": "(indicative, not a price)",
+    "message": "(Schätzung, kein Preis)",
     "description": "Note clarifying perk estimates are not prices"
   },
   "panelActivePrefix": {
-    "message": "Active here:",
+    "message": "Aktiv hier:",
     "description": "Prefix shown before the list of active memberships"
   },
   "panelDisclaimer": {
-    "message": "Discounts and perks are from your declared memberships. Apply discounts to the price you see.",
+    "message": "Rabatte und Vorteile stammen aus Ihren angegebenen Mitgliedschaften. Rabatte auf den angezeigten Preis anwenden.",
     "description": "Footer disclaimer in the content panel"
   },
   "panelCloseAriaLabel": {
-    "message": "Close",
+    "message": "Schließen",
     "description": "Aria label for the panel close button"
   },
   "panelGeniusActiveNote": {
-    "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
+    "message": "Booking Genius ist auf dieser Seite aktiv. TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
   "panelTermsStaleNote": {
-    "message": "Some benefit terms may be outdated — verify at the program website.",
+    "message": "Einige Vorteilsbedingungen könnten veraltet sein – prüfen Sie diese auf der Programmwebsite.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."
   },
   "panelTermsLowConfidenceNote": {
-    "message": "Some benefit terms were last verified a while ago — conditions may have changed.",
+    "message": "Einige Vorteilsbedingungen wurden zuletzt vor einiger Zeit geprüft – Bedingungen könnten sich geändert haben.",
     "description": "Advisory note shown when one or more matched benefit catalog entries have low confidence. Terms freshness only, not prices."
+  },
+  "panelErrorGeneric": {
+    "message": "Vorteile konnten nicht geladen werden",
+    "description": "Fallback message shown in the content panel when the benefits request fails"
   },
 
   "optionsTitle": {
-    "message": "TrueRate Settings",
+    "message": "TrueRate-Einstellungen",
     "description": "Options page title"
   },
   "optionsAccountHeading": {
-    "message": "Account",
+    "message": "Konto",
     "description": "Account section heading on options page"
   },
   "optionsSignedIn": {
-    "message": "Signed in",
+    "message": "Angemeldet",
     "description": "Account status when signed in"
   },
   "optionsNotSignedIn": {
-    "message": "Not signed in",
+    "message": "Nicht angemeldet",
     "description": "Account status when not signed in"
   },
   "optionsSignOutButton": {
-    "message": "Sign out",
+    "message": "Abmelden",
     "description": "Sign out button on options page"
   },
   "optionsSignInLink": {
-    "message": "Sign in at TrueRate",
+    "message": "Bei TrueRate anmelden",
     "description": "Link to sign in via the web app"
   },
   "optionsPreferencesHeading": {
-    "message": "Preferences",
+    "message": "Einstellungen",
     "description": "Preferences section heading on options page"
   },
   "optionsShowPanelLabel": {
-    "message": "Show benefits panel on Booking.com",
+    "message": "Vorteils-Panel auf Booking.com anzeigen",
     "description": "Toggle label for showing the benefits panel"
-  },
-
-  "panelErrorGeneric": {
-    "message": "Could not load benefits",
-    "description": "Fallback message shown in the content panel when the benefits request fails"
   }
 }
