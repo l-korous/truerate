@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { programToCatalogInput, resetCatalogRepo, getCatalogRepo } from "../src/catalog-db.js";
+import { programToCatalogInput, getCatalogRepo, resetCatalogRepo, catalogEntryToProgram } from "../src/catalog-db.js";
 import { PROGRAMS, getProgram } from "../src/programs.js";
 import type { CatalogEntryInput } from "../src/types.js";
 
@@ -338,6 +338,110 @@ test("seeded catalog entries contain no price-related keys", async () => {
     const serialised = JSON.stringify(entry);
     for (const key of priceKeys) {
       assert.ok(!serialised.includes(`"${key}"`), `${entry.programId}: catalog entry must not contain '${key}'`);
+    }
+  }
+});
+
+// ─── Round-trip: ALL programs ────────────────────────────────────────────────
+
+test("programToCatalogInput → catalogEntryToProgram round-trips all static programs", () => {
+  for (const original of PROGRAMS) {
+    const input = programToCatalogInput(original);
+    const doc = {
+      ...input,
+      id: `${input.programId}#v1`,
+      version: 1 as const,
+      isCurrent: true,
+      status: "published" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      publishedAt: new Date().toISOString(),
+    };
+    const roundTripped = catalogEntryToProgram(doc);
+
+    assert.equal(roundTripped.id, original.id, `${original.id}: id`);
+    assert.equal(roundTripped.name, original.name, `${original.id}: name`);
+    assert.equal(roundTripped.category, original.category, `${original.id}: category`);
+    assert.deepEqual(roundTripped.defaultMatch, original.defaultMatch, `${original.id}: defaultMatch`);
+    assert.deepEqual(roundTripped.benefits, original.benefits, `${original.id}: benefits`);
+    assert.equal(roundTripped.requiresCredential, original.requiresCredential, `${original.id}: requiresCredential`);
+  }
+});
+
+// ─── Full lifecycle: archive → re-draft → re-publish ────────────────────────
+
+test("archive then re-publish creates a new version with correct numbering", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+
+  // v1: publish
+  await repo.upsertDraft(makeInput({ name: "v1" }));
+  await repo.publish("test_program");
+
+  // archive v1
+  await repo.archive("test_program");
+  assert.equal(await repo.getCurrent("test_program"), null);
+
+  // v2: new draft after archive
+  await repo.upsertDraft(makeInput({ name: "v2" }));
+  const v2 = await repo.publish("test_program");
+
+  assert.equal(v2.version, 2, "post-archive publish must be v2");
+  assert.equal(v2.status, "published");
+  assert.equal(v2.isCurrent, true);
+
+  const history = await repo.getHistory("test_program");
+  assert.equal(history.length, 2);
+  assert.equal(history.filter((e) => e.isCurrent).length, 1, "exactly one current entry");
+});
+
+// ─── getHistory edge cases ───────────────────────────────────────────────────
+
+test("getHistory returns empty array for an unknown program", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+  const history = await repo.getHistory("does_not_exist");
+  assert.deepEqual(history, []);
+});
+
+// ─── listByStatus edge cases ─────────────────────────────────────────────────
+
+test("listByStatus returns empty array when no entries match the status", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+  const result = await repo.listByStatus("in-review");
+  assert.deepEqual(result, []);
+});
+
+test("listByStatus(archived) returns entries archived via archive()", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+
+  await repo.upsertDraft(makeInput({ programId: "prog_a" }));
+  await repo.publish("prog_a");
+  await repo.archive("prog_a");
+
+  const archived = await repo.listByStatus("archived");
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0]!.programId, "prog_a");
+  assert.equal(archived[0]!.status, "archived");
+});
+
+// ─── Price-field guard (comprehensive) ──────────────────────────────────────
+
+test("price-field guard: CatalogEntryInput must not carry any price or money fields", () => {
+  const priceKeys = [
+    "price", "nightlyAmount", "totalAmount", "priceOff", "memberPrice",
+    "finalPrice", "discountedPrice", "amount", "rateAmount", "hotelPrice",
+  ];
+  for (const program of PROGRAMS) {
+    const input = programToCatalogInput(program);
+    const serialised = JSON.stringify(input);
+    for (const key of priceKeys) {
+      assert.ok(
+        !serialised.includes(`"${key}"`),
+        `${program.id}: CatalogEntryInput must not contain price field '${key}'`,
+      );
     }
   }
 });
