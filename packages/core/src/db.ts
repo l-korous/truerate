@@ -1,6 +1,35 @@
 import { CosmosClient, type Container } from "@azure/cosmos";
 import { DefaultAzureCredential } from "@azure/identity";
+import { USER_SCHEMA_VERSION } from "./types.js";
 import type { ActivationEventName, ActivationMilestones, User } from "./types.js";
+
+// ─── Schema normalization ────────────────────────────────────────────────────
+//
+// normalizeUser() brings any stored User document up to the current schema shape
+// without mutating persistent storage. Call it on every document read so callers
+// always work against the current User type regardless of which revision wrote
+// the document. See docs/SCHEMA-MIGRATION.md for the expand/migrate/contract
+// policy that governs how schema changes are introduced across deploys.
+
+/**
+ * Upgrade a raw User document from Cosmos to the current schema shape.
+ *
+ * Version transitions handled here:
+ *   v0 (undefined) → v1: set schemaVersion = 1 (the field was added; all other
+ *                         fields are unchanged — this is a pure expand step).
+ *
+ * The returned object is always tagged with USER_SCHEMA_VERSION. Callers MUST
+ * NOT persist the returned document back to Cosmos as part of a normalization-
+ * only read — only persist it when the document was already being updated for
+ * a real business reason (to avoid spurious write amplification).
+ */
+export function normalizeUser(raw: User): User {
+  const version = raw.schemaVersion ?? 0;
+  if (version >= USER_SCHEMA_VERSION) return raw;
+
+  // v0 → v1: schemaVersion field did not exist; add it.
+  return { ...raw, schemaVersion: USER_SCHEMA_VERSION };
+}
 
 // Data access for TrueRate. The store is Azure Cosmos DB (NoSQL, serverless):
 // fully managed, scales with usage, no servers or Redis to operate. Users are
@@ -74,7 +103,7 @@ class CosmosUserRepo implements UserRepo {
   async getById(id: string): Promise<User | null> {
     try {
       const { resource } = await this.container.item(id, id).read<User>();
-      return resource ?? null;
+      return resource ? normalizeUser(resource) : null;
     } catch {
       return null;
     }
@@ -87,7 +116,7 @@ class CosmosUserRepo implements UserRepo {
         parameters: [{ name: "@email", value: email.toLowerCase() }],
       })
       .fetchAll();
-    return resources[0] ?? null;
+    return resources[0] ? normalizeUser(resources[0]) : null;
   }
 
   async getByMcpTokenHash(hash: string): Promise<User | null> {
@@ -97,16 +126,18 @@ class CosmosUserRepo implements UserRepo {
         parameters: [{ name: "@hash", value: hash }],
       })
       .fetchAll();
-    return resources[0] ?? null;
+    return resources[0] ? normalizeUser(resources[0]) : null;
   }
 
   async create(user: User): Promise<User> {
-    const { resource } = await this.container.items.create<User>(user);
+    const stamped: User = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    const { resource } = await this.container.items.create<User>(stamped);
     return resource as User;
   }
 
   async update(user: User): Promise<User> {
-    const { resource } = await this.container.item(user.id, user.id).replace<User>(user);
+    const stamped: User = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    const { resource } = await this.container.item(stamped.id, stamped.id).replace<User>(stamped);
     return resource as User;
   }
 
@@ -126,28 +157,31 @@ class MemoryUserRepo implements UserRepo {
   async init(): Promise<void> {}
 
   async getById(id: string): Promise<User | null> {
-    return this.byId.get(id) ?? null;
+    const u = this.byId.get(id);
+    return u ? normalizeUser(u) : null;
   }
 
   async getByEmail(email: string): Promise<User | null> {
     const target = email.toLowerCase();
-    for (const u of this.byId.values()) if (u.email === target) return u;
+    for (const u of this.byId.values()) if (u.email === target) return normalizeUser(u);
     return null;
   }
 
   async getByMcpTokenHash(hash: string): Promise<User | null> {
-    for (const u of this.byId.values()) if (u.mcpToken?.hash === hash) return u;
+    for (const u of this.byId.values()) if (u.mcpToken?.hash === hash) return normalizeUser(u);
     return null;
   }
 
   async create(user: User): Promise<User> {
-    this.byId.set(user.id, user);
-    return user;
+    const stamped: User = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    this.byId.set(stamped.id, stamped);
+    return stamped;
   }
 
   async update(user: User): Promise<User> {
-    this.byId.set(user.id, user);
-    return user;
+    const stamped: User = { ...user, schemaVersion: USER_SCHEMA_VERSION };
+    this.byId.set(stamped.id, stamped);
+    return stamped;
   }
 
   async funnelCounts(): Promise<Record<ActivationEventName, number>> {
