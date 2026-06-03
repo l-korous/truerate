@@ -77,6 +77,10 @@
     "message": "A Booking Genius aktív ezen az oldalon. A TrueRate azt mutatja, amit a tagságai ehhez hozzáadnak.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
+  "panelOneKeyActiveNote": {
+    "message": "Az Expedia One Key aktív ezen az oldalon. A TrueRate azt mutatja, amit a tagságai ehhez hozzáadnak.",
+    "description": "Note shown when Expedia One Key member-pricing DOM signals are detected; communicates incremental TrueRate value"
+  },
   "panelTermsStaleNote": {
     "message": "Egyes kedvezmény-feltételek elavultak lehetnek – ellenőrizze a program weboldalán.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."

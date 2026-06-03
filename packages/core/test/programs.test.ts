@@ -236,6 +236,30 @@ test("miles_and_more has points_bonus structuredPerk", () => {
   assert.ok(allPerks.some((p) => p.type === "points_bonus"));
 });
 
+test("expedia_one_key resolves with expected tiers and earn rates", () => {
+  const program = getProgram("expedia_one_key")!;
+  assert.ok(program, "expedia_one_key must be in catalog");
+  assert.equal(program.category, "ota");
+
+  // Blue: 2% OneKeyCash
+  const bluePerks: StructuredPerk[] = instantiateBenefits(program, "Blue").flatMap((b) => b.value.structuredPerks ?? []);
+  assert.ok(bluePerks.some((p) => p.type === "points_bonus" && /2%/.test(p.label)));
+
+  // Platinum: 5% + priority support
+  const platPerks: StructuredPerk[] = instantiateBenefits(program, "Platinum").flatMap((b) => b.value.structuredPerks ?? []);
+  assert.ok(platPerks.some((p) => p.type === "points_bonus" && /5%/.test(p.label)));
+  assert.ok(platPerks.some((p) => p.type === "priority_support"));
+
+  // All tiers: no price-related keys in structuredPerks
+  for (const tier of program.tiers ?? []) {
+    const benefits = instantiateBenefits(program, tier);
+    for (const benefit of benefits) {
+      assert.equal(benefit.source, "catalog");
+      assert.equal(benefit.programId, "expedia_one_key");
+    }
+  }
+});
+
 test("subjectToAvailability conditions are booleans when present", () => {
   for (const program of PROGRAMS) {
     for (const templates of Object.values(program.benefits)) {

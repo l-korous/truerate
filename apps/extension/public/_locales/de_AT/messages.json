@@ -77,6 +77,10 @@
     "message": "Booking Genius ist auf dieser Seite aktiv. TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
+  "panelOneKeyActiveNote": {
+    "message": "Expedia One Key ist auf dieser Seite aktiv. TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
+    "description": "Note shown when Expedia One Key member-pricing DOM signals are detected; communicates incremental TrueRate value"
+  },
   "panelTermsStaleNote": {
     "message": "Einige Vorteilsbedingungen könnten veraltet sein – prüfen Sie diese auf der Programmwebsite.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."

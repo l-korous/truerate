@@ -77,6 +77,10 @@
     "message": "Na tejto stránke je aktívny Booking Genius. TrueRate zobrazuje, čo vaše členstvá pridávajú navyše.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
+  "panelOneKeyActiveNote": {
+    "message": "Na tejto stránke je aktívny Expedia One Key. TrueRate zobrazuje, čo vaše členstvá pridávajú navyše.",
+    "description": "Note shown when Expedia One Key member-pricing DOM signals are detected; communicates incremental TrueRate value"
+  },
   "panelTermsStaleNote": {
     "message": "Niektoré podmienky výhod môžu byť zastarané – overte na webstránke programu.",
     "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."

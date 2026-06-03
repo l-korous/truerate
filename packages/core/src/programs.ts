@@ -72,6 +72,83 @@ export const PROGRAMS: Program[] = [
     },
   },
 
+  {
+    id: "expedia_one_key",
+    name: "Expedia One Key",
+    category: "ota",
+    region: "Global",
+    asOf: "2026-06",
+    sourceUrl: "https://www.expedia.com/lp/rewards/onekey",
+    // Expedia's unified loyalty programme (renamed from Expedia Rewards in 2023;
+    // shared with Hotels.com and Vrbo). Earns OneKeyCash — redeemable on future
+    // Expedia bookings. Member prices are OTA-side discounts shown in-page when
+    // the user is signed in; the extension detects these signals and notes they
+    // may already be included in the displayed price.
+    defaultMatch: { domains: ["expedia.com"], categories: ["hotel"] },
+    tiers: ["Blue", "Silver", "Gold", "Platinum"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "One Key tier", type: "select", options: ["Blue", "Silver", "Gold", "Platinum"] }],
+    benefits: {
+      Blue: [
+        {
+          scope: "domain",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 2,
+            perks: ["2% OneKeyCash back on hotels booked via Expedia"],
+            structuredPerks: [
+              { type: "points_bonus", label: "2% OneKeyCash back on hotel bookings via Expedia", conditions: { bookingChannel: ["ota"], notes: "OneKeyCash redeemable on future Expedia bookings" } },
+            ],
+          },
+        },
+      ],
+      Silver: [
+        {
+          scope: "domain",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 3,
+            perks: ["3% OneKeyCash back on hotels booked via Expedia", "Member prices at select properties"],
+            structuredPerks: [
+              { type: "points_bonus", label: "3% OneKeyCash back on hotel bookings via Expedia", conditions: { bookingChannel: ["ota"] } },
+              { type: "other", label: "Member prices at select properties", conditions: { bookingChannel: ["ota"], notes: "Member price may already be displayed when signed in to Expedia" } },
+            ],
+          },
+        },
+      ],
+      Gold: [
+        {
+          scope: "domain",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 4,
+            perks: ["4% OneKeyCash back on hotels booked via Expedia", "Member prices at select properties", "Priority customer support"],
+            structuredPerks: [
+              { type: "points_bonus", label: "4% OneKeyCash back on hotel bookings via Expedia", conditions: { bookingChannel: ["ota"] } },
+              { type: "other", label: "Member prices at select properties", conditions: { bookingChannel: ["ota"], notes: "Member price may already be displayed when signed in to Expedia" } },
+              { type: "priority_support", label: "Priority customer support" },
+            ],
+          },
+        },
+      ],
+      Platinum: [
+        {
+          scope: "domain",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 5,
+            perks: ["5% OneKeyCash back on hotels booked via Expedia", "Best member prices at select properties", "Premium priority customer support"],
+            structuredPerks: [
+              { type: "points_bonus", label: "5% OneKeyCash back on hotel bookings via Expedia", conditions: { bookingChannel: ["ota"] } },
+              { type: "other", label: "Best member prices at select properties", conditions: { bookingChannel: ["ota"], notes: "Member price may already be displayed when signed in to Expedia" } },
+              { type: "priority_support", label: "Premium priority customer support" },
+            ],
+          },
+        },
+      ],
+    },
+  },
+
   // ── Czech direct-booking / independent (the cold-start sweet spot) ───────
   {
     id: "your_prague_hotels",
