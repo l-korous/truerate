@@ -11,7 +11,7 @@
     "dev:mcp": "pnpm --filter @truerate/mcp dev",
     "dev:web": "pnpm --filter @truerate/web dev",
     "dev:ext": "pnpm --filter @truerate/extension dev",
-    "test": "pnpm --filter @truerate/core build && pnpm -r --workspace-concurrency=1 test",
+    "test": "pnpm --filter @truerate/core build && pnpm --filter @truerate/harness build && pnpm -r --workspace-concurrency=1 test",
     "test:e2e": "pnpm --filter @truerate/web test:e2e"
   },
   "devDependencies": {
