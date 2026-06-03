@@ -1,4 +1,4 @@
-name: Cost report
+name: Daily summary
 
 # Daily month-to-date cost snapshot emailed to the maintainer.
 # - Azure cost: OIDC login + the SP's Cost Management Reader role (RG scope).
@@ -26,6 +26,8 @@ jobs:
       RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
       SUB: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       OWNER: ${{ github.repository_owner }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -34,7 +36,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build cost report
+      - name: Build daily summary
         id: report
         run: |
           set -uo pipefail
@@ -69,23 +71,37 @@ jobs:
             fi
           fi
 
+          # ---- Progress (last 24h) ----
+          SINCE=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+          P_OPEN=$(gh issue list --repo "$REPO" --state open --json number --jq 'length' 2>/dev/null || echo "?")
+          P_READY=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number --jq 'length' 2>/dev/null || echo "?")
+          P_MERGED=$(gh pr list --repo "$REPO" --state merged --search "merged:>=$SINCE" --json number --jq 'length' 2>/dev/null || echo "?")
+          P_MVP=$(gh issue list --repo "$REPO" --milestone "MVP — core loop" --state open --json number --jq 'length' 2>/dev/null || echo "?")
+          P_DEPLOY=$(gh run list --repo "$REPO" --workflow "Deploy (Azure)" --limit 1 --json conclusion --jq '.[0].conclusion // "none"' 2>/dev/null || echo "?")
+          PROG_LINE="Progress (24h): ${P_MERGED} PRs merged · ${P_OPEN} issues open (${P_READY} agent-ready) · MVP open: ${P_MVP} · last deploy: ${P_DEPLOY}"
+
           MONTH=$(date -u +%Y-%m)
           NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
           {
-            echo "TrueRate cost snapshot — ${MONTH} (as of ${NOW})"
+            echo "TrueRate daily summary — ${MONTH} (as of ${NOW})"
             echo ""
-            echo "${AZ_LINE}"
+            echo "PROGRESS"
+            echo "  ${PROG_LINE}"
+            echo "  Live: https://truerate-web.victoriousdune-875f3535.westeurope.azurecontainerapps.io"
             echo ""
-            echo "${GH_LINE}"
+            echo "COST"
+            echo "  ${AZ_LINE}"
             echo ""
-            echo "Claude Max: flat subscription — agent runs draw from plan quota (rate-limited), never billed per run."
+            echo "  ${GH_LINE}"
+            echo ""
+            echo "  Claude Max: flat subscription — agent runs draw from plan quota (rate-limited), never billed per run."
             echo ""
             echo "BOTTOM LINE: with the EUR 5 Azure budget, GitHub's \$0 default overage limit, and Claude Max being flat-rate, a surprise bill is not possible unless you raise a limit yourself."
             echo "Actions: https://github.com/${OWNER}/truerate/actions"
           } > body.txt
           cat body.txt >> "$GITHUB_STEP_SUMMARY"
           echo "----- report -----"; cat body.txt
-          echo "subject=TrueRate cost snapshot ${MONTH} (as of ${NOW})" >> "$GITHUB_OUTPUT"
+          echo "subject=TrueRate daily summary — ${P_MERGED} merged/24h, MVP open ${P_MVP} (${NOW})" >> "$GITHUB_OUTPUT"
 
       - name: Send email
         if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
@@ -98,7 +114,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: ${{ steps.report.outputs.subject }}
           to: lukas.korous@gmail.com
-          from: TrueRate Cost Bot <${{ secrets.MAIL_USERNAME }}>
+          from: TrueRate Daily Summary <${{ secrets.MAIL_USERNAME }}>
           body: file://body.txt
 
       - name: Note if email not configured

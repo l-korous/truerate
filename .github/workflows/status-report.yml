@@ -9,8 +9,8 @@ name: Backlog status report
 # configured the digest goes to the run summary instead.
 
 on:
-  schedule:
-    - cron: "0 */4 * * *" # every 4 hours
+  # Mailing consolidated into the daily summary (cost-report.yml). This digest
+  # no longer emails or runs on a schedule — it's a manual, summary-only tool.
   workflow_dispatch: {}
 
 permissions:
@@ -25,8 +25,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
-      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
     steps:
       - name: Build status digest
         id: report
@@ -107,20 +105,6 @@ jobs:
           echo "----- digest -----"; cat body.txt
           echo "subject=TrueRate backlog status — open:${OPEN_ISSUES} ready:${READY} merged24h:${MERGED_24H} (${NOW})" >> "$GITHUB_OUTPUT"
 
-      - name: Send email
-        if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: ${{ steps.report.outputs.subject }}
-          to: lukas.korous@gmail.com
-          from: TrueRate Status Bot <${{ secrets.MAIL_USERNAME }}>
-          body: file://body.txt
-
-      - name: Note if email not configured
-        if: ${{ env.MAIL_USERNAME == '' || env.MAIL_PASSWORD == '' }}
-        run: echo "::notice::Email not sent — add repo secrets MAIL_USERNAME + MAIL_PASSWORD (Gmail App Password)."
+      # Email removed — the daily summary (cost-report.yml) is the single
+      # mailing surface. This digest is summary-only (written above to
+      # $GITHUB_STEP_SUMMARY) and runs only on manual dispatch.
