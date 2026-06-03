@@ -62,7 +62,7 @@ async function runPanel(): Promise<void> {
   renderLoading(shadow);
   const context = await buildContext(pageType);
   const resp = await sendTrMessage({ type: "TR_MATCH", context });
-  if (!resp.ok) return renderError(shadow, resp.error ?? "Could not load benefits");
+  if (!resp.ok) return renderError(shadow, resp.error ?? t("panelErrorGeneric"));
   const geniusActive = detectGeniusActive(document);
   renderResult(shadow, resp.result, geniusActive);
 }

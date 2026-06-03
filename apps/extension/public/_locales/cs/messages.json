@@ -117,5 +117,10 @@
   "optionsShowPanelLabel": {
     "message": "Zobrazit panel výhod na Booking.com",
     "description": "Toggle label for showing the benefits panel"
+  },
+
+  "panelErrorGeneric": {
+    "message": "Výhody se nepodařilo načíst",
+    "description": "Fallback message shown in the content panel when the benefits request fails"
   }
 }
