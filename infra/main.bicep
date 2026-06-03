@@ -232,6 +232,11 @@ var cosmosEnv = [
   { name: 'COSMOS_ENDPOINT', value: cosmos.properties.documentEndpoint }
   { name: 'COSMOS_DATABASE', value: 'truerate' }
   { name: 'TRUERATE_INMEMORY', value: 'false' }
+  // User-assigned MI: DefaultAzureCredential needs the client ID to pick which
+  // identity to request a Cosmos token for. Without it the credential chain
+  // falls through (→ azd CLI) and every Cosmos call throws
+  // CredentialUnavailableError, crash-looping any container that hits Cosmos.
+  { name: 'AZURE_CLIENT_ID', value: mi.properties.clientId }
 ]
 var secretEnv = [
   { name: 'TRUERATE_JWT_SECRET', secretRef: 'jwt-secret' }
