@@ -50,6 +50,11 @@ export interface UserRepo {
   update(user: User): Promise<User>;
   /** Count users that have reached each activation milestone. Admin / observability use only. */
   funnelCounts(): Promise<Record<ActivationEventName, number>>;
+  /**
+   * Search users whose email contains the given substring (case-insensitive).
+   * Returns up to `limit` results (default 20). Admin / support use only.
+   */
+  searchByEmail(query: string, limit?: number): Promise<User[]>;
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -147,6 +152,19 @@ class CosmosUserRepo implements UserRepo {
       .fetchAll();
     return tallyMilestones(resources.map((r) => r.activationMilestones));
   }
+
+  async searchByEmail(query: string, limit = 20): Promise<User[]> {
+    const { resources } = await this.container.items
+      .query<User>({
+        query: "SELECT * FROM c WHERE CONTAINS(LOWER(c.email), @q) OFFSET 0 LIMIT @limit",
+        parameters: [
+          { name: "@q", value: query.toLowerCase() },
+          { name: "@limit", value: limit },
+        ],
+      })
+      .fetchAll();
+    return resources.map(normalizeUser);
+  }
 }
 
 // ─── In-memory backend (local dev / demos) ──────────────────────────────────
@@ -187,6 +205,14 @@ class MemoryUserRepo implements UserRepo {
   async funnelCounts(): Promise<Record<ActivationEventName, number>> {
     return tallyMilestones([...this.byId.values()].map((u) => u.activationMilestones));
   }
+
+  async searchByEmail(query: string, limit = 20): Promise<User[]> {
+    const q = query.toLowerCase();
+    return [...this.byId.values()]
+      .filter((u) => u.email.includes(q))
+      .slice(0, limit)
+      .map(normalizeUser);
+  }
 }
 
 let repo: UserRepo | null = null;
@@ -198,4 +224,9 @@ export async function getUserRepo(): Promise<UserRepo> {
   repo = inMemory ? new MemoryUserRepo() : new CosmosUserRepo();
   await repo.init();
   return repo;
+}
+
+/** Reset the user repo singleton — for tests only. */
+export function resetUserRepo(): void {
+  repo = null;
 }
