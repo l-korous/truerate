@@ -127,6 +127,37 @@ test("POST /admin/catalog — 400 on missing required fields", async () => {
   assert.equal(body.error, "validation_failed");
 });
 
+test("POST /admin/catalog — 400 when payload contains a price field", async () => {
+  const app = await getApp();
+  const res = await app.request("/admin/catalog", {
+    method: "POST",
+    headers: { ...adminHeader, ...JSON_CT },
+    body: JSON.stringify({ ...sampleEntry, nightlyAmount: 120 }),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, "validation_failed");
+  assert.ok(body.issues[0].message.includes("price fields"), "error mentions price fields");
+});
+
+test("POST /admin/catalog — 400 when nested benefit contains a price field", async () => {
+  const app = await getApp();
+  const entryWithNestedPrice = {
+    ...sampleEntry,
+    benefits: {
+      Standard: [{ scope: "domain", value: { kind: "percentDiscount", percentOff: 0.1, memberPrice: 99 } }],
+    },
+  };
+  const res = await app.request("/admin/catalog", {
+    method: "POST",
+    headers: { ...adminHeader, ...JSON_CT },
+    body: JSON.stringify(entryWithNestedPrice),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, "validation_failed");
+});
+
 test("POST /admin/catalog — draft does not appear in public /catalog/programs", async () => {
   const app = await getApp();
   // Create a draft for a brand-new programId
@@ -166,6 +197,19 @@ test("PUT /admin/catalog/:id — updates an existing draft", async () => {
   assert.equal(entry.region, "Global");
   assert.equal(entry.status, "draft");
   assert.equal(entry.version, 1, "update keeps same draft version");
+});
+
+test("PUT /admin/catalog/:id — 400 when payload contains a price field", async () => {
+  const app = await getApp();
+  const res = await app.request("/admin/catalog/test_program", {
+    method: "PUT",
+    headers: { ...adminHeader, ...JSON_CT },
+    body: JSON.stringify({ ...sampleEntry, finalPrice: 200 }),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, "validation_failed");
+  assert.ok(body.issues[0].message.includes("price fields"), "error mentions price fields");
 });
 
 test("PUT /admin/catalog/:id — 400 when programId in body mismatches URL", async () => {

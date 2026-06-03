@@ -205,6 +205,58 @@ async function parseBody<T>(schema: z.ZodType<T>, c: { req: { json(): Promise<un
   return result.data;
 }
 
+// Field names that represent hotel/booking prices — never allowed in catalog
+// payloads (product rule #1). Checked recursively before Zod parsing so that
+// price fields are explicitly rejected rather than silently stripped.
+const DISALLOWED_PRICE_FIELDS = new Set([
+  "price", "prices",
+  "nightly", "nightlyRate", "nightlyAmount",
+  "totalPrice", "totalAmount",
+  "memberPrice", "memberRate",
+  "finalPrice", "finalRate", "finalAmount",
+  "basePrice", "baseRate",
+  "discountedPrice", "discountedRate",
+  "roomPrice", "roomRate",
+]);
+
+/** Recursively find the first disallowed price field key; returns its path or null. */
+function findPriceField(obj: unknown, path = ""): string | null {
+  if (obj === null || typeof obj !== "object") return null;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      const found = findPriceField(obj[i], `${path}[${i}]`);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const key of Object.keys(obj as Record<string, unknown>)) {
+    if (DISALLOWED_PRICE_FIELDS.has(key)) return path ? `${path}.${key}` : key;
+    const found = findPriceField((obj as Record<string, unknown>)[key], path ? `${path}.${key}` : key);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Like parseBody but also rejects any price field in the raw payload (catalog writes). */
+async function parseCatalogBody<T>(schema: z.ZodType<T>, c: { req: { json(): Promise<unknown> } }): Promise<T | Response> {
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const priceField = findPriceField(raw);
+  if (priceField) {
+    return Response.json(
+      { error: "validation_failed", issues: [{ path: [priceField], message: "price fields are not permitted in catalog entries (see product rule #1)" }] },
+      { status: 400 },
+    );
+  }
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return Response.json(
+      { error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+      { status: 400 },
+    );
+  }
+  return result.data;
+}
+
 // --- Auth -------------------------------------------------------------------
 
 const RegisterSchema = z.object({
@@ -621,7 +673,7 @@ app.post("/admin/catalog", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
 
-  const parsed = await parseBody(CatalogEntryInputSchema, c);
+  const parsed = await parseCatalogBody(CatalogEntryInputSchema, c);
   if (parsed instanceof Response) return parsed;
 
   const repo = await getCatalogRepo();
@@ -655,7 +707,7 @@ app.put("/admin/catalog/:id", async (c) => {
   if (authErr) return authErr;
 
   const programId = c.req.param("id");
-  const parsed = await parseBody(CatalogEntryInputSchema, c);
+  const parsed = await parseCatalogBody(CatalogEntryInputSchema, c);
   if (parsed instanceof Response) return parsed;
 
   if (parsed.programId !== programId) {
