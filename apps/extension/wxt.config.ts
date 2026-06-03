@@ -15,7 +15,7 @@ export default defineConfig({
       description: "__MSG_extDescription__",
       default_locale: "en",
       permissions: ["storage", "activeTab"],
-      host_permissions: ["https://*.booking.com/*", "https://*.hilton.com/*", `${apiOrigin}/*`],
+      host_permissions: ["https://*.booking.com/*", "https://*.hilton.com/*", "https://*.trivago.com/*", `${apiOrigin}/*`],
       action: { default_popup: "popup.html", default_title: "TrueRate" },
     };
   },

@@ -126,5 +126,10 @@
   "optionsShowPanelLabel": {
     "message": "Zobraziť panel výhod na Booking.com",
     "description": "Toggle label for showing the benefits panel"
+  },
+
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago aggregates rates from multiple booking sites. Prices shown may already include some membership discounts. TrueRate shows what your memberships add on top.",
+    "description": "Note shown on Trivago when a member session is detected; explains metasearch aggregation and that TrueRate shows incremental value only"
   }
 }
