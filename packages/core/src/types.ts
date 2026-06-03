@@ -322,6 +322,56 @@ export interface User {
   mcpToken?: McpTokenRecord;
 }
 
+// ---------------------------------------------------------------------------
+// Conflict / stacking model
+// ---------------------------------------------------------------------------
+
+/**
+ * How multiple matched benefits of the same conflict group interact when more
+ * than one applies to the same target.
+ *
+ * - "take-best"  Non-stackable. The benefit with the highest scope precedence
+ *                (property > domain > brand > category > global), then highest
+ *                value, is kept. The rest in the group are suppressed.
+ * - "stack"      All matched benefits in the group apply independently; none
+ *                are suppressed.
+ */
+export type StackingBehavior = "take-best" | "stack";
+
+/**
+ * A benefit suppressed during conflict resolution because a higher-precedence
+ * benefit of the same conflict group already covers it.
+ */
+export interface SuppressedBenefit {
+  /** The matched benefit that was suppressed. */
+  benefit: MatchedBenefit;
+  /** The benefit that won the conflict group and superseded this one. */
+  supersededBy: MatchedBenefit;
+  /**
+   * The conflict group key that triggered suppression, for diagnostics.
+   * Examples: "discount:domain:booking.com", "perk:room_upgrade".
+   */
+  conflictGroup: string;
+}
+
+/**
+ * The output of conflict/stacking resolution: a coherent set of applicable
+ * benefits with no contradictory combinations, plus transparency about what
+ * was suppressed and why.
+ *
+ * Use `applicable` for the final output to channels (MCP, extension).
+ * Use `suppressed` for diagnostics and UI (e.g. "better benefit from X applies").
+ */
+export interface ConflictResolution {
+  /** Benefits that apply after conflict/stacking resolution. */
+  applicable: MatchedBenefit[];
+  /**
+   * Benefits suppressed because every conflict group they participate in is
+   * already covered by a higher-precedence benefit.
+   */
+  suppressed: SuppressedBenefit[];
+}
+
 // --- Matching + enrichment I/O -----------------------------------------------
 
 /** A target to match benefits against (a page, or a search result property). */
