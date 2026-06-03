@@ -7,6 +7,7 @@ import { AddMembership } from "./AddMembership";
 import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
+import { McpUrlManager } from "./McpUrlManager";
 import { PerkInventory } from "./PerkInventory";
 import { ValueExplainer } from "./ValueExplainer";
 
@@ -29,7 +30,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
   const [programsLoading, setProgramsLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"memberships" | "try" | "inventory" | "value">("memberships");
+  const [tab, setTab] = useState<"memberships" | "try" | "inventory" | "value" | "mcp">("memberships");
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -87,7 +88,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         {/* Tabs — hidden when viewing a detail */}
         {!selectedMembership && (
           <div className="mb-8 flex gap-1 rounded-xl bg-white p-1 shadow-sm" style={{ width: "fit-content" }}>
-            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"]] as const).map(([k, label]) => (
+            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"], ["mcp", "MCP"]] as const).map(([k, label]) => (
               <button key={k} data-testid={`tab-${k}`} onClick={() => setTab(k)}
                 className={`rounded-lg px-5 py-2 text-sm font-medium transition ${tab === k ? "bg-ink text-paper" : "text-ink-muted"}`}>
                 {label}
@@ -205,6 +206,16 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
                 })}
               </ul>
             )}
+          </section>
+        ) : tab === "mcp" ? (
+          <section>
+            <div className="mb-6">
+              <h1 className="font-display text-3xl text-ink">MCP server</h1>
+              <p className="mt-1 text-ink-muted">
+                Your personal MCP URL lets AI assistants read your membership vault directly — discounts, perks, and conditions. No prices.
+              </p>
+            </div>
+            <McpUrlManager />
           </section>
         ) : (
           <section>
