@@ -95,6 +95,11 @@
     "description": "Note shown when Hilton Honors DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelOneKeyActiveNote": {
+    "message": "One Key jest aktywny na tej stronie. TrueRate pokazuje, co Twoje inne członkostwa dodają ponad to.",
+    "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
   "optionsTitle": {
     "message": "Ustawienia TrueRate",
     "description": "Options page title"

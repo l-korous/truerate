@@ -72,6 +72,68 @@ export const PROGRAMS: Program[] = [
     },
   },
 
+  {
+    id: "hotels_com_one_key",
+    name: "Hotels.com One Key",
+    category: "ota",
+    region: "Global",
+    asOf: "2026-05",
+    sourceUrl: "https://www.hotels.com/loyalty/",
+    // One Key is Expedia Group's unified loyalty program covering Hotels.com,
+    // Expedia.com, and Vrbo. Members earn OneKeyCash (cash back) on bookings.
+    // Member prices vary by property and are not a guaranteed flat percentage
+    // (unlike Booking Genius), so they are modelled as perks rather than
+    // percentDiscount to avoid overstating indicative discounts.
+    defaultMatch: { domains: ["hotels.com"], categories: ["hotel"] },
+    tiers: ["Blue", "Silver", "Gold"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "One Key tier", type: "select", options: ["Blue", "Silver", "Gold"] }],
+    benefits: {
+      Blue: [
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["OneKeyCash earned on bookings (cash back on future stays)", "Member prices on participating hotels"],
+            structuredPerks: [
+              { type: "other", label: "OneKeyCash earned on bookings", conditions: { notes: "Cash back credited as OneKeyCash; redeemable on future Hotels.com/Expedia bookings" } },
+              { type: "other", label: "Member prices on participating hotels", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+            ],
+          },
+        },
+      ],
+      Silver: [
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["OneKeyCash earned on bookings (higher earn rate)", "Member prices on participating hotels", "Priority customer support"],
+            structuredPerks: [
+              { type: "other", label: "OneKeyCash earned on bookings (Silver earn rate)", conditions: { notes: "Higher earn rate than Blue; redeemable on Hotels.com/Expedia" } },
+              { type: "other", label: "Member prices on participating hotels", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+              { type: "priority_support", label: "Priority customer support" },
+            ],
+          },
+        },
+      ],
+      Gold: [
+        {
+          scope: "domain",
+          value: {
+            kind: "perk",
+            perks: ["OneKeyCash earned on bookings (highest earn rate)", "Member prices on participating hotels", "Priority customer support", "VIP Access perks at select properties"],
+            structuredPerks: [
+              { type: "other", label: "OneKeyCash earned on bookings (Gold earn rate)", conditions: { notes: "Highest earn rate; redeemable on Hotels.com/Expedia" } },
+              { type: "other", label: "Member prices on participating hotels", conditions: { subjectToAvailability: true, bookingChannel: ["ota"] } },
+              { type: "priority_support", label: "Priority customer support (Gold)" },
+              { type: "other", label: "VIP Access perks at select properties", conditions: { subjectToAvailability: true, notes: "Room upgrades, early check-in, late check-out at VIP Access properties" } },
+            ],
+          },
+        },
+      ],
+    },
+  },
+
   // ── Czech direct-booking / independent (the cold-start sweet spot) ───────
   {
     id: "your_prague_hotels",
