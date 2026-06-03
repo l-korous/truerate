@@ -8,6 +8,7 @@ import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
 import { McpUrlManager } from "./McpUrlManager";
+import { OnboardingMcpStep } from "./OnboardingMcpStep";
 import { PerkInventory } from "./PerkInventory";
 import { ValueExplainer } from "./ValueExplainer";
 
@@ -223,12 +224,12 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         ) : tab === "mcp" ? (
           <section role="tabpanel" id="tabpanel-mcp" aria-labelledby="tab-mcp-label">
             <div className="mb-6">
-              <h1 className="font-display text-3xl text-ink">MCP server</h1>
+              <h1 className="font-display text-3xl text-ink">Connect your AI assistant</h1>
               <p className="mt-1 text-ink-muted">
-                Your personal MCP URL lets AI assistants read your membership vault directly — discounts, perks, and conditions. No prices.
+                Get your personal MCP URL and connect Claude Desktop (or any MCP-compatible client) to your membership vault. Discounts, perks, and conditions — no prices.
               </p>
             </div>
-            <McpUrlManager />
+            <OnboardingMcpStep />
           </section>
         ) : (
           <section role="tabpanel" id="tabpanel-try" aria-labelledby="tab-try-label">
