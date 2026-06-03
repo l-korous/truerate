@@ -253,6 +253,33 @@ app.get("/me", requireAuth, async (c) => {
   return c.json({ user: publicUser(user) });
 });
 
+// --- User settings (issue #68) -----------------------------------------------
+
+const SUPPORTED_MARKETS: Record<string, string> = {
+  cz: "EUR", de: "EUR", pl: "PLN", at: "EUR", sk: "EUR", hu: "HUF", us: "USD",
+};
+
+const UpdateSettingsSchema = z.object({
+  market: z.string().optional(),
+});
+
+app.patch("/me", requireAuth, async (c) => {
+  const parsed = await parseBody(UpdateSettingsSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const user = await loadUser(c.get("userId"));
+  if (parsed.market !== undefined) {
+    if (!SUPPORTED_MARKETS[parsed.market]) {
+      throw new HTTPException(400, { message: `Unsupported market: ${parsed.market}` });
+    }
+    user.market = parsed.market;
+    user.currency = SUPPORTED_MARKETS[parsed.market];
+  }
+  await saveUser(user);
+  c.get("logger").info("user settings updated", { userIdHash: hashUserId(user.id) });
+  return c.json({ user: publicUser(user) });
+});
+
 // --- Per-user MCP URL (issue #82) -------------------------------------------
 // Each user mints one opaque token; their MCP endpoint embeds it in the path
 // (https://<mcp-host>/u/<token>/mcp) because MCP desktop clients can't send

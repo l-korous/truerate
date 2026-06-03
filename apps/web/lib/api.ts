@@ -40,6 +40,7 @@ export interface PublicUser {
   email: string;
   market: string;
   currency: string;
+  createdAt: string;
   memberships: PublicMembership[];
 }
 export interface ProgramField {
@@ -193,6 +194,8 @@ export const api = {
   /** Emit an activation milestone event from the web client (fire-and-forget). */
   trackActivation: (event: "signup" | "membership_added" | "mcp_url_obtained" | "extension_connected") =>
     req<void>("/events/activation", { method: "POST", body: JSON.stringify({ event }) }).catch(() => undefined),
+  updateSettings: (settings: { market?: string }) =>
+    req<{ user: PublicUser }>("/me", { method: "PATCH", body: JSON.stringify(settings) }).then((r) => r.user),
 };
 
 // --- Admin catalog API (via Next.js proxy routes) ----------------------------

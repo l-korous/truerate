@@ -9,6 +9,7 @@ import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
 import { PerkInventory } from "./PerkInventory";
 import { ValueExplainer } from "./ValueExplainer";
+import { AccountPage } from "./AccountPage";
 
 function benefitLines(benefits: Benefit[]): string[] {
   const out: string[] = [];
@@ -29,7 +30,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
   const [programsLoading, setProgramsLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"memberships" | "try" | "inventory" | "value">("memberships");
+  const [tab, setTab] = useState<"memberships" | "try" | "inventory" | "value" | "account">("memberships");
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -87,7 +88,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         {/* Tabs — hidden when viewing a detail */}
         {!selectedMembership && (
           <div className="mb-8 flex gap-1 rounded-xl bg-white p-1 shadow-sm" style={{ width: "fit-content" }}>
-            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"]] as const).map(([k, label]) => (
+            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"], ["account", "Account"]] as const).map(([k, label]) => (
               <button key={k} data-testid={`tab-${k}`} onClick={() => setTab(k)}
                 className={`rounded-lg px-5 py-2 text-sm font-medium transition ${tab === k ? "bg-ink text-paper" : "text-ink-muted"}`}>
                 {label}
@@ -206,6 +207,12 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
               </ul>
             )}
           </section>
+        ) : tab === "account" ? (
+          <AccountPage
+            user={user}
+            onSignOut={onSignOut}
+            onUserUpdated={(u) => { setUser(u); showToast("Settings saved"); }}
+          />
         ) : (
           <section>
             <div className="mb-6">
