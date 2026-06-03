@@ -209,6 +209,74 @@ export const api = {
     req<void>("/me/mcp-url", { method: "DELETE" }),
 };
 
+// --- Partner portal types & API ----------------------------------------------
+
+export type PartnerOrgStatus = "pending" | "active" | "rejected";
+export type SubmissionStatus = "draft" | "submitted" | "in_review" | "approved" | "rejected";
+export type PartnerRole = "owner" | "editor";
+export type ProgramCategory = "hotel" | "airline" | "rail" | "carRental" | "ota" | "card" | "subscription";
+
+export interface PartnerOrg {
+  id: string;
+  name: string;
+  country: string;
+  contactEmail: string;
+  status: PartnerOrgStatus;
+  createdAt: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  rejectReason?: string;
+}
+
+export interface PartnerOrgMember {
+  userId: string;
+  orgId: string;
+  role: PartnerRole;
+  addedAt: string;
+}
+
+export interface PartnerProgramDraft {
+  name: string;
+  category: ProgramCategory;
+  region: string;
+  sourceUrl?: string;
+  tiers?: string[];
+  fields: ProgramField[];
+  benefits: Record<string, { scope: string; match?: Record<string, string[]>; value: BenefitValue }[]>;
+}
+
+export interface PartnerSubmission {
+  id: string;
+  orgId: string;
+  submittedByUserId: string;
+  status: SubmissionStatus;
+  source: "partner" | "scraped";
+  programDraft: PartnerProgramDraft;
+  rejectReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  publishedProgramId?: string;
+}
+
+export type PartnerDraftInput = PartnerProgramDraft & { orgId: string };
+
+export const partnerApi = {
+  createOrg: (body: { name: string; country: string; contactEmail: string }) =>
+    req<{ org: PartnerOrg }>("/partner/orgs", { method: "POST", body: JSON.stringify(body) }),
+  myOrgs: () =>
+    req<{ orgs: PartnerOrg[]; memberships: PartnerOrgMember[] }>("/partner/orgs/mine"),
+  listSubmissions: () =>
+    req<{ submissions: PartnerSubmission[]; count: number }>("/partner/submissions"),
+  createSubmission: (body: PartnerDraftInput) =>
+    req<{ submission: PartnerSubmission }>("/partner/submissions", { method: "POST", body: JSON.stringify(body) }),
+  getSubmission: (id: string) =>
+    req<{ submission: PartnerSubmission }>(`/partner/submissions/${id}`),
+  updateSubmission: (id: string, body: PartnerProgramDraft) =>
+    req<{ submission: PartnerSubmission }>(`/partner/submissions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  submitForReview: (id: string) =>
+    req<{ submission: PartnerSubmission }>(`/partner/submissions/${id}/submit`, { method: "POST" }),
+};
+
 // --- Admin catalog API (via Next.js proxy routes) ----------------------------
 
 const ADMIN_BASE = "/api/admin/catalog";

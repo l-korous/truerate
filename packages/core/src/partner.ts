@@ -139,6 +139,8 @@ export interface PartnerOrgRepo {
   addMember(member: PartnerOrgMember): Promise<void>;
   getMember(userId: string, orgId: string): Promise<PartnerOrgMember | null>;
   listMembers(orgId: string): Promise<PartnerOrgMember[]>;
+  /** Return all org memberships for a given user (reverse lookup). */
+  listOrgMemberships(userId: string): Promise<PartnerOrgMember[]>;
 }
 
 export interface PartnerSubmissionRepo {
@@ -194,6 +196,10 @@ export class MemoryPartnerOrgRepo implements PartnerOrgRepo {
 
   async listMembers(orgId: string): Promise<PartnerOrgMember[]> {
     return [...this.members.values()].filter((m) => m.orgId === orgId);
+  }
+
+  async listOrgMemberships(userId: string): Promise<PartnerOrgMember[]> {
+    return [...this.members.values()].filter((m) => m.userId === userId);
   }
 }
 
