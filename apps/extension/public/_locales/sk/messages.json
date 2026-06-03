@@ -90,6 +90,11 @@
     "description": "Fallback message shown in the content panel when the benefits request fails"
   },
 
+  "panelHonorsActiveNote": {
+    "message": "Na tejto stránke je aktívny Hilton Honors. TrueRate zobrazuje, čo vaše členstvá pridávajú navyše.",
+    "description": "Note shown when Hilton Honors DOM signals are detected; communicates incremental TrueRate value"
+  },
+
   "optionsTitle": {
     "message": "Nastavenia TrueRate",
     "description": "Options page title"

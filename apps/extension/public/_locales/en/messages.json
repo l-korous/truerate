@@ -122,5 +122,10 @@
   "panelErrorGeneric": {
     "message": "Could not load benefits",
     "description": "Fallback message shown in the content panel when the benefits request fails"
+  },
+
+  "panelHonorsActiveNote": {
+    "message": "Hilton Honors is active on this page. TrueRate shows what your memberships add on top.",
+    "description": "Note shown when Hilton Honors DOM signals are detected; communicates incremental TrueRate value"
   }
 }
