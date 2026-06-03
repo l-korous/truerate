@@ -13,10 +13,15 @@ export default {
         paper: "#f7f5ef", // warm off-white page
         card: "#ffffff",
         save: {
-          DEFAULT: "#0f8a5f", // savings green
-          soft: "#e6f4ee",
+          DEFAULT: "#0f8a5f", // savings green — use for backgrounds/icons
+          soft: "#e6f4ee",    // light green background
+          dark: "#0a6741",    // accessible text on light green (≥4.5:1 vs save-soft)
         },
-        points: "#c98a1a", // amber for points/perks
+        points: {
+          DEFAULT: "#c98a1a", // amber for points/perks — use for backgrounds/icons
+          soft: "#fef3e2",    // light amber background
+          dark: "#8b5e06",    // accessible text on light amber (≥4.5:1 vs points-soft)
+        },
         line: "#e7e3d8",
       },
       fontFamily: {

@@ -66,13 +66,22 @@ export function AddMembership({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="add-membership-title"
+    >
       <div className="w-full max-w-lg rounded-t-xl2 bg-card p-6 shadow-2xl sm:rounded-xl2">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="font-display text-2xl text-ink">
+          <h2 id="add-membership-title" className="font-display text-2xl text-ink">
             {mode === "pick" ? "Add a membership" : mode === "custom" ? "Add a custom benefit" : program?.name}
           </h2>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-muted">×</button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1 text-2xl leading-none text-ink-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+          >×</button>
         </div>
 
         {mode === "pick" && (
@@ -99,7 +108,7 @@ export function AddMembership({
             {program.fields.map((f) => (
               <div key={f.key} className="mb-4">
                 <label className="label">{f.label}
-                  {f.secret && <span className="ml-2 rounded bg-save-soft px-1.5 py-0.5 text-[11px] font-medium text-save">encrypted</span>}
+                  {f.secret && <span className="ml-2 rounded bg-save-soft px-1.5 py-0.5 text-[11px] font-medium text-save-dark">encrypted</span>}
                 </label>
                 {f.type === "select" ? (
                   <select className="field" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
@@ -113,7 +122,7 @@ export function AddMembership({
             ))}
 
             <div className="mb-4 rounded-xl bg-save-soft px-4 py-3" data-testid="benefit-summary">
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-save">What you&apos;ll get</p>
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-save-dark">What you&apos;ll get</p>
               {summary.length ? (
                 <ul className="space-y-0.5 text-sm text-ink">
                   {summary.map((s) => <li key={s}>• {s}</li>)}
