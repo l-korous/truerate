@@ -34,6 +34,8 @@ import {
   getPartnerWorkflow,
   resetPartnerWorkflow,
   PartnerWorkflowError,
+  getAuditRepo,
+  resetAuditRepo,
   type CatalogCache,
   type Logger,
   type Benefit,
@@ -74,6 +76,11 @@ export function resetAppCatalog(): void {
 
 /** Reset partner workflow state — for tests only. */
 export { resetPartnerWorkflow as resetAppPartner };
+
+/** Reset audit repo state — for tests only. */
+export function resetAppAudit(): void {
+  resetAuditRepo();
+}
 
 /**
  * Build the CORS origin allowlist from environment variables.
@@ -960,6 +967,163 @@ app.post("/admin/submissions/:id/reject", async (c) => {
     }
     throw err;
   }
+});
+
+// --- Admin support: user management (issue #77) ------------------------------
+// Support-role routes for looking up users and managing their MCP URLs.
+// Gated by x-admin-secret (shared with other admin routes; Entra RBAC is #74).
+// Every mutating action is recorded in the audit log (#79).
+
+/**
+ * Build a support-safe view of a user: membership summary + MCP URL status.
+ * Never exposes passwordHash, encryptedCredential, or raw MCP token hash.
+ */
+function supportUserView(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    market: user.market,
+    createdAt: user.createdAt,
+    memberships: user.memberships.map((m) => ({
+      id: m.id,
+      label: m.label,
+      programId: m.programId,
+      tier: m.tier,
+      status: m.status,
+      addedAt: m.addedAt,
+    })),
+    membershipCount: user.memberships.length,
+    mcpUrl: {
+      active: Boolean(user.mcpToken),
+      createdAt: user.mcpToken?.createdAt,
+      lastUsedAt: user.mcpToken?.lastUsedAt,
+    },
+    activationMilestones: user.activationMilestones,
+  };
+}
+
+// GET /admin/users?email=<query>&limit=<n> — search users by email substring
+app.get("/admin/users", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const email = c.req.query("email") ?? "";
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10), 100);
+  if (!email) return c.json({ error: "email query parameter is required" }, 400);
+
+  const { getUserRepo } = await import("@truerate/core");
+  const repo = await getUserRepo();
+  const users = await repo.searchByEmail(email, limit);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: "support",
+    action: "support.user.search",
+    targetId: `email:${email}`,
+    targetType: "user-search",
+    notes: `query="${email}" results=${users.length}`,
+  });
+
+  return c.json({ users: users.map(supportUserView), count: users.length });
+});
+
+// GET /admin/users/:id — get a user's profile, vault summary, and MCP URL status
+app.get("/admin/users/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const userId = c.req.param("id");
+  const { getUserRepo } = await import("@truerate/core");
+  const repo = await getUserRepo();
+  const user = await repo.getById(userId);
+  if (!user) return c.json({ error: "not_found" }, 404);
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: "support",
+    action: "support.user.view",
+    targetId: userId,
+    targetType: "user",
+  });
+
+  return c.json({ user: supportUserView(user) });
+});
+
+// POST /admin/users/:id/mcp-url/rotate — rotate (issue fresh) MCP URL for a user
+app.post("/admin/users/:id/mcp-url/rotate", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const userId = c.req.param("id");
+  const user = await loadUser(userId);
+
+  const token = generateMcpToken();
+  const createdAt = new Date().toISOString();
+  user.mcpToken = { hash: hashMcpToken(token), createdAt };
+  markActivation(user, "mcp_url_obtained");
+  await saveUser(user);
+
+  c.get("logger").info("mcp url rotated by support", { userIdHash: hashUserId(userId) });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: "support",
+    action: "support.user.mcp_url.rotate",
+    targetId: userId,
+    targetType: "user",
+  });
+
+  // token + url returned once — support staff must relay this to the user securely.
+  return c.json({ url: mcpUrlForToken(mcpPublicBase(), token), token, createdAt });
+});
+
+// DELETE /admin/users/:id/mcp-url — revoke MCP URL for a user
+app.delete("/admin/users/:id/mcp-url", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const userId = c.req.param("id");
+  const user = await loadUser(userId);
+
+  const wasActive = Boolean(user.mcpToken);
+  user.mcpToken = undefined;
+  await saveUser(user);
+
+  c.get("logger").info("mcp url revoked by support", { userIdHash: hashUserId(userId) });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor: "support",
+    action: "support.user.mcp_url.revoke",
+    targetId: userId,
+    targetType: "user",
+    notes: wasActive ? "was_active" : "was_already_revoked",
+  });
+
+  return c.body(null, 204);
+});
+
+// GET /admin/users/:id/audit — list audit log entries for a user
+app.get("/admin/users/:id/audit", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const userId = c.req.param("id");
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10), 200);
+  const audit = await getAuditRepo();
+  const entries = await audit.listByTarget(userId, limit);
+  return c.json({ entries, count: entries.length });
+});
+
+// GET /admin/audit — list recent audit log entries (any target)
+app.get("/admin/audit", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10), 200);
+  const audit = await getAuditRepo();
+  const entries = await audit.listRecent(limit);
+  return c.json({ entries, count: entries.length });
 });
 
 // --- Partner self-service portal (issue #129) --------------------------------
