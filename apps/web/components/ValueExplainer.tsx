@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale } from "next-intl";
 import { api, type PublicUser, type PerkEstimates } from "@/lib/api";
-import { aggregatePerks, pretty } from "./PerkInventory";
+import { aggregatePerks } from "./PerkInventory";
+import { formatCurrencyEstimate, type Locale } from "@/lib/locale";
 
 export interface MembershipRollup {
   membershipId: string;
@@ -87,10 +89,12 @@ function BandCard({
   stars,
   total,
   label,
+  locale,
 }: {
   stars: string;
   total: number;
   label: string;
+  locale: Locale;
 }) {
   return (
     <div
@@ -99,7 +103,7 @@ function BandCard({
     >
       <span className="mb-1 text-sm text-ink-muted">{label}</span>
       <span className="font-display text-3xl text-ink" data-testid={`band-total-${stars}`}>
-        ≈${total}
+        ≈{formatCurrencyEstimate(total, locale)}
       </span>
       <span className="mt-1 text-xs text-ink-muted">per stay, estimated</span>
     </div>
@@ -113,6 +117,7 @@ export function ValueExplainer({
   user: PublicUser;
   onViewInventory?: () => void;
 }) {
+  const locale = useLocale() as Locale;
   const [estimates, setEstimates] = useState<PerkEstimates | null>(null);
   const [estimatesError, setEstimatesError] = useState(false);
 
@@ -175,9 +180,9 @@ export function ValueExplainer({
     <div data-testid="value-explainer">
       {/* Grand totals */}
       <div className="mb-8 grid grid-cols-3 gap-4" data-testid="value-band-cards">
-        <BandCard stars="3" total={rollup.grand3} label="Budget hotel (3★)" />
-        <BandCard stars="4" total={rollup.grand4} label="Mid-range hotel (4★)" />
-        <BandCard stars="5" total={rollup.grand5} label="Luxury hotel (5★)" />
+        <BandCard stars="3" total={rollup.grand3} label="Budget hotel (3★)" locale={locale} />
+        <BandCard stars="4" total={rollup.grand4} label="Mid-range hotel (4★)" locale={locale} />
+        <BandCard stars="5" total={rollup.grand5} label="Luxury hotel (5★)" locale={locale} />
       </div>
 
       {/* Per-membership breakdown */}
@@ -193,7 +198,7 @@ export function ValueExplainer({
               >
                 <span className="font-medium text-ink">{row.membershipLabel}</span>
                 <span className="text-sm text-ink-muted" data-testid="value-membership-totals">
-                  ≈${row.total3} / ${row.total4} / ${row.total5}
+                  ≈{formatCurrencyEstimate(row.total3, locale)} / {formatCurrencyEstimate(row.total4, locale)} / {formatCurrencyEstimate(row.total5, locale)}
                   <span className="ml-1 text-xs">(3★ / 4★ / 5★)</span>
                 </span>
               </li>
@@ -219,10 +224,10 @@ export function ValueExplainer({
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-points">
-                    ≈${p.est5} at 5★
+                    ≈{formatCurrencyEstimate(p.est5, locale)} at 5★
                   </p>
                   <p className="text-xs text-ink-muted">
-                    ${p.est3} / ${p.est4} at 3★ / 4★
+                    {formatCurrencyEstimate(p.est3, locale)} / {formatCurrencyEstimate(p.est4, locale)} at 3★ / 4★
                   </p>
                 </div>
               </li>

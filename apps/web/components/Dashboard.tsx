@@ -10,6 +10,7 @@ import { MembershipDetail } from "./MembershipDetail";
 import { McpUrlManager } from "./McpUrlManager";
 import { PerkInventory } from "./PerkInventory";
 import { ValueExplainer } from "./ValueExplainer";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 
 function benefitLines(benefits: Benefit[]): string[] {
   const out: string[] = [];
@@ -77,6 +78,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2 font-display text-xl"><span className="h-2 w-2 rounded-full bg-save" /> TrueRate</div>
           <div className="flex items-center gap-4">
+            <LanguageSwitcher />
             <span className="text-sm text-ink-muted">{user.email}</span>
             <button className="text-sm text-ink-muted underline-offset-4 hover:underline"
               onClick={() => { clearToken(); onSignOut(); }}>Sign out</button>

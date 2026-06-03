@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Hanken_Grotesk } from "next/font/google";
+import { getLocale } from "next-intl/server";
 import "./globals.css";
-import { ErrorReporter } from "../components/ErrorReporter";
-import { CookieBanner } from "../components/CookieBanner";
 
 const display = Fraunces({
   subsets: ["latin"],
@@ -22,14 +21,17 @@ export const metadata: Metadata = {
     "Your loyalty memberships unlock rates the anonymous web never shows you. TrueRate puts them all in one place.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  let locale = "en";
+  try {
+    locale = await getLocale();
+  } catch {
+    // Fallback if locale context is not available (e.g., static generation)
+  }
+
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
-      <body className="font-sans">
-        <ErrorReporter />
-        <CookieBanner />
-        {children}
-      </body>
+    <html lang={locale} className={`${display.variable} ${body.variable}`}>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

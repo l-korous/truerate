@@ -1,0 +1,18 @@
+{
+  "LanguageSwitcher": {
+    "label": "Language",
+    "aria": "Select language"
+  },
+  "MarketSwitcher": {
+    "label": "Market"
+  },
+  "LocaleNames": {
+    "en": "English",
+    "cs": "Čeština",
+    "de": "Deutsch",
+    "de-AT": "Deutsch (Österreich)",
+    "pl": "Polski",
+    "sk": "Slovenčina",
+    "hu": "Magyar"
+  }
+}

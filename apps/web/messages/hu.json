@@ -1,0 +1,9 @@
+{
+  "LanguageSwitcher": {
+    "label": "Nyelv",
+    "aria": "Válasszon nyelvet"
+  },
+  "MarketSwitcher": {
+    "label": "Piac"
+  }
+}

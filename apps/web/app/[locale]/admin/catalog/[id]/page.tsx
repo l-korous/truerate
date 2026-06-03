@@ -9,7 +9,8 @@ import { CatalogVersionHistory } from "@/components/CatalogVersionHistory";
 type Tab = "edit" | "history";
 
 export default function CatalogEntryPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ locale: string; id: string }>();
+  const id = params.id;
   const router = useRouter();
   const isNew = id === "new";
 

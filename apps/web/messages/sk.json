@@ -1,0 +1,9 @@
+{
+  "LanguageSwitcher": {
+    "label": "Jazyk",
+    "aria": "Vybrať jazyk"
+  },
+  "MarketSwitcher": {
+    "label": "Trh"
+  }
+}
