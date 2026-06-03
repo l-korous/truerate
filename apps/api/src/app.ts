@@ -50,6 +50,7 @@ import {
   type CatalogStatus,
   type PartnerOrgStatus,
   type SubmissionStatus,
+  type PartnerProgramDraft,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
@@ -1123,6 +1124,183 @@ app.post("/admin/submissions/:id/reject", async (c) => {
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
       const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// --- Partner self-service portal (issue #129) --------------------------------
+// User-facing partner routes — require a valid bearer token (requireAuth).
+// No prices; no admin-secret; partners see only their own org's data.
+
+const PartnerOrgCreateSchema = z.object({
+  name: z.string().min(1, "name is required"),
+  country: z.string().length(2, "country must be a 2-letter ISO code"),
+  contactEmail: z.string().email("contactEmail must be a valid email"),
+});
+
+const PartnerDraftSchema = z.object({
+  name: z.string().min(1, "name is required"),
+  category: z.enum(["hotel", "airline", "rail", "carRental", "ota", "card", "subscription"]),
+  region: z.string().min(1, "region is required"),
+  sourceUrl: z.string().url().optional(),
+  tiers: z.array(z.string().min(1)).optional(),
+  fields: z.array(z.object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    type: z.enum(["text", "select", "secret"]),
+    options: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
+    secret: z.boolean().optional(),
+  })).default([]),
+  benefits: z.record(z.string(), z.array(z.object({
+    scope: z.enum(["property", "brand", "domain", "category", "global"]),
+    match: z.object({
+      brands: z.array(z.string()).optional(),
+      domains: z.array(z.string()).optional(),
+      propertyNames: z.array(z.string()).optional(),
+      categories: z.array(z.string()).optional(),
+    }).optional(),
+    value: z.object({
+      kind: z.enum(["percentDiscount", "perk", "pointsEarn"]),
+      percentOff: z.number().min(0).max(1).optional(),
+      perks: z.array(z.string()).optional(),
+      structuredPerks: z.array(z.unknown()).optional(),
+      conditions: z.string().optional(),
+      pointsPerUnit: z.number().optional(),
+    }),
+  }))).default({}),
+});
+
+// POST /partner/orgs — create a partner org; requesting user becomes owner
+app.post("/partner/orgs", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const parsed = await parseBody(PartnerOrgCreateSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const orgRepo = await getPartnerOrgRepo();
+  const workflow = await getPartnerWorkflow();
+  const orgId = `org-${userId}-${Date.now()}`;
+  const org = await orgRepo.createOrg({
+    id: orgId,
+    name: parsed.name,
+    country: parsed.country,
+    contactEmail: parsed.contactEmail,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  });
+  await workflow.associateUser(userId, orgId, "owner");
+  return c.json({ org }, 201);
+});
+
+// GET /partner/orgs/mine — list the current user's org memberships with org details
+app.get("/partner/orgs/mine", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgRepo = await getPartnerOrgRepo();
+  const memberships = await orgRepo.listOrgMemberships(userId);
+  const orgs = (await Promise.all(memberships.map((m) => orgRepo.getOrg(m.orgId)))).filter(Boolean);
+  return c.json({ orgs, memberships });
+});
+
+// GET /partner/submissions — list submissions for all orgs the user is a member of
+app.get("/partner/submissions", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgRepo = await getPartnerOrgRepo();
+  const subRepo = await getPartnerSubmissionRepo();
+  const memberships = await orgRepo.listOrgMemberships(userId);
+  const all = await Promise.all(memberships.map((m) => subRepo.listByOrg(m.orgId)));
+  const submissions = all.flat();
+  return c.json({ submissions, count: submissions.length });
+});
+
+// POST /partner/submissions — create a new draft submission
+app.post("/partner/submissions", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const priceField = findPriceField(raw);
+  if (priceField) {
+    return c.json(
+      { error: "validation_failed", issues: [{ path: [priceField], message: "price fields are not permitted (product rule #1)" }] },
+      400,
+    );
+  }
+  const bodySchema = PartnerDraftSchema.extend({ orgId: z.string().min(1) });
+  const result = bodySchema.safeParse(raw);
+  if (!result.success) {
+    return c.json(
+      { error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+      400,
+    );
+  }
+  const { orgId, ...draft } = result.data;
+  const workflow = await getPartnerWorkflow();
+  const submissionId = `sub-${userId}-${Date.now()}`;
+  try {
+    const submission = await workflow.createDraft(userId, orgId, draft as PartnerProgramDraft, submissionId, "partner");
+    return c.json({ submission }, 201);
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "not_a_member" ? 403 : err.code === "price_field_in_draft" ? 400 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// GET /partner/submissions/:id — get a specific submission (must be a member of the org)
+app.get("/partner/submissions/:id", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const subRepo = await getPartnerSubmissionRepo();
+  const orgRepo = await getPartnerOrgRepo();
+  const sub = await subRepo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "not_found" }, 404);
+  const member = await orgRepo.getMember(userId, sub.orgId);
+  if (!member) return c.json({ error: "forbidden" }, 403);
+  return c.json({ submission: sub });
+});
+
+// PUT /partner/submissions/:id — update a draft submission (draft status only)
+app.put("/partner/submissions/:id", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const raw = await (c.req.json() as Promise<unknown>).catch(() => null);
+  const priceField = findPriceField(raw);
+  if (priceField) {
+    return c.json(
+      { error: "validation_failed", issues: [{ path: [priceField], message: "price fields are not permitted (product rule #1)" }] },
+      400,
+    );
+  }
+  const result = PartnerDraftSchema.safeParse(raw);
+  if (!result.success) {
+    return c.json(
+      { error: "validation_failed", issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+      400,
+    );
+  }
+  const subRepo = await getPartnerSubmissionRepo();
+  const orgRepo = await getPartnerOrgRepo();
+  const sub = await subRepo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "not_found" }, 404);
+  const member = await orgRepo.getMember(userId, sub.orgId);
+  if (!member) return c.json({ error: "forbidden" }, 403);
+  if (sub.status !== "draft") {
+    return c.json({ error: "invalid_transition", message: "Only draft submissions can be edited" }, 400);
+  }
+  const updated = await subRepo.update({ ...sub, programDraft: result.data as PartnerProgramDraft, updatedAt: new Date().toISOString() });
+  return c.json({ submission: updated });
+});
+
+// POST /partner/submissions/:id/submit — submit a draft for admin review
+app.post("/partner/submissions/:id/submit", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const workflow = await getPartnerWorkflow();
+  try {
+    const submission = await workflow.submitForReview(userId, c.req.param("id"));
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : err.code === "not_a_member" ? 403 : 400;
       return c.json({ error: err.code, message: err.message }, status);
     }
     throw err;
