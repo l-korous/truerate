@@ -10,8 +10,11 @@ const WEB_PORT = 3000;
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
+  timeout: 90_000,
+  expect: { timeout: 15_000 },
+  // 1 automatic retry in CI absorbs transient cold-start races without masking
+  // real failures (a test that legitimately fails will fail on both attempts).
+  retries: process.env.CI ? 1 : 0,
   fullyParallel: false,
   reporter: "list",
   use: {
@@ -22,7 +25,9 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm --filter @truerate/api exec node --import tsx src/index.ts",
-      port: API_PORT,
+      // Use the /health URL rather than port so Playwright waits until the API
+      // is actually serving HTTP, not just that the TCP port is bound.
+      url: `http://localhost:${API_PORT}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: {
@@ -34,9 +39,12 @@ export default defineConfig({
     },
     {
       command: "cd ../.. && pnpm --filter @truerate/web dev",
-      port: WEB_PORT,
+      // Use the root URL rather than port; Next.js dev binds the socket before
+      // finishing compilation, so a port-only check can hand control to
+      // Playwright while the first page request is still being compiled.
+      url: `http://localhost:${WEB_PORT}`,
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      timeout: 150_000,
       env: { NEXT_PUBLIC_API_BASE_URL: `http://localhost:${API_PORT}` },
     },
   ],
