@@ -55,6 +55,10 @@ export async function runPersonaWebJourney(
 
   // ── Registration ────────────────────────────────────────────────────────────
   await page.goto("/");
+  // Wait for the auth form to be ready before interacting — guards against the
+  // cold-start race where the page has finished loading but React hydration
+  // (and thus the form being actionable) is still in progress.
+  await page.getByPlaceholder("you@example.com").waitFor({ state: "visible" });
   await page.getByPlaceholder("you@example.com").fill(email);
   await page.getByPlaceholder("••••••••").fill(password);
   await page.getByTestId("auth-submit").click();
@@ -74,7 +78,12 @@ export async function runPersonaWebJourney(
 
     // Wait for the program picker to render (programs load async from API).
     const btn = page.getByTestId(`program-${programId}`);
-    const btnVisible = await btn.isVisible({ timeout: 8000 }).catch(() => false);
+    // Use waitFor so the timeout matches the global expect.timeout setting
+    // (avoids hardcoded short values that fire before the picker has loaded).
+    const btnVisible = await btn
+      .waitFor({ state: "visible" })
+      .then(() => true)
+      .catch(() => false);
 
     if (!btnVisible) {
       // Program not in catalog UI — dismiss modal and skip.
