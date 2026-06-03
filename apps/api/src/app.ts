@@ -29,6 +29,11 @@ import {
   resetCatalogCache,
   catalogEntryToProgram,
   programToCatalogInput,
+  getPartnerOrgRepo,
+  getPartnerSubmissionRepo,
+  getPartnerWorkflow,
+  resetPartnerWorkflow,
+  PartnerWorkflowError,
   type CatalogCache,
   type Logger,
   type Benefit,
@@ -37,6 +42,8 @@ import {
   type PerkType,
   type ActivationEventName,
   type CatalogStatus,
+  type PartnerOrgStatus,
+  type SubmissionStatus,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
@@ -63,6 +70,9 @@ export function resetAppCatalog(): void {
   _catalogCache = null;
   resetCatalogCache();
 }
+
+/** Reset partner workflow state — for tests only. */
+export { resetPartnerWorkflow as resetAppPartner };
 
 /**
  * Build the CORS origin allowlist from environment variables.
@@ -732,6 +742,198 @@ app.post("/admin/catalog/:id/restore/:version", async (c) => {
   const draft = await repo.upsertDraft(content);
 
   return c.json({ entry: draft }, 201);
+});
+
+// --- Admin partner approval (issue #75) -------------------------------------
+// Partners must be approved before their submissions count.
+// All routes require x-admin-secret (same guard as catalog editor).
+
+// GET /admin/partners — list partner orgs; optional ?status=pending|active|rejected
+app.get("/admin/partners", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const status = (c.req.query("status") ?? "pending") as PartnerOrgStatus;
+  const repo = await getPartnerOrgRepo();
+  const orgs = await repo.listByStatus(status);
+  return c.json({ orgs, count: orgs.length });
+});
+
+// GET /admin/partners/:id — get a partner org
+app.get("/admin/partners/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getPartnerOrgRepo();
+  const org = await repo.getOrg(c.req.param("id"));
+  if (!org) return c.json({ error: "not_found" }, 404);
+  return c.json({ org });
+});
+
+const PartnerOrgInputSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  country: z.string().min(2).max(2),
+  contactEmail: z.string().email(),
+  status: z.enum(["pending", "active", "rejected"]).optional().default("pending"),
+});
+
+// POST /admin/partners — create a partner org (admin seeding / onboarding)
+app.post("/admin/partners", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(PartnerOrgInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getPartnerOrgRepo();
+  const existing = await repo.getOrg(parsed.id);
+  if (existing) return c.json({ error: "already_exists" }, 409);
+
+  const org = await repo.createOrg({
+    id: parsed.id,
+    name: parsed.name,
+    country: parsed.country,
+    contactEmail: parsed.contactEmail,
+    status: parsed.status ?? "pending",
+    createdAt: new Date().toISOString(),
+  });
+  return c.json({ org }, 201);
+});
+
+const OrgActionSchema = z.object({
+  adminId: z.string().min(1).optional(),
+});
+
+const OrgRejectSchema = z.object({
+  reason: z.string().min(1, "reason is required"),
+  adminId: z.string().min(1).optional(),
+});
+
+// POST /admin/partners/:id/approve — approve a pending partner org
+app.post("/admin/partners/:id/approve", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(OrgActionSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const org = await workflow.approveOrg(c.req.param("id"), parsed.adminId ?? "admin");
+    return c.json({ org });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "org_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/partners/:id/reject — reject a pending partner org with a reason
+app.post("/admin/partners/:id/reject", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(OrgRejectSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const org = await workflow.rejectOrg(c.req.param("id"), parsed.adminId ?? "admin", parsed.reason);
+    return c.json({ org });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "org_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// --- Admin submission review queue (issue #75) ------------------------------
+
+// GET /admin/submissions — list submissions; optional ?status=submitted|in_review|approved|rejected
+app.get("/admin/submissions", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const status = (c.req.query("status") ?? "submitted") as SubmissionStatus;
+  const repo = await getPartnerSubmissionRepo();
+  const submissions = await repo.listByStatus(status);
+  return c.json({ submissions, count: submissions.length });
+});
+
+// GET /admin/submissions/:id — get a submission
+app.get("/admin/submissions/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getPartnerSubmissionRepo();
+  const sub = await repo.get(c.req.param("id"));
+  if (!sub) return c.json({ error: "not_found" }, 404);
+  return c.json({ submission: sub });
+});
+
+const SubmissionApproveSchema = z.object({
+  publishedProgramId: z.string().min(1, "publishedProgramId is required"),
+  adminId: z.string().min(1).optional(),
+});
+
+const SubmissionRejectSchema = z.object({
+  reason: z.string().min(1, "reason is required"),
+  adminId: z.string().min(1).optional(),
+});
+
+// POST /admin/submissions/:id/approve — approve a submission (makes it available to catalog editor)
+app.post("/admin/submissions/:id/approve", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(SubmissionApproveSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const submission = await workflow.approve(
+      c.req.param("id"),
+      parsed.publishedProgramId,
+      parsed.adminId ?? "admin",
+    );
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/submissions/:id/reject — reject a submission with a reason
+app.post("/admin/submissions/:id/reject", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(SubmissionRejectSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const workflow = await getPartnerWorkflow();
+  try {
+    const submission = await workflow.reject(
+      c.req.param("id"),
+      parsed.reason,
+      parsed.adminId ?? "admin",
+    );
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
 });
 
 // --- helpers ----------------------------------------------------------------
