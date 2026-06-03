@@ -1,4 +1,4 @@
-import { CosmosClient, type Container } from "@azure/cosmos";
+import { CosmosClient, type Container, type SqlParameter } from "@azure/cosmos";
 import { DefaultAzureCredential } from "@azure/identity";
 
 /**
@@ -6,10 +6,24 @@ import { DefaultAzureCredential } from "@azure/identity";
  * Append-only — never remove entries once in production.
  */
 export type AuditAction =
+  // Support: user management
   | "support.user.view"
   | "support.user.search"
   | "support.user.mcp_url.rotate"
-  | "support.user.mcp_url.revoke";
+  | "support.user.mcp_url.revoke"
+  // Admin: catalog
+  | "admin.catalog.draft.create"
+  | "admin.catalog.draft.update"
+  | "admin.catalog.publish"
+  | "admin.catalog.archive"
+  | "admin.catalog.restore"
+  // Admin: partner orgs
+  | "admin.partner.create"
+  | "admin.partner.approve"
+  | "admin.partner.reject"
+  // Admin: submissions
+  | "admin.submission.approve"
+  | "admin.submission.reject";
 
 export interface AuditEntry {
   /** Unique document id. */
@@ -22,10 +36,25 @@ export interface AuditEntry {
   action: AuditAction;
   /** Primary entity this action was performed on (e.g. userId). */
   targetId: string;
-  /** Target entity type, e.g. "user". */
+  /** Target entity type, e.g. "user", "catalog", "partner", "submission". */
   targetType: string;
+  /** State snapshot before the action (no prices, no raw PII). */
+  before?: Record<string, unknown>;
+  /** State snapshot after the action (no prices, no raw PII). */
+  after?: Record<string, unknown>;
   /** Optional free-text or structured context; must never contain prices or raw PII. */
   notes?: string;
+}
+
+export interface AuditFilter {
+  actor?: string;
+  action?: AuditAction;
+  targetId?: string;
+  targetType?: string;
+  /** ISO-8601 lower bound (inclusive). */
+  since?: string;
+  /** ISO-8601 upper bound (inclusive). */
+  until?: string;
 }
 
 export interface AuditRepo {
@@ -33,6 +62,7 @@ export interface AuditRepo {
   append(entry: Omit<AuditEntry, "id" | "timestamp">): Promise<AuditEntry>;
   listByTarget(targetId: string, limit?: number): Promise<AuditEntry[]>;
   listRecent(limit?: number): Promise<AuditEntry[]>;
+  listFiltered(filter: AuditFilter, limit?: number): Promise<AuditEntry[]>;
 }
 
 // ─── In-memory backend ──────────────────────────────────────────────────────
@@ -62,6 +92,21 @@ class MemoryAuditRepo implements AuditRepo {
 
   async listRecent(limit = 50): Promise<AuditEntry[]> {
     return [...this.entries].reverse().slice(0, limit);
+  }
+
+  async listFiltered(filter: AuditFilter, limit = 50): Promise<AuditEntry[]> {
+    return this.entries
+      .filter((e) => {
+        if (filter.actor && e.actor !== filter.actor) return false;
+        if (filter.action && e.action !== filter.action) return false;
+        if (filter.targetId && e.targetId !== filter.targetId) return false;
+        if (filter.targetType && e.targetType !== filter.targetType) return false;
+        if (filter.since && e.timestamp < filter.since) return false;
+        if (filter.until && e.timestamp > filter.until) return false;
+        return true;
+      })
+      .reverse()
+      .slice(0, limit);
   }
 }
 
@@ -116,6 +161,45 @@ class CosmosAuditRepo implements AuditRepo {
       .query<AuditEntry>({
         query: "SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT @limit",
         parameters: [{ name: "@limit", value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listFiltered(filter: AuditFilter, limit = 50): Promise<AuditEntry[]> {
+    const conditions: string[] = [];
+    const parameters: SqlParameter[] = [{ name: "@limit", value: limit }];
+
+    if (filter.actor) {
+      conditions.push("c.actor = @actor");
+      parameters.push({ name: "@actor", value: filter.actor });
+    }
+    if (filter.action) {
+      conditions.push("c.action = @action");
+      parameters.push({ name: "@action", value: filter.action });
+    }
+    if (filter.targetId) {
+      conditions.push("c.targetId = @targetId");
+      parameters.push({ name: "@targetId", value: filter.targetId });
+    }
+    if (filter.targetType) {
+      conditions.push("c.targetType = @targetType");
+      parameters.push({ name: "@targetType", value: filter.targetType });
+    }
+    if (filter.since) {
+      conditions.push("c.timestamp >= @since");
+      parameters.push({ name: "@since", value: filter.since });
+    }
+    if (filter.until) {
+      conditions.push("c.timestamp <= @until");
+      parameters.push({ name: "@until", value: filter.until });
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { resources } = await this.container.items
+      .query<AuditEntry>({
+        query: `SELECT * FROM c ${where} ORDER BY c.timestamp DESC OFFSET 0 LIMIT @limit`,
+        parameters,
       })
       .fetchAll();
     return resources;
