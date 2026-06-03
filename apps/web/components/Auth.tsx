@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, type PublicUser } from "@/lib/api";
 import { track } from "@/lib/analytics";
 
-export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
+export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser, isSignup: boolean) => void }) {
   const [mode, setMode] = useState<"login" | "register">("register");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +23,7 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
       if (mode === "register") {
         track({ name: "sign_up", properties: { market } });
       }
-      onAuth(user);
+      onAuth(user, mode === "register");
     } catch (e) {
       setErr((e as Error).message);
     } finally {

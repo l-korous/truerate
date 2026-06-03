@@ -8,6 +8,7 @@ import { EditMembership } from "./EditMembership";
 import { MemberPerks } from "./DemoSearch";
 import { MembershipDetail } from "./MembershipDetail";
 import { McpUrlManager } from "./McpUrlManager";
+import { OnboardingResumeBanner } from "./OnboardingResumeBanner";
 import { PerkInventory } from "./PerkInventory";
 import { ValueExplainer } from "./ValueExplainer";
 
@@ -23,7 +24,17 @@ function benefitLines(benefits: Benefit[]): string[] {
   return [...new Set(out)];
 }
 
-export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSignOut: () => void }) {
+export function Dashboard({
+  user: initial,
+  onSignOut,
+  showOnboardingBanner = false,
+  onResumeOnboarding,
+}: {
+  user: PublicUser;
+  onSignOut: () => void;
+  showOnboardingBanner?: boolean;
+  onResumeOnboarding?: () => void;
+}) {
   const [user, setUser] = useState(initial);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [programsError, setProgramsError] = useState(false);
@@ -85,6 +96,10 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-10">
+        {showOnboardingBanner && onResumeOnboarding && (
+          <OnboardingResumeBanner onResume={onResumeOnboarding} />
+        )}
+
         {/* Tabs — hidden when viewing a detail */}
         {!selectedMembership && (
           <div className="mb-8 flex gap-1 rounded-xl bg-white p-1 shadow-sm" style={{ width: "fit-content" }}>
