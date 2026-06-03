@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, perkEstimateRow } from "../utils/render-helpers.js";
-import type { MatchedPerkEstimate } from "@truerate/core";
+import { esc, perkEstimateRow, worstStalenessLevel } from "../utils/render-helpers.js";
+import type { MatchedBenefit, MatchedPerkEstimate } from "@truerate/core";
 
 // --- esc ---
 
@@ -79,4 +79,59 @@ test("perkEstimateRow never includes price-like keys", () => {
   assert.ok(!html.includes("finalPrice"), "no finalPrice");
   assert.ok(!html.includes("totalSavings"), "no totalSavings");
   assert.ok(!html.includes("indicativeOffer"), "no indicativeOffer");
+});
+
+// --- worstStalenessLevel ---
+
+function makeMatch(confidenceLevel: "high" | "medium" | "low" | "stale" | undefined): MatchedBenefit {
+  return {
+    benefit: {
+      id: "b1",
+      scope: "category",
+      match: { categories: ["hotel"] },
+      value: { kind: "perk", perks: ["Free breakfast"] },
+      source: "catalog",
+    },
+    membershipId: "m1",
+    membershipLabel: "Test Program",
+    confidence: confidenceLevel === undefined ? undefined : {
+      level: confidenceLevel,
+      score: confidenceLevel === "high" ? 1.0 : confidenceLevel === "medium" ? 0.75 : confidenceLevel === "low" ? 0.3 : 0.1,
+      ageMonths: 0,
+      expiresAt: "2026-01-01",
+      isExpired: confidenceLevel === "stale",
+    },
+  };
+}
+
+test("worstStalenessLevel returns null when all matches are high confidence", () => {
+  const result = worstStalenessLevel([makeMatch("high"), makeMatch("medium")]);
+  assert.strictEqual(result, null);
+});
+
+test("worstStalenessLevel returns null when matches have no confidence info", () => {
+  const result = worstStalenessLevel([makeMatch(undefined)]);
+  assert.strictEqual(result, null);
+});
+
+test("worstStalenessLevel returns 'low' when at least one match is low confidence", () => {
+  const result = worstStalenessLevel([makeMatch("high"), makeMatch("low")]);
+  assert.strictEqual(result, "low");
+});
+
+test("worstStalenessLevel returns 'stale' when at least one match is stale", () => {
+  const result = worstStalenessLevel([makeMatch("low"), makeMatch("stale")]);
+  assert.strictEqual(result, "stale");
+});
+
+test("worstStalenessLevel returns 'stale' when match is expired regardless of level label", () => {
+  const expiredMatch: MatchedBenefit = {
+    ...makeMatch("medium"),
+    confidence: { level: "medium", score: 0.6, ageMonths: 8, expiresAt: "2025-01-01", isExpired: true },
+  };
+  assert.strictEqual(worstStalenessLevel([expiredMatch]), "stale");
+});
+
+test("worstStalenessLevel returns null for empty matches array", () => {
+  assert.strictEqual(worstStalenessLevel([]), null);
 });

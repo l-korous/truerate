@@ -77,6 +77,14 @@
     "message": "Booking Genius is active on this page. TrueRate shows what your memberships add on top.",
     "description": "Note shown when Booking Genius tier DOM signals are detected; communicates incremental TrueRate value"
   },
+  "panelTermsStaleNote": {
+    "message": "Some benefit terms may be outdated — verify at the program website.",
+    "description": "Warning note shown when one or more matched benefit catalog entries are stale (past TTL). Terms freshness only, not prices."
+  },
+  "panelTermsLowConfidenceNote": {
+    "message": "Some benefit terms were last verified a while ago — conditions may have changed.",
+    "description": "Advisory note shown when one or more matched benefit catalog entries have low confidence. Terms freshness only, not prices."
+  },
 
   "optionsTitle": {
     "message": "TrueRate Settings",
