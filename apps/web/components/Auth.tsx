@@ -65,13 +65,15 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
         {/* Auth card */}
         <div className="py-16">
           <div className="mx-auto max-w-md rounded-xl2 border border-line bg-card p-8 shadow-[0_24px_60px_-30px_rgba(12,27,46,.35)]">
-            <div className="mb-6 flex gap-1 rounded-xl bg-paper p-1">
+            <div className="mb-6 flex gap-1 rounded-xl bg-paper p-1" role="tablist" aria-label="Authentication mode">
               {(["register", "login"] as const).map((m) => (
                 <button
                   key={m}
+                  role="tab"
+                  aria-selected={mode === m}
                   onClick={() => setMode(m)}
-                  className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
-                    mode === m ? "bg-card text-ink shadow-sm" : "text-ink-muted"
+                  className={`flex-1 rounded-lg py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40 ${
+                    mode === m ? "bg-card text-ink shadow-sm" : "text-ink-muted hover:text-ink"
                   }`}
                 >
                   {m === "register" ? "Create account" : "Sign in"}
@@ -79,18 +81,22 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
               ))}
             </div>
 
-            <label className="label">Email</label>
+            <label className="label" htmlFor="auth-email">Email</label>
             <input
+              id="auth-email"
               className="field mb-4"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
-            <label className="label">Password</label>
+            <label className="label" htmlFor="auth-password">Password</label>
             <input
+              id="auth-password"
               className="field"
               type="password"
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -99,8 +105,9 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
 
             {mode === "register" && (
               <div className="mt-4">
-                <label className="label">Market</label>
+                <label className="label" htmlFor="auth-market">Market</label>
                 <select
+                  id="auth-market"
                   className="field"
                   value={market}
                   onChange={(e) => setMarket(e.target.value)}
@@ -111,7 +118,7 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
               </div>
             )}
 
-            {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
+            {err && <p role="alert" className="mt-4 text-sm text-red-600">{err}</p>}
 
             <button
               className="btn-primary mt-6 w-full"

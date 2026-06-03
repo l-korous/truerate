@@ -174,7 +174,7 @@ export function ValueExplainer({
   return (
     <div data-testid="value-explainer">
       {/* Grand totals */}
-      <div className="mb-8 grid grid-cols-3 gap-4" data-testid="value-band-cards">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="value-band-cards">
         <BandCard stars="3" total={rollup.grand3} label="Budget hotel (3★)" />
         <BandCard stars="4" total={rollup.grand4} label="Mid-range hotel (4★)" />
         <BandCard stars="5" total={rollup.grand5} label="Luxury hotel (5★)" />
@@ -188,7 +188,7 @@ export function ValueExplainer({
             {rollup.byMembership.map((row) => (
               <li
                 key={row.membershipId}
-                className="flex items-center justify-between rounded-xl border border-line bg-card px-4 py-3"
+                className="flex flex-col gap-1 rounded-xl border border-line bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 data-testid="value-membership-row"
               >
                 <span className="font-medium text-ink">{row.membershipLabel}</span>

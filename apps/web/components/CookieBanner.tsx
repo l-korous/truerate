@@ -27,17 +27,19 @@ export function CookieBanner() {
   return (
     <div
       role="dialog"
+      aria-modal="false"
       aria-label="Cookie consent"
+      aria-describedby="cookie-banner-desc"
       data-testid="cookie-banner"
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-line bg-paper px-6 py-4 shadow-lg"
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-ink-muted">
+        <p id="cookie-banner-desc" className="text-sm text-ink-muted">
           We use analytics to understand how people discover and activate TrueRate. No prices,
           no personal data beyond what you share during sign-up.{" "}
           <a
             href="/privacy"
-            className="underline underline-offset-2 hover:text-ink"
+            className="underline underline-offset-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
             data-testid="cookie-privacy-link"
           >
             Privacy policy

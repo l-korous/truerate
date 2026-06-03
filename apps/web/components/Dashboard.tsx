@@ -74,26 +74,35 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
   return (
     <div className="min-h-screen bg-grain">
       <header className="border-b border-line bg-paper/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2 font-display text-xl"><span className="h-2 w-2 rounded-full bg-save" /> TrueRate</div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-ink-muted">{user.email}</span>
-            <button className="text-sm text-ink-muted underline-offset-4 hover:underline"
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-2 font-display text-xl" aria-label="TrueRate"><span className="h-2 w-2 rounded-full bg-save" aria-hidden="true" /> TrueRate</div>
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <span className="hidden truncate text-sm text-ink-muted sm:block" title={user.email}>{user.email}</span>
+            <button className="shrink-0 text-sm text-ink-muted underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
               onClick={() => { clearToken(); onSignOut(); }}>Sign out</button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         {/* Tabs — hidden when viewing a detail */}
         {!selectedMembership && (
-          <div className="mb-8 flex gap-1 rounded-xl bg-white p-1 shadow-sm" style={{ width: "fit-content" }}>
-            {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"], ["mcp", "MCP"]] as const).map(([k, label]) => (
-              <button key={k} data-testid={`tab-${k}`} onClick={() => setTab(k)}
-                className={`rounded-lg px-5 py-2 text-sm font-medium transition ${tab === k ? "bg-ink text-paper" : "text-ink-muted"}`}>
-                {label}
-              </button>
-            ))}
+          <div className="mb-8 overflow-x-auto">
+            <div
+              className="inline-flex min-w-full gap-1 rounded-xl bg-white p-1 shadow-sm sm:min-w-0"
+              role="tablist"
+              aria-label="Dashboard sections"
+            >
+              {([["memberships", "Memberships"], ["inventory", "Perk Inventory"], ["value", "Value"], ["try", "Try it"], ["mcp", "MCP"]] as const).map(([k, label]) => (
+                <button key={k} data-testid={`tab-${k}`} onClick={() => setTab(k)}
+                  role="tab"
+                  aria-selected={tab === k}
+                  aria-controls={`tabpanel-${k}`}
+                  className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40 sm:px-5 ${tab === k ? "bg-ink text-paper" : "text-ink-muted hover:text-ink"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -107,7 +116,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             onEdit={() => setEditingMembershipId(selectedMembership.id)}
           />
         ) : tab === "inventory" ? (
-          <section>
+          <section role="tabpanel" id="tabpanel-inventory" aria-labelledby="tab-inventory-label">
             <div className="mb-6">
               <h1 className="font-display text-3xl text-ink">Perk Inventory</h1>
               <p className="mt-1 text-ink-muted">
@@ -117,7 +126,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             <PerkInventory user={user} />
           </section>
         ) : tab === "value" ? (
-          <section>
+          <section role="tabpanel" id="tabpanel-value" aria-labelledby="tab-value-label">
             <div className="mb-6">
               <h1 className="font-display text-3xl text-ink">What your memberships are worth</h1>
               <p className="mt-1 text-ink-muted">
@@ -127,7 +136,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             <ValueExplainer user={user} onViewInventory={() => setTab("inventory")} />
           </section>
         ) : tab === "memberships" ? (
-          <section>
+          <section role="tabpanel" id="tabpanel-memberships" aria-labelledby="tab-memberships-label">
             <div className="mb-6 flex items-end justify-between">
               <div>
                 <h1 className="font-display text-3xl text-ink">Your memberships</h1>
@@ -137,7 +146,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             </div>
 
             {programsError && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                 Could not load program catalog — some details may be unavailable.
               </div>
             )}
@@ -156,8 +165,12 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
                   const lines = benefitLines(m.benefits);
                   return (
                     <li key={m.id}
-                      className="flex cursor-pointer items-start justify-between rounded-xl2 border border-line bg-card p-5 transition hover:border-ink/30 hover:bg-white"
+                      className="flex cursor-pointer items-start justify-between rounded-xl2 border border-line bg-card p-5 transition hover:border-ink/30 hover:bg-white focus-within:ring-2 focus-within:ring-ink/20"
                       onClick={() => setSelectedMembershipId(m.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedMembershipId(m.id); } }}
+                      tabIndex={confirmRemoveId === m.id ? -1 : 0}
+                      role="button"
+                      aria-label={`View ${m.label} details`}
                       data-testid={`membership-item-${m.id}`}
                     >
                       <div>
@@ -179,14 +192,14 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
                       {confirmRemoveId === m.id ? (
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
-                            className="text-sm font-medium text-red-600 hover:text-red-700"
+                            className="text-sm font-medium text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                             data-testid={`list-remove-confirm-${m.id}`}
                             onClick={() => remove(m.id)}
                           >
                             Confirm
                           </button>
                           <button
-                            className="text-sm text-ink-muted hover:text-ink"
+                            className="text-sm text-ink-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
                             onClick={() => setConfirmRemoveId(null)}
                           >
                             Cancel
@@ -194,7 +207,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
                         </div>
                       ) : (
                         <button
-                          className="text-sm text-ink-muted hover:text-red-600"
+                          className="text-sm text-ink-muted hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                           data-testid={`list-remove-${m.id}`}
                           onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(m.id); }}
                         >
@@ -208,7 +221,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             )}
           </section>
         ) : tab === "mcp" ? (
-          <section>
+          <section role="tabpanel" id="tabpanel-mcp" aria-labelledby="tab-mcp-label">
             <div className="mb-6">
               <h1 className="font-display text-3xl text-ink">MCP server</h1>
               <p className="mt-1 text-ink-muted">
@@ -218,7 +231,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             <McpUrlManager />
           </section>
         ) : (
-          <section>
+          <section role="tabpanel" id="tabpanel-try" aria-labelledby="tab-try-label">
             <div className="mb-6">
               <h1 className="font-display text-3xl text-ink">Your perks &amp; discounts</h1>
               <p className="mt-1 text-ink-muted">
@@ -256,6 +269,8 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
 
       {toast && (
         <div
+          role="status"
+          aria-live="polite"
           className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-ink px-5 py-3 text-sm font-medium text-paper shadow-lg"
           data-testid="toast"
         >

@@ -5,9 +5,9 @@ import type { Benefit, BenefitValue, Program, PublicMembership } from "@/lib/api
 
 function StatusBadge({ status }: { status: PublicMembership["status"] }) {
   const styles: Record<PublicMembership["status"], string> = {
-    active: "bg-save-soft text-save",
-    unverified: "bg-points-soft text-points",
-    invalid: "bg-red-50 text-red-600",
+    active: "bg-save-soft text-save-dark",
+    unverified: "bg-points-soft text-points-dark",
+    invalid: "bg-red-50 text-red-700",
   };
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
@@ -101,7 +101,7 @@ export function MembershipDetail({
           </div>
 
           {membership.hasCredential ? (
-            <p className="mt-3 text-sm text-save">
+            <p className="mt-3 text-sm text-save-dark">
               Credential stored (encrypted) — used for automated verification.
             </p>
           ) : (
