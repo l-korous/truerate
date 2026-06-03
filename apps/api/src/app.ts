@@ -34,6 +34,10 @@ import {
   getPartnerWorkflow,
   resetPartnerWorkflow,
   PartnerWorkflowError,
+  getFeatureFlagRepo,
+  resetFeatureFlagRepo,
+  getAppConfigRepo,
+  resetAppConfigRepo,
   type CatalogCache,
   type Logger,
   type Benefit,
@@ -45,6 +49,8 @@ import {
   type PartnerOrgStatus,
   type SubmissionStatus,
   type PartnerProgramDraft,
+  type FeatureFlag,
+  type AppConfig,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
@@ -74,6 +80,12 @@ export function resetAppCatalog(): void {
 
 /** Reset partner workflow state — for tests only. */
 export { resetPartnerWorkflow as resetAppPartner };
+
+/** Reset flag/config repos — for tests only. */
+export function resetAppFlags(): void {
+  resetFeatureFlagRepo();
+  resetAppConfigRepo();
+}
 
 /**
  * Build the CORS origin allowlist from environment variables.
@@ -1137,6 +1149,238 @@ app.post("/partner/submissions/:id/submit", requireAuth, async (c) => {
     }
     throw err;
   }
+});
+
+// --- Admin feature flags (issue #78) ----------------------------------------
+// All routes require x-admin-secret. Audit records are emitted via structured
+// logger (entityType/entityKey/action/actor) for every mutating operation.
+// No secrets and no price fields are permitted.
+
+const FeatureFlagInputSchema = z.object({
+  key: z.string().min(1).max(128).regex(/^[a-z0-9_.:-]+$/, "key must be lowercase alphanumeric with . _ : -"),
+  enabled: z.boolean(),
+  description: z.string().min(1).max(500),
+  environment: z.string().min(1).max(64).optional(),
+});
+
+const FeatureFlagUpdateSchema = z.object({
+  enabled: z.boolean().optional(),
+  description: z.string().min(1).max(500).optional(),
+  environment: z.string().min(1).max(64).optional(),
+});
+
+// GET /admin/flags — list all feature flags; optional ?environment=
+app.get("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const env = c.req.query("environment") || undefined;
+  const repo = await getFeatureFlagRepo();
+  const flags = await repo.list(env);
+  return c.json({ flags, count: flags.length });
+});
+
+// POST /admin/flags — create a flag
+app.post("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const parsed = await parseBody(FeatureFlagInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "already_exists" }, 409);
+
+  const ts = new Date().toISOString();
+  const flag: FeatureFlag = {
+    id: parsed.key,
+    key: parsed.key,
+    enabled: parsed.enabled,
+    description: parsed.description,
+    environment: parsed.environment,
+    createdAt: ts,
+    updatedAt: ts,
+    updatedBy: "admin",
+  };
+  const created = await repo.create(flag);
+  c.get("logger").info("flag audit", { entityType: "flag", entityKey: flag.key, action: "create", actor: "admin", after: created });
+  return c.json({ flag: created }, 201);
+});
+
+// GET /admin/flags/:key — get a single flag
+app.get("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const repo = await getFeatureFlagRepo();
+  const flag = await repo.get(c.req.param("key"));
+  if (!flag) return c.json({ error: "not_found" }, 404);
+  return c.json({ flag });
+});
+
+// PUT /admin/flags/:key — update a flag
+app.put("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const key = c.req.param("key");
+  const parsed = await parseBody(FeatureFlagUpdateSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  const updated: FeatureFlag = {
+    ...existing,
+    ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
+    ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+    ...(parsed.environment !== undefined ? { environment: parsed.environment } : {}),
+    updatedAt: new Date().toISOString(),
+    updatedBy: "admin",
+  };
+  const saved = await repo.update(updated);
+  c.get("logger").info("flag audit", { entityType: "flag", entityKey: key, action: "update", actor: "admin", before: existing, after: saved });
+  return c.json({ flag: saved });
+});
+
+// POST /admin/flags/:key/toggle — flip enabled state
+app.post("/admin/flags/:key/toggle", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const key = c.req.param("key");
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  const updated: FeatureFlag = {
+    ...existing,
+    enabled: !existing.enabled,
+    updatedAt: new Date().toISOString(),
+    updatedBy: "admin",
+  };
+  const saved = await repo.update(updated);
+  c.get("logger").info("flag audit", {
+    entityType: "flag",
+    entityKey: key,
+    action: "toggle",
+    actor: "admin",
+    before: { enabled: existing.enabled },
+    after: { enabled: saved.enabled },
+  });
+  return c.json({ flag: saved });
+});
+
+// DELETE /admin/flags/:key — delete a flag
+app.delete("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const key = c.req.param("key");
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+  c.get("logger").info("flag audit", { entityType: "flag", entityKey: key, action: "delete", actor: "admin", before: existing });
+  return c.body(null, 204);
+});
+
+// --- Admin app config (issue #78) -------------------------------------------
+
+const AppConfigInputSchema = z.object({
+  key: z.string().min(1).max(128).regex(/^[a-z0-9_.:-]+$/, "key must be lowercase alphanumeric with . _ : -"),
+  value: z.string().max(4096),
+  description: z.string().min(1).max(500),
+  environment: z.string().min(1).max(64).optional(),
+});
+
+const AppConfigUpdateSchema = z.object({
+  value: z.string().max(4096).optional(),
+  description: z.string().min(1).max(500).optional(),
+  environment: z.string().min(1).max(64).optional(),
+});
+
+// GET /admin/config — list all config entries; optional ?environment=
+app.get("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const env = c.req.query("environment") || undefined;
+  const repo = await getAppConfigRepo();
+  const entries = await repo.list(env);
+  return c.json({ entries, count: entries.length });
+});
+
+// POST /admin/config — create a config entry
+app.post("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const parsed = await parseBody(AppConfigInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "already_exists" }, 409);
+
+  const ts = new Date().toISOString();
+  const entry: AppConfig = {
+    id: parsed.key,
+    key: parsed.key,
+    value: parsed.value,
+    description: parsed.description,
+    environment: parsed.environment,
+    createdAt: ts,
+    updatedAt: ts,
+    updatedBy: "admin",
+  };
+  const created = await repo.create(entry);
+  c.get("logger").info("config audit", { entityType: "config", entityKey: entry.key, action: "create", actor: "admin", after: created });
+  return c.json({ entry: created }, 201);
+});
+
+// GET /admin/config/:key — get a single config entry
+app.get("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const repo = await getAppConfigRepo();
+  const entry = await repo.get(c.req.param("key"));
+  if (!entry) return c.json({ error: "not_found" }, 404);
+  return c.json({ entry });
+});
+
+// PUT /admin/config/:key — update a config entry
+app.put("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const key = c.req.param("key");
+  const parsed = await parseBody(AppConfigUpdateSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  const updated: AppConfig = {
+    ...existing,
+    ...(parsed.value !== undefined ? { value: parsed.value } : {}),
+    ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+    ...(parsed.environment !== undefined ? { environment: parsed.environment } : {}),
+    updatedAt: new Date().toISOString(),
+    updatedBy: "admin",
+  };
+  const saved = await repo.update(updated);
+  c.get("logger").info("config audit", { entityType: "config", entityKey: key, action: "update", actor: "admin", before: existing, after: saved });
+  return c.json({ entry: saved });
+});
+
+// DELETE /admin/config/:key — delete a config entry
+app.delete("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const key = c.req.param("key");
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+  c.get("logger").info("config audit", { entityType: "config", entityKey: key, action: "delete", actor: "admin", before: existing });
+  return c.body(null, 204);
 });
 
 // --- helpers ----------------------------------------------------------------

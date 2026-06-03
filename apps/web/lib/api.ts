@@ -294,6 +294,114 @@ async function adminReq<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// --- Admin feature flags & config types -------------------------------------
+
+export interface FeatureFlag {
+  id: string;
+  key: string;
+  enabled: boolean;
+  description: string;
+  environment?: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface AppConfig {
+  id: string;
+  key: string;
+  value: string;
+  description: string;
+  environment?: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface FeatureFlagInput {
+  key: string;
+  enabled: boolean;
+  description: string;
+  environment?: string;
+}
+
+export interface FeatureFlagUpdate {
+  enabled?: boolean;
+  description?: string;
+  environment?: string;
+}
+
+export interface AppConfigInput {
+  key: string;
+  value: string;
+  description: string;
+  environment?: string;
+}
+
+export interface AppConfigUpdate {
+  value?: string;
+  description?: string;
+  environment?: string;
+}
+
+async function adminFlagReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api/admin/flags${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+async function adminConfigReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api/admin/config${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export const adminFlagApi = {
+  list: (environment?: string) =>
+    adminFlagReq<{ flags: FeatureFlag[]; count: number }>(
+      environment ? `?environment=${encodeURIComponent(environment)}` : "",
+    ),
+  create: (input: FeatureFlagInput) =>
+    adminFlagReq<{ flag: FeatureFlag }>("", { method: "POST", body: JSON.stringify(input) }),
+  get: (key: string) =>
+    adminFlagReq<{ flag: FeatureFlag }>(`/${encodeURIComponent(key)}`),
+  update: (key: string, patch: FeatureFlagUpdate) =>
+    adminFlagReq<{ flag: FeatureFlag }>(`/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(patch) }),
+  toggle: (key: string) =>
+    adminFlagReq<{ flag: FeatureFlag }>(`/${encodeURIComponent(key)}/toggle`, { method: "POST" }),
+  delete: (key: string) =>
+    adminFlagReq<void>(`/${encodeURIComponent(key)}`, { method: "DELETE" }),
+};
+
+export const adminConfigApi = {
+  list: (environment?: string) =>
+    adminConfigReq<{ entries: AppConfig[]; count: number }>(
+      environment ? `?environment=${encodeURIComponent(environment)}` : "",
+    ),
+  create: (input: AppConfigInput) =>
+    adminConfigReq<{ entry: AppConfig }>("", { method: "POST", body: JSON.stringify(input) }),
+  get: (key: string) =>
+    adminConfigReq<{ entry: AppConfig }>(`/${encodeURIComponent(key)}`),
+  update: (key: string, patch: AppConfigUpdate) =>
+    adminConfigReq<{ entry: AppConfig }>(`/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(patch) }),
+  delete: (key: string) =>
+    adminConfigReq<void>(`/${encodeURIComponent(key)}`, { method: "DELETE" }),
+};
+
 export const adminCatalogApi = {
   list: (status?: string) =>
     adminReq<{ entries: CatalogEntry[]; count: number }>(status ? `?status=${status}` : ""),

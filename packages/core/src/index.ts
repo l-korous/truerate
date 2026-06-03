@@ -12,6 +12,7 @@ export * from "./enrichment.js";
 export * from "./logger.js";
 export * from "./perk-value.js";
 export * from "./partner.js";
+export * from "./flags-db.js";
 export { BookingProvider } from "./providers/booking.js";
 export type { HotelProvider, ProviderProperty } from "./providers/types.js";
 export { RateLimiter, createRateLimiter } from "./rate-limiter.js";

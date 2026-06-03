@@ -596,3 +596,62 @@ export interface ClientErrorReport {
   /** Arbitrary structured context; scrubbed server-side. */
   context?: Record<string, unknown>;
 }
+
+// --- Feature flags & app config ----------------------------------------------
+
+/**
+ * A feature flag stored in the flags container.
+ *
+ * Flags are non-secret boolean toggles that operators can flip without a
+ * redeploy.  No price fields — flags control behavioural features, not costs.
+ */
+export interface FeatureFlag {
+  /** Document id — same as key. Partition key: /key. */
+  id: string;
+  /** Unique stable identifier, e.g. "extension.genius_aware". */
+  key: string;
+  /** Whether the flag is currently active. */
+  enabled: boolean;
+  /** Short human-readable description of what the flag controls. */
+  description: string;
+  /** Optional environment scope, e.g. "production", "staging". */
+  environment?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Admin identity that last changed this flag. */
+  updatedBy: string;
+}
+
+/**
+ * A non-secret operational config entry.
+ *
+ * Stores plain string values consumable by services/channels without a
+ * redeploy.  Secrets must never be placed here — use Azure Key Vault.
+ */
+export interface AppConfig {
+  /** Document id — same as key. Partition key: /key. */
+  id: string;
+  /** Unique stable identifier, e.g. "mcp.max_results". */
+  key: string;
+  /** String value for the config entry. */
+  value: string;
+  /** Short human-readable description. */
+  description: string;
+  /** Optional environment scope. */
+  environment?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Admin identity that last changed this entry. */
+  updatedBy: string;
+}
+
+/** Structured audit record for a flag or config change. Logged via structured logger. */
+export interface FlagAuditEntry {
+  entityType: "flag" | "config";
+  entityKey: string;
+  action: "create" | "update" | "delete" | "toggle";
+  actor: string;
+  before?: unknown;
+  after?: unknown;
+  timestamp: string;
+}
