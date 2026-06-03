@@ -100,6 +100,11 @@
     "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelBonvoyActiveNote": {
+    "message": "Marriott Bonvoy ist auf dieser Seite aktiv. TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
+    "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
+  },
+
   "optionsTitle": {
     "message": "TrueRate-Einstellungen",
     "description": "Options page title"

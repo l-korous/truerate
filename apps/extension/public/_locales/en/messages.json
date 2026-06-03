@@ -132,5 +132,10 @@
   "panelOneKeyActiveNote": {
     "message": "One Key is active on this page. TrueRate shows what your other memberships add on top.",
     "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelBonvoyActiveNote": {
+    "message": "Marriott Bonvoy is active on this page. TrueRate shows what your memberships add on top.",
+    "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   }
 }

@@ -100,6 +100,11 @@
     "description": "Note shown when Hotels.com One Key DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelBonvoyActiveNote": {
+    "message": "A Marriott Bonvoy aktív ezen az oldalon. A TrueRate azt mutatja, amit a tagságai ehhez hozzáadnak.",
+    "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
+  },
+
   "optionsTitle": {
     "message": "TrueRate beállítások",
     "description": "Options page title"
