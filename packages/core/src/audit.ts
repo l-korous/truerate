@@ -23,7 +23,15 @@ export type AuditAction =
   | "admin.partner.reject"
   // Admin: submissions
   | "admin.submission.approve"
-  | "admin.submission.reject";
+  | "admin.submission.reject"
+  // Admin: feature flags
+  | "admin.flag.create"
+  | "admin.flag.update"
+  | "admin.flag.delete"
+  // Admin: app config
+  | "admin.config.create"
+  | "admin.config.update"
+  | "admin.config.delete";
 
 export interface AuditEntry {
   /** Unique document id. */
