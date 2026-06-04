@@ -52,7 +52,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Look up existing API URL (for web build arg)
+      - name: Look up existing API URL + last-good image (web build arg + rollback)
         id: api-url
         run: |
           set -euo pipefail
@@ -65,6 +65,12 @@ jobs:
             echo "api_url=" >> "$GITHUB_OUTPUT"
             echo "::notice::First deploy — web will rebuild with the real API URL on the next deploy."
           fi
+          # Capture the currently-running image tag so the post-deploy smoke can
+          # roll back to this known-good revision if the new one is broken.
+          LAST_GOOD=$(az containerapp show -g "$RG" -n "${PREFIX}-api" \
+            --query "properties.template.containers[0].image" -o tsv 2>/dev/null | sed 's/.*://' || true)
+          echo "last_good_tag=${LAST_GOOD}" >> "$GITHUB_OUTPUT"
+          [ -n "$LAST_GOOD" ] && echo "::notice::Last-good image tag for rollback: ${LAST_GOOD}" || true
 
       - name: Compute lowercase ghcr namespace
         id: ns
@@ -117,6 +123,7 @@ jobs:
       # exactly which package is the problem.
 
       - name: Deploy Bicep with real image refs
+        id: deploy
         env:
           JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
           CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
@@ -136,6 +143,9 @@ jobs:
           WEB_URL=$(az deployment group show -g "$RG" -n main --query properties.outputs.webUrl.value -o tsv)
           API_OUT=$(az deployment group show -g "$RG" -n main --query properties.outputs.apiUrl.value -o tsv)
           MCP_URL=$(az deployment group show -g "$RG" -n main --query properties.outputs.mcpUrl.value -o tsv)
+          echo "web_url=$WEB_URL" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_OUT" >> "$GITHUB_OUTPUT"
+          echo "mcp_url=$MCP_URL" >> "$GITHUB_OUTPUT"
 
           {
             echo "### TrueRate deployed :rocket:"
@@ -147,5 +157,40 @@ jobs:
             echo "| MCP | $MCP_URL |"
             echo ""
             echo "Image tag: \`$IMAGE_TAG\`"
-            echo "Images on: \`ghcr.io/${OWNER_LC}/truerate-{api,mcp,web}\` (public)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── Post-deploy verification ──────────────────────────────────────────
+      # Health checks are NOT enough — a stale/broken image can serve /health
+      # 200 while the core action (add a membership) 500s. This gate runs the
+      # REAL member loop against the just-deployed URLs and FAILS the deploy
+      # (rolling back) if it's broken.
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.12.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - name: Install deps (for the smoke client)
+        run: pnpm install --frozen-lockfile
+      - name: Post-deploy smoke (live member core loop + no-price guard)
+        id: smoke
+        env:
+          API_URL: ${{ steps.deploy.outputs.api_url }}
+          WEB_URL: ${{ steps.deploy.outputs.web_url }}
+          MCP_URL: ${{ steps.deploy.outputs.mcp_url }}
+        run: node apps/mcp/scripts/post-deploy-smoke.mjs
+      - name: Roll back to last-good image on smoke failure
+        if: failure() && steps.smoke.outcome == 'failure' && steps.api-url.outputs.last_good_tag != ''
+        env:
+          JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
+          CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
+          OWNER_LC: ${{ steps.ns.outputs.owner_lc }}
+          LAST_GOOD: ${{ steps.api-url.outputs.last_good_tag }}
+        run: |
+          set -uo pipefail
+          echo "::error::Post-deploy smoke FAILED — rolling back to ${LAST_GOOD}"
+          az deployment group create -g "$RG" -f infra/main.bicep -o none \
+            -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" \
+               apiImage="ghcr.io/${OWNER_LC}/truerate-api:${LAST_GOOD}" \
+               mcpImage="ghcr.io/${OWNER_LC}/truerate-mcp:${LAST_GOOD}" \
+               webImage="ghcr.io/${OWNER_LC}/truerate-web:${LAST_GOOD}" \
+            && echo "::notice::Rolled back to ${LAST_GOOD}." \
+            || echo "::error::Rollback ALSO failed — manual intervention required."
