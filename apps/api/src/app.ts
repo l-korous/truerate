@@ -156,6 +156,34 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 
+// TEMP DEBUG: run the exact catalog vs custom save path in a controlled
+// try/catch and return the full error. Remove once the 500 is fixed.
+app.get("/_debug/save", async (c) => {
+  const { getUserRepo } = await import("@truerate/core");
+  const repo = await getUserRepo();
+  const out: Record<string, unknown> = {};
+  for (const kind of ["catalog", "custom"]) {
+    const uid = uuid();
+    try {
+      await repo.create({ id: uid, email: `${uid}@dbg.invalid`, passwordHash: "h", memberships: [], createdAt: new Date().toISOString() } as unknown as User);
+      const read = await repo.getById(uid);
+      if (!read) { out[kind] = "read-null"; continue; }
+      if (kind === "catalog") {
+        const program = getProgram("booking_genius")!;
+        read.memberships.push({ id: uuid(), label: "dbg", programId: "booking_genius", tier: "Level 3", attributes: {}, benefits: instantiateBenefits(program, "Level 3"), addedAt: new Date().toISOString(), status: "active" } as Membership);
+      } else {
+        read.memberships.push({ id: uuid(), label: "dbg", attributes: {}, benefits: [{ id: uuid(), scope: "brand", match: { brands: ["Marriott"] }, value: { kind: "perk", perks: ["Free breakfast"] }, source: "user-declared" }], addedAt: new Date().toISOString(), status: "active" } as Membership);
+      }
+      await repo.update(read);
+      out[kind] = "OK";
+    } catch (e) {
+      const ae = e as { name?: string; code?: unknown; statusCode?: unknown; message?: string; body?: unknown; stack?: string };
+      out[kind] = { name: ae?.name, code: ae?.code, statusCode: ae?.statusCode, message: ae?.message, body: typeof ae?.body === "string" ? ae.body.slice(0, 800) : JSON.stringify(ae?.body)?.slice(0, 800), stack: ae?.stack?.split("\n").slice(0, 8) };
+    }
+  }
+  return c.json(out);
+});
+
 // Centralized error handler. Without this, an uncaught exception returns a bare
 // 500 with NO log line — which is exactly how a broken core action (e.g. a
 // Cosmos write rejection) can ship silently behind green health checks. Log the
