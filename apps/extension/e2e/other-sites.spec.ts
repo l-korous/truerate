@@ -3,12 +3,14 @@ import type { BrowserContext } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Extension e2e tests for Hotels.com, Hilton.com, and Marriott.com content scripts.
+// Extension e2e tests for Hotels.com, Hilton.com, Marriott.com, and Expedia.com
+// content scripts.
 //
-// Gap closed: apps/extension/e2e/ only covers Booking.com. Three other content
-// scripts (hilton.content.ts, hotelscom.content.ts, marriott.content.ts) are
-// exercised exclusively at the unit level (context-extraction helpers). This file
-// verifies the full browser-side journey on each site:
+// Gap closed: apps/extension/e2e/ only covers Booking.com. Four other content
+// scripts (hilton.content.ts, hotelscom.content.ts, marriott.content.ts,
+// expedia.content.ts) are exercised exclusively at the unit level
+// (context-extraction helpers). This file verifies the full browser-side journey
+// on each site:
 //   1. URL pattern matching fires the right content script.
 //   2. The shadow-DOM panel injects and resolves without crashing.
 //   3. Signed-out state shows the sign-in prompt, never a price.
@@ -17,9 +19,10 @@ import { fileURLToPath } from "url";
 //      never imply a discount has been applied to a booking price (product rule #1 / issue #1).
 //
 // Sites covered:
-//   Hilton.com  — hilton.content.ts  — Hilton Honors membership
-//   Hotels.com  — hotelscom.content.ts — (generic; no Hotels.com-specific catalog program)
-//   Marriott.com — marriott.content.ts — Marriott Bonvoy membership
+//   Hilton.com   — hilton.content.ts   — Hilton Honors membership
+//   Hotels.com   — hotelscom.content.ts — (generic; no Hotels.com-specific catalog program)
+//   Marriott.com — marriott.content.ts  — Marriott Bonvoy membership
+//   Expedia.com  — expedia.content.ts   — Hotels.com One Key loyalty; One Key active detection
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, "../.output/chrome-mv3");
@@ -489,6 +492,152 @@ test.describe("Marriott.com — marriott.content.ts", () => {
       expect(html).not.toMatch(/bonvoy\s+price/i);
       expect(html).not.toMatch(/bonvoy\s+rate/i);
       assertNoPriceViolations(html, "Marriott detail (Bonvoy active)");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+// ── Expedia.com HTML pages ─────────────────────────────────────────────────────
+
+// Expedia.com — hotel search results page (pathname /Hotel-Search)
+const EXPEDIA_SEARCH_HTML = `<!DOCTYPE html><html lang="en">
+<head><title>Hotels in Prague | Expedia</title></head>
+<body><h1>Search results</h1><p>Showing hotels in Prague.</p></body>
+</html>`;
+
+// Expedia.com — property detail page (pathname /<slug>.h<digits>.Hotel-Information)
+// [data-stid="content-hotel-title"] is the primary selector for extractExpediaHotelName().
+const EXPEDIA_HOTEL_HTML = `<!DOCTYPE html><html lang="en">
+<head>
+  <title>Hilton Prague | Expedia</title>
+  <meta property="og:title" content="Hilton Prague, Prague, Czech Republic">
+</head>
+<body>
+  <h1 data-stid="content-hotel-title">Hilton Prague</h1>
+  <p>5-star hotel · Old Town</p>
+</body>
+</html>`;
+
+// Expedia.com — property detail page with an active One Key loyalty session.
+// [data-stid="loyalty-member-badge"] triggers detectOneKeyExpediaActive().
+const EXPEDIA_ONEKEY_HOTEL_HTML = `<!DOCTYPE html><html lang="en">
+<head>
+  <title>Hilton Prague | Expedia</title>
+  <meta property="og:title" content="Hilton Prague, Prague, Czech Republic">
+</head>
+<body>
+  <h1 data-stid="content-hotel-title">Hilton Prague</h1>
+  <div data-stid="loyalty-member-badge" aria-label="One Key Gold">One Key Gold member</div>
+  <p>5-star hotel · Old Town</p>
+</body>
+</html>`;
+
+type MockExpediaPage = "search" | "hotel" | "onekey-hotel";
+
+function htmlForExpedia(page: MockExpediaPage): string {
+  if (page === "onekey-hotel") return EXPEDIA_ONEKEY_HOTEL_HTML;
+  if (page === "hotel") return EXPEDIA_HOTEL_HTML;
+  return EXPEDIA_SEARCH_HTML;
+}
+
+function urlForExpedia(page: MockExpediaPage): string {
+  if (page === "search") return "https://www.expedia.com/Hotel-Search?destination=Prague";
+  return "https://www.expedia.com/Prague-Hotels-Hilton.h12345.Hotel-Information";
+}
+
+async function makeExpediaContext(page: MockExpediaPage): Promise<BrowserContext> {
+  const ctx = await chromium.launchPersistentContext("", {
+    headless: false,
+    args: [
+      "--headless=new",
+      "--no-sandbox",
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+    ],
+  });
+  await ctx.route(/expedia\.com/, (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: htmlForExpedia(page) }),
+  );
+  return ctx;
+}
+
+// =============================================================================
+// Expedia.com tests
+// =============================================================================
+
+test.describe("Expedia.com — expedia.content.ts", () => {
+  test("panel attaches on Expedia.com Hotel-Search page when signed out", async () => {
+    const ctx = await makeExpediaContext("search");
+    try {
+      const page = await ctx.newPage();
+      await page.goto(urlForExpedia("search"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+      // Signed out → sign-in prompt, never a price.
+      expect(html).toContain("Sign in");
+      assertNoPriceViolations(html, "Expedia search (signed out)");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("panel resolves on Expedia.com property detail page when signed in — no price regardless of match", async () => {
+    // Expedia is part of Expedia Group (One Key programme). The catalog program
+    // hotels_com_one_key currently matches hotels.com domain, not expedia.com.
+    // This test verifies the content script resolves gracefully (no crash, no
+    // stuck-loading state) and never outputs a price — the same contract as the
+    // Hotels.com test with Booking Genius.
+    const ctx = await makeExpediaContext("hotel");
+    try {
+      const token = await registerUser();
+      await addMembership(token, "hotels_com_one_key", "Gold");
+      await injectToken(ctx, token);
+
+      const page = await ctx.newPage();
+      await page.goto(urlForExpedia("hotel"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+
+      // Panel must reach a resolved state (close button present, not stuck loading).
+      expect(html).toContain("tr-close");
+
+      assertNoPriceViolations(html, "Expedia detail (signed in)");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("One Key active DOM signal: panel shows .tr-onekey-expedia-note, never implies discount already applied", async () => {
+    // detectOneKeyExpediaActive() looks for loyalty-member-badge / one-key-badge
+    // DOM signals. When found, expedia.content.ts injects a .tr-onekey-expedia-note
+    // — the same Genius-framing pattern used on Booking.com and Hilton.com.
+    // The note must never imply a member price has already been applied (product rule #1 / issue #1).
+    const ctx = await makeExpediaContext("onekey-hotel");
+    try {
+      const token = await registerUser();
+      await addMembership(token, "hotels_com_one_key", "Gold");
+      await injectToken(ctx, token);
+
+      const page = await ctx.newPage();
+      await page.goto(urlForExpedia("onekey-hotel"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+
+      // detectOneKeyExpediaActive() found the badge → panel must show the One Key note.
+      expect(html).toContain("tr-onekey-expedia-note");
+
+      // The note must never imply a member price was already applied to the listing.
+      expect(html).not.toMatch(/already\s+applied/i);
+      expect(html).not.toMatch(/one\s*key\s+price/i);
+      expect(html).not.toMatch(/one\s*key\s+rate/i);
+      assertNoPriceViolations(html, "Expedia detail (One Key active)");
     } finally {
       await ctx.close();
     }
