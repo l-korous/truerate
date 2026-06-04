@@ -64,6 +64,26 @@ type AppVariables = { userId: string; email: string; correlationId: string; logg
 export const app = new Hono<{ Variables: AppVariables }>();
 export const engine = new EnrichmentEngine();
 
+// TEMP DIAG: capture the last detached fatal (uncaughtException / unhandledRejection)
+// so /_debug/catalog can surface it. The catalog 500 bypasses onError AND returns
+// an empty text/plain body, which strongly implies a detached throw from the
+// Cosmos SDK / credential callback path (not an awaited rejection). Remove once
+// the root cause is fixed.
+function _serializeErr(e: unknown): Record<string, unknown> {
+  const a = e as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
+  return {
+    name: a?.name,
+    message: a?.message ?? String(e),
+    code: a?.code,
+    statusCode: a?.statusCode,
+    cosmos: typeof a?.body === "string" ? a.body.slice(0, 600) : a?.body ? JSON.stringify(a.body).slice(0, 600) : undefined,
+    stack: a?.stack?.split("\n").slice(0, 12),
+  };
+}
+const _lastFatal: { value: unknown } = { value: null };
+process.on("uncaughtException", (e) => { _lastFatal.value = { kind: "uncaughtException", ..._serializeErr(e) }; });
+process.on("unhandledRejection", (e) => { _lastFatal.value = { kind: "unhandledRejection", ..._serializeErr(e) }; });
+
 // Catalog cache singleton — seeded from the static PROGRAMS catalog on first
 // use (idempotent via seedIfEmpty). Shared across all requests in this process.
 let _catalogCache: CatalogCache | null = null;
@@ -181,6 +201,29 @@ app.get("/_debug/save", async (c) => {
       out[kind] = { name: ae?.name, code: ae?.code, statusCode: ae?.statusCode, message: ae?.message, body: typeof ae?.body === "string" ? ae.body.slice(0, 800) : JSON.stringify(ae?.body)?.slice(0, 800), stack: ae?.stack?.split("\n").slice(0, 8) };
     }
   }
+  return c.json(out);
+});
+
+// TEMP DIAG: exercise each catalog op independently to pinpoint the 500 that
+// breaks add-membership + the catalog read routes. Captures awaited rejections
+// (per-op) AND detached throws (lastFatal). Remove once fixed.
+app.get("/_debug/catalog", async (c) => {
+  _lastFatal.value = null;
+  const out: Record<string, unknown> = {};
+  try {
+    const repo = await getCatalogRepo();
+    out.repo = "OK";
+    try { const cur = await repo.getCurrent("booking_genius"); out.getCurrent = cur ? `OK:${cur.programId}/${cur.status}` : "null"; }
+    catch (e) { out.getCurrent = _serializeErr(e); }
+    try { const list = await repo.listPublished(); out.listPublished = `OK:${list.length}`; }
+    catch (e) { out.listPublished = _serializeErr(e); }
+    try { const r = await repo.seedIfEmpty(PROGRAMS.map(programToCatalogInput)); out.seed = `OK:${JSON.stringify(r)}`; }
+    catch (e) { out.seed = _serializeErr(e); }
+  } catch (e) { out.repo = _serializeErr(e); }
+  try { const cache = await getAppCatalogCache(); const e = await cache.getCurrent("booking_genius"); out.appCache = e ? `OK:${e.programId}` : "null"; }
+  catch (e) { out.appCache = _serializeErr(e); }
+  await new Promise((r) => setTimeout(r, 300)); // let any detached rejection surface
+  out.lastFatal = _lastFatal.value;
   return c.json(out);
 });
 
