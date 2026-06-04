@@ -544,8 +544,9 @@ export interface CatalogProvenance {
  * cross-partition fan-out.
  *
  * ## Document id
- * `{programId}#v{version}` — globally unique within the container; allows
- * point reads when the version number is already known.
+ * `{programId}-v{version}` — globally unique within the container; allows
+ * point reads when the version number is already known. ("#" is illegal in a
+ * Cosmos document id, so the separator is "-v".)
  *
  * ## Versioning invariant
  * Exactly ONE document per `programId` may have `isCurrent = true` at any
@@ -560,7 +561,7 @@ export interface CatalogProvenance {
  * or any amount computed from a property's room price.
  */
 export interface CatalogEntryDoc {
-  /** Cosmos document id: "{programId}#v{version}". */
+  /** Cosmos document id: "{programId}-v{version}" ("#" is illegal in a Cosmos id). */
   id: string;
   /** Partition key. Matches Program.id for seed entries. */
   programId: string;

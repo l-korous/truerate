@@ -77,7 +77,7 @@ test("upsertDraft creates a draft at version 1 for a new program", async () => {
   assert.equal(draft.version, 1);
   assert.equal(draft.status, "draft");
   assert.equal(draft.isCurrent, false);
-  assert.equal(draft.id, "test_program#v1");
+  assert.equal(draft.id, "test_program-v1");
   assert.ok(draft.createdAt);
   assert.ok(draft.updatedAt);
 });
@@ -90,7 +90,7 @@ test("upsertDraft updates an existing draft in place", async () => {
 
   assert.equal(updated.version, 1, "version must not change when updating a draft");
   assert.equal(updated.name, "Test v2");
-  assert.equal(updated.id, "test_program#v1");
+  assert.equal(updated.id, "test_program-v1");
 });
 
 test("publish promotes draft to published+isCurrent", async () => {
@@ -305,6 +305,50 @@ test("seedIfEmpty is idempotent — skips already-seeded programs", async () => 
   assert.equal(published.length, PROGRAMS.length);
 });
 
+// ─── Cosmos id legality (regression guard) ──────────────────────────────────
+
+// Cosmos DB rejects a document whose id contains any of: / \ ? #
+// (server-side "Id contains illegal chars."). The in-memory repo has no such
+// validation, so an illegal separator (we shipped "#v") passed every unit test
+// yet broke EVERY write against real Cosmos — silently disabling the catalog
+// (seed, getCurrent, listPublished) and 500-ing add-membership in production.
+// Assert every id the repo generates is Cosmos-legal so this can't regress.
+const COSMOS_ILLEGAL_ID_CHARS = ["/", "\\", "?", "#"];
+
+function assertLegalCosmosId(id: string): void {
+  for (const ch of COSMOS_ILLEGAL_ID_CHARS) {
+    assert.ok(!id.includes(ch), `Cosmos id '${id}' must not contain illegal char '${ch}'`);
+  }
+}
+
+test("seedIfEmpty generates Cosmos-legal ids for every static program", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+  await repo.seedIfEmpty(PROGRAMS.map(programToCatalogInput));
+
+  const published = await repo.listPublished();
+  assert.equal(published.length, PROGRAMS.length);
+  for (const entry of published) {
+    assertLegalCosmosId(entry.id);
+  }
+});
+
+test("upsertDraft and publish generate Cosmos-legal ids across versions", async () => {
+  resetCatalogRepo();
+  const repo = await getCatalogRepo();
+
+  await repo.upsertDraft(makeInput());
+  await repo.publish("test_program");
+  await repo.upsertDraft(makeInput({ name: "v2" }));
+  await repo.publish("test_program");
+
+  const history = await repo.getHistory("test_program");
+  assert.equal(history.length, 2);
+  for (const entry of history) {
+    assertLegalCosmosId(entry.id);
+  }
+});
+
 // ─── Field mapping: CatalogEntryDoc mirrors Program ─────────────────────────
 
 test("seeded entries preserve all Program fields (spot-check booking_genius)", async () => {
@@ -349,7 +393,7 @@ test("programToCatalogInput → catalogEntryToProgram round-trips all static pro
     const input = programToCatalogInput(original);
     const doc = {
       ...input,
-      id: `${input.programId}#v1`,
+      id: `${input.programId}-v1`,
       version: 1 as const,
       isCurrent: true,
       status: "published" as const,

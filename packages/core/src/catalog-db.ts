@@ -35,7 +35,8 @@ export function catalogEntryToProgram(entry: CatalogEntryDoc): Program {
 //
 // Versioning model:
 //   • Each document represents one immutable snapshot of a program entry.
-//   • document id = "{programId}#v{version}" (unique; enables point reads)
+//   • document id = "{programId}-v{version}" (unique; enables point reads)
+//     ("#" is illegal in a Cosmos id, so the separator is "-v")
 //   • partition key = programId (all versions co-located — no cross-partition queries)
 //   • Exactly one document per programId has isCurrent=true (the live entry).
 //   • Status lifecycle: draft → in-review → published; published → archived
@@ -84,7 +85,13 @@ export interface CatalogRepo {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function makeId(programId: string, version: number): string {
-  return `${programId}#v${version}`;
+  // NOTE: Cosmos DB forbids the characters / \ ? # in a document id. The id is
+  // opaque (never parsed back — only used as a point-read key), so the separator
+  // just has to be legal and stable. "-v" is URL- and Cosmos-safe and is
+  // unambiguous against the underscore-style programId slugs (e.g. booking_genius).
+  // Using "#" here silently broke every Cosmos write ("Id contains illegal
+  // chars.") while passing in the in-memory repo, which has no such validation.
+  return `${programId}-v${version}`;
 }
 
 function now(): string {
