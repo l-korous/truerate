@@ -24,7 +24,11 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const API = (process.env.API_URL || "").replace(/\/$/, "");
 const WEB = (process.env.WEB_URL || "").replace(/\/$/, "");
-const MCP = (process.env.MCP_URL || "").replace(/\/$/, "");
+// MCP base WITHOUT the /mcp endpoint path — we append `/mcp` ourselves below.
+// The Bicep `mcpUrl` output already ends in `/mcp`, so strip a trailing `/mcp`
+// (and any trailing slash) to stay idempotent whether the caller passes the
+// base or the full endpoint. (A doubled `.../mcp/mcp` returns 404.)
+const MCP = (process.env.MCP_URL || "").replace(/\/$/, "").replace(/\/mcp$/, "");
 if (!API || !WEB || !MCP) {
   console.error("FAIL: API_URL, WEB_URL and MCP_URL env vars are all required.");
   process.exit(2);
@@ -58,9 +62,33 @@ async function http(method, url, { token, body } = {}) {
   return { status: res.status, json, text };
 }
 
+/** Poll a URL until it returns the expected status (or time out). Container Apps
+ *  scale-to-zero + a fresh revision means the first requests after a deploy can
+ *  hit a cold/old replica; wait for readiness so the gate tests the new revision,
+ *  not a transient startup state. */
+async function waitReady(label, url, want, { tries = 30, delayMs = 4000 } = {}) {
+  for (let i = 1; i <= tries; i++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (res.status === want) { ok(`${label} ready (${res.status}) after ${i} attempt(s)`); return true; }
+      console.log(`  … ${label} not ready yet (got ${res.status}, attempt ${i}/${tries})`);
+    } catch (e) {
+      console.log(`  … ${label} unreachable yet (${e?.name ?? e}, attempt ${i}/${tries})`);
+    }
+    if (i < tries) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  bad(`${label} never became ready (${want}) after ${tries} attempts`);
+  return false;
+}
+
 async function main() {
   console.log(`Post-deploy smoke @ ${new Date().toISOString()}`);
   console.log(`  API=${API}\n  WEB=${WEB}\n  MCP=${MCP}/mcp`);
+
+  console.log("\n[0] Wait for the new revision to be ready");
+  const apiReady = await waitReady("api /health", `${API}/health`, 200);
+  await waitReady("web /api/health", `${WEB}/api/health`, 200);
+  if (!apiReady) { bad("api never came up — aborting smoke"); return; }
 
   console.log("\n[1] Health");
   const apiH = await http("GET", `${API}/health`);
