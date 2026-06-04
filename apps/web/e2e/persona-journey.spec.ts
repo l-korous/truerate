@@ -24,11 +24,12 @@ import { test, expect } from "@playwright/test";
 import { createPersonaFactory } from "@truerate/harness";
 import { runPersonaWebJourney } from "./web-driver.js";
 
-// Build the three representative personas once (factory is deterministic).
+// Build the four representative personas once (factory is deterministic).
 const factory = createPersonaFactory();
-// 5 personas → indices 0-4; we use 0 (CZ/OTA), 1 (DE/mixed), 4 (AT/hotel chain).
-const personas = factory.build(5, 0);
-const [persona0, persona1, , , persona4] = personas;
+// 6 personas → indices 0-5; we use 0 (CZ/OTA), 1 (DE/mixed), 4 (AT/hotel chain),
+// 5 (GB/financial-card mix: Hilton + Amex + Revolut).
+const personas = factory.build(6, 0);
+const [persona0, persona1, , , persona4, persona5] = personas;
 
 // ── persona-cz-0: OTA discount + availability conditions ─────────────────────
 
@@ -76,6 +77,38 @@ test("persona-at-4: Marriott Platinum + IHG Gold Elite — rich hotel perk set",
 
   const added = await runPersonaWebJourney(page, persona);
   expect(added.length).toBeGreaterThanOrEqual(1);
+});
+
+// ── persona-gb-5: Hilton Gold + Amex Platinum + Revolut Metal ────────────────
+//
+// This persona covers financial-card programs (Amex Platinum, Revolut Metal)
+// combined with a hotel-chain program (Hilton Honors Gold). None of these three
+// programs are tested through the web channel in any other persona journey:
+//   - Amex Platinum contributes free_breakfast / room_upgrade / late_check_out /
+//     spa_credit / lounge_access via Fine Hotels + Resorts — all with non-zero
+//     estimated USD values at 4★.
+//   - Hilton Honors Gold adds free_breakfast and room_upgrade on Hilton brands.
+//   - Revolut Metal perks are "other" (intangible, $0 at any star band).
+// The combined vault has the highest perk-value rollup of any tested persona,
+// exercising the value tab with a multi-program, multi-category membership set.
+
+test("persona-gb-5: Hilton Honors Gold + Amex Platinum + Revolut Metal — financial perks in web channel", async ({ page }) => {
+  const persona = persona5!;
+
+  // Hilton Gold includes free_breakfast (F&B credit at US hotels).
+  expect(persona.expectedPerks.some((ep) => ep.perkType === "free_breakfast")).toBe(true);
+
+  // Amex Platinum contributes lounge_access and spa_credit via Fine Hotels + Resorts —
+  // financial-card perks not present in any other web persona journey.
+  expect(
+    persona.expectedPerks.some(
+      (ep) => ep.perkType === "lounge_access" || ep.perkType === "spa_credit",
+    ),
+  ).toBe(true);
+
+  // All three programs are in the catalog; at least 2 must be added.
+  const added = await runPersonaWebJourney(page, persona);
+  expect(added.length).toBeGreaterThanOrEqual(2);
 });
 
 // ── Cross-persona: no prices on any tab for any persona ─────────────────────

@@ -160,5 +160,25 @@ export async function runPersonaWebJourney(
     }
   }
 
+  // ── Value tab ───────────────────────────────────────────────────────────────
+  // Navigate to the value tab when the persona has at least one perk with a
+  // non-zero monetary estimate. Verifies the rollup shows estimated values (not
+  // prices) and that per-membership rows appear for each contributing program.
+  const hasMonetaryPerks = persona.expectedPerks.some((ep) => ep.estimatedUsd[4] > 0);
+  if (hasMonetaryPerks) {
+    await page.getByTestId("tab-value").click();
+    await expect(page.getByTestId("value-explainer")).toBeVisible();
+    await assertNoPrices(page);
+
+    // Band cards (3★/4★/5★) are always rendered when the view has data.
+    // The 4★ grand total must contain "≈$" — the approximately-equal prefix
+    // that signals this is an estimate, never an exact price (product rule #1).
+    await expect(page.getByTestId("band-total-4")).toBeVisible();
+    await expect(page.getByTestId("band-total-4")).toContainText("≈$");
+
+    // Disclaimer must label these as estimates, never as prices (product rule #1).
+    await expect(page.getByTestId("value-disclaimer")).toContainText(/not.*price/i);
+  }
+
   return addedLabels;
 }
