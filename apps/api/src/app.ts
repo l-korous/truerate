@@ -156,6 +156,26 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 
+// Centralized error handler. Without this, an uncaught exception returns a bare
+// 500 with NO log line — which is exactly how a broken core action (e.g. a
+// Cosmos write rejection) can ship silently behind green health checks. Log the
+// full error (name/message/code/stack) so failures are diagnosable, and return
+// a clean JSON body carrying the correlation id for support.
+app.onError((err, c) => {
+  const log = c.get("logger") ?? createLogger({ route: new URL(c.req.url).pathname });
+  const anyErr = err as unknown as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
+  log.error("unhandled error", {
+    name: anyErr?.name,
+    message: anyErr?.message,
+    code: anyErr?.code,
+    statusCode: anyErr?.statusCode,
+    cosmosBody: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 500) : undefined,
+    stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
+  });
+  if (err instanceof HTTPException) return err.getResponse();
+  return c.json({ error: "internal_error", correlationId: c.get("correlationId") }, 500);
+});
+
 // Catalog with a plain-language summary of what each program/tier brings, so
 // the web UI can show "what you'll get" before the user commits.
 app.get("/programs", (c) =>
