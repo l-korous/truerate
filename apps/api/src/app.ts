@@ -36,6 +36,10 @@ import {
   PartnerWorkflowError,
   getAuditRepo,
   resetAuditRepo,
+  getFeatureFlagRepo,
+  resetFeatureFlagRepo,
+  getAppConfigRepo,
+  resetAppConfigRepo,
   type AuditAction,
   type AuditFilter,
   type CatalogCache,
@@ -98,6 +102,16 @@ async function getAppPartnerWorkflow() {
 /** Reset audit repo state — for tests only. */
 export function resetAppAudit(): void {
   resetAuditRepo();
+}
+
+/** Reset feature flag repo state — for tests only. */
+export function resetAppFlags(): void {
+  resetFeatureFlagRepo();
+}
+
+/** Reset app config repo state — for tests only. */
+export function resetAppConfig(): void {
+  resetAppConfigRepo();
 }
 
 /**
@@ -1338,6 +1352,256 @@ app.get("/admin/audit", async (c) => {
     : await audit.listRecent(limit);
 
   return c.json({ entries, count: entries.length });
+});
+
+// --- Feature flags (issue #78) -----------------------------------------------
+// Public read: GET /flags — returns all flags (consuming services poll this).
+// Admin CRUD: /admin/flags — gated by x-admin-secret, changes are audited.
+
+const FeatureFlagInputSchema = z.object({
+  key: z.string().min(1).regex(/^[a-z0-9._-]+$/, "key must be lowercase alphanumeric with dots, dashes, underscores"),
+  label: z.string().min(1),
+  enabled: z.boolean(),
+  description: z.string().optional(),
+  environment: z.string().optional(),
+});
+
+// GET /flags — public; returns all flags so consuming services can read them.
+app.get("/flags", async (c) => {
+  const repo = await getFeatureFlagRepo();
+  const flags = await repo.list();
+  return c.json({ flags, count: flags.length });
+});
+
+// GET /admin/flags — list all feature flags (admin only)
+app.get("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getFeatureFlagRepo();
+  const flags = await repo.list();
+  return c.json({ flags, count: flags.length });
+});
+
+// POST /admin/flags — create a feature flag
+app.post("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(FeatureFlagInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "conflict", message: `Flag '${parsed.key}' already exists` }, 409);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const flag = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.create" as AuditAction,
+    targetId: flag.key,
+    targetType: "flag",
+    after: { key: flag.key, enabled: flag.enabled },
+  });
+
+  return c.json({ flag }, 201);
+});
+
+// GET /admin/flags/:key — get a specific flag
+app.get("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getFeatureFlagRepo();
+  const flag = await repo.get(c.req.param("key"));
+  if (!flag) return c.json({ error: "not_found" }, 404);
+  return c.json({ flag });
+});
+
+// PUT /admin/flags/:key — update (or toggle) a feature flag
+app.put("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(FeatureFlagInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const key = c.req.param("key");
+  if (parsed.key !== key) return c.json({ error: "validation_failed", message: "key in body must match URL" }, 400);
+
+  const repo = await getFeatureFlagRepo();
+  const before = await repo.get(key);
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const flag = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.update" as AuditAction,
+    targetId: flag.key,
+    targetType: "flag",
+    before: { key: before.key, enabled: before.enabled },
+    after: { key: flag.key, enabled: flag.enabled },
+  });
+
+  return c.json({ flag });
+});
+
+// DELETE /admin/flags/:key — delete a feature flag
+app.delete("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const key = c.req.param("key");
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+
+  const actor = adminActor(c);
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.delete" as AuditAction,
+    targetId: key,
+    targetType: "flag",
+    before: { key: existing.key, enabled: existing.enabled },
+  });
+
+  return c.body(null, 204);
+});
+
+// --- App config (issue #78) --------------------------------------------------
+// Public read: GET /config — returns all config entries.
+// Admin CRUD: /admin/config — gated by x-admin-secret, changes are audited.
+// Secrets never flow through here — use Azure Key Vault / environment variables.
+
+const AppConfigInputSchema = z.object({
+  key: z.string().min(1).regex(/^[a-z0-9._-]+$/, "key must be lowercase alphanumeric with dots, dashes, underscores"),
+  label: z.string().min(1),
+  value: z.string(),
+  description: z.string().optional(),
+});
+
+// GET /config — public; returns all config so consuming services can read them.
+app.get("/config", async (c) => {
+  const repo = await getAppConfigRepo();
+  const config = await repo.list();
+  return c.json({ config, count: config.length });
+});
+
+// GET /admin/config — list all config entries (admin only)
+app.get("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getAppConfigRepo();
+  const config = await repo.list();
+  return c.json({ config, count: config.length });
+});
+
+// POST /admin/config — create a config entry
+app.post("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(AppConfigInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "conflict", message: `Config '${parsed.key}' already exists` }, 409);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const entry = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.create" as AuditAction,
+    targetId: entry.key,
+    targetType: "config",
+    after: { key: entry.key, value: entry.value },
+  });
+
+  return c.json({ config: entry }, 201);
+});
+
+// GET /admin/config/:key — get a specific config entry
+app.get("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getAppConfigRepo();
+  const entry = await repo.get(c.req.param("key"));
+  if (!entry) return c.json({ error: "not_found" }, 404);
+  return c.json({ config: entry });
+});
+
+// PUT /admin/config/:key — update a config entry
+app.put("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(AppConfigInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const key = c.req.param("key");
+  if (parsed.key !== key) return c.json({ error: "validation_failed", message: "key in body must match URL" }, 400);
+
+  const repo = await getAppConfigRepo();
+  const before = await repo.get(key);
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const entry = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.update" as AuditAction,
+    targetId: entry.key,
+    targetType: "config",
+    before: { key: before.key, value: before.value },
+    after: { key: entry.key, value: entry.value },
+  });
+
+  return c.json({ config: entry });
+});
+
+// DELETE /admin/config/:key — delete a config entry
+app.delete("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const key = c.req.param("key");
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+
+  const actor = adminActor(c);
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.delete" as AuditAction,
+    targetId: key,
+    targetType: "config",
+    before: { key: existing.key, value: existing.value },
+  });
+
+  return c.body(null, 204);
 });
 
 // --- Partner self-service portal (issue #129) --------------------------------
