@@ -1042,7 +1042,48 @@ const SubmissionRejectSchema = z.object({
   adminId: z.string().min(1).optional(),
 });
 
-// POST /admin/submissions/:id/approve — approve a submission (makes it available to catalog editor)
+// PUT /admin/submissions/:id — admin edit of a submission draft before approval
+app.put("/admin/submissions/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(z.object({ programDraft: z.record(z.unknown()) }), c);
+  if (parsed instanceof Response) return parsed;
+
+  // Guard: patch must not contain price fields (product rule #1)
+  const priceField = findPriceField(parsed.programDraft);
+  if (priceField) {
+    return c.json({ error: "price_field_not_allowed", field: priceField }, 400);
+  }
+
+  const actor = adminActor(c);
+  const workflow = await getAppPartnerWorkflow();
+  try {
+    const submission = await workflow.adminEdit(
+      c.req.param("id"),
+      parsed.programDraft as Parameters<typeof workflow.adminEdit>[1],
+    );
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.submission.edit",
+      targetId: submission.id,
+      targetType: "submission",
+      notes: "admin edited program draft",
+    });
+
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/submissions/:id/approve — approve a submission and publish to catalog (#10.4)
 app.post("/admin/submissions/:id/approve", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
@@ -1059,6 +1100,29 @@ app.post("/admin/submissions/:id/approve", async (c) => {
       parsed.adminId ?? actor,
     );
 
+    // Publish to catalog via the versioning path (#10.4) with partner-submission provenance.
+    const draft = submission.programDraft;
+    const catalogRepo = await getCatalogRepo();
+    await catalogRepo.upsertDraft({
+      programId: parsed.publishedProgramId,
+      provenance: {
+        source: "partner-submission",
+        sourceUrl: draft.sourceUrl,
+        asOf: new Date().toISOString().slice(0, 7),
+        submittedBy: submission.submittedByUserId,
+        notes: `Approved from submission ${submission.id}`,
+      },
+      region: draft.region,
+      name: draft.name,
+      category: draft.category,
+      defaultMatch: draft.defaultMatch ?? { brands: [draft.name] },
+      tiers: draft.tiers,
+      requiresCredential: draft.requiresCredential ?? false,
+      fields: draft.fields,
+      benefits: draft.benefits,
+    });
+    const catalogEntry = await catalogRepo.publish(parsed.publishedProgramId);
+
     const audit = await getAuditRepo();
     await audit.append({
       actor,
@@ -1069,7 +1133,7 @@ app.post("/admin/submissions/:id/approve", async (c) => {
       after: { status: submission.status, publishedProgramId: submission.publishedProgramId },
     });
 
-    return c.json({ submission });
+    return c.json({ submission, catalogEntry });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
       const status = err.code === "submission_not_found" ? 404 : 400;

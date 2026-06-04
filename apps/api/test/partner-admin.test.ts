@@ -27,8 +27,11 @@ async function getApp() {
 beforeEach(async () => {
   const { resetAppPartner } = await import("../src/app.js");
   const { resetPartnerWorkflow } = await import("@truerate/core");
+  const { apiLimiter } = await import("../src/rate-limit.js");
   resetAppPartner();
   resetPartnerWorkflow();
+  // Reset rate limiter so accumulated test requests don't cause 429s
+  apiLimiter.reset("ip:unknown");
 });
 
 const adminHeader = { "x-admin-secret": ADMIN_SECRET };
@@ -600,5 +603,199 @@ describe("submission reject", () => {
     assert.ok(!raw.includes("memberPrice"), "no memberPrice");
     assert.ok(!raw.includes("finalPrice"), "no finalPrice");
     assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount");
+  });
+});
+
+// ─── Approve publishes to catalog (#133) ─────────────────────────────────────
+
+describe("submission approve → catalog publish (#133)", () => {
+  test("approve publishes a catalog entry with partner-submission provenance", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-catalog-133", adminId: "admin-user-1" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.submission.status, "approved");
+
+    // catalogEntry must be present in the response
+    assert.ok(body.catalogEntry, "catalogEntry returned in response");
+    assert.equal(body.catalogEntry.programId, "partner-prog-catalog-133");
+    assert.equal(body.catalogEntry.status, "published");
+    assert.ok(body.catalogEntry.isCurrent, "catalogEntry is current");
+    assert.equal(body.catalogEntry.provenance.source, "partner-submission");
+    assert.equal(body.catalogEntry.name, sampleSubmission.programDraft.name);
+    assert.equal(body.catalogEntry.region, sampleSubmission.programDraft.region);
+  });
+
+  test("approve uses program name as defaultMatch brand when defaultMatch not supplied", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-default-match" }),
+    });
+    assert.equal(res.status, 200);
+    const { catalogEntry } = await res.json();
+    assert.deepEqual(catalogEntry.defaultMatch.brands, [sampleSubmission.programDraft.name]);
+  });
+
+  test("approve uses partner-supplied defaultMatch when present", async () => {
+    const app = await getApp();
+    const customDraft = { ...sampleSubmission.programDraft, defaultMatch: { brands: ["Custom Brand"] } };
+    const customSub = { ...sampleSubmission, id: "sub-custom-match", programDraft: customDraft };
+    const { getPartnerSubmissionRepo } = await import("@truerate/core");
+    const repo = await getPartnerSubmissionRepo();
+    await repo.create(customSub);
+
+    const res = await app.request(`/admin/submissions/${customSub.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-custom-match" }),
+    });
+    assert.equal(res.status, 200);
+    const { catalogEntry } = await res.json();
+    assert.deepEqual(catalogEntry.defaultMatch.brands, ["Custom Brand"]);
+  });
+
+  test("published catalog entry can be retrieved from catalog repo", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-retrieval-check" }),
+    });
+
+    // Verify via catalog admin GET
+    const catalogRes = await app.request("/admin/catalog/partner-prog-retrieval-check", {
+      headers: adminHeader,
+    });
+    assert.equal(catalogRes.status, 200);
+    const { entry } = await catalogRes.json();
+    assert.equal(entry.status, "published");
+    assert.equal(entry.provenance.source, "partner-submission");
+  });
+
+  test("approved catalog entry response contains no price fields", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-price-guard" }),
+    });
+    assert.equal(res.status, 200);
+    const raw = JSON.stringify(await res.json());
+    assert.ok(!raw.includes("memberPrice"), "no memberPrice in catalog entry");
+    assert.ok(!raw.includes("finalPrice"), "no finalPrice in catalog entry");
+    assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount in catalog entry");
+    assert.ok(!raw.includes("totalAmount"), "no totalAmount in catalog entry");
+  });
+});
+
+// ─── Admin edit submission (#133) ────────────────────────────────────────────
+
+describe("admin edit submission (#133)", () => {
+  test("PUT /admin/submissions/:id — 401 without admin secret", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...JSON_CT },
+      body: JSON.stringify({ programDraft: { name: "Edited Name" } }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test("PUT /admin/submissions/:id — 404 for unknown submission", async () => {
+    const app = await getApp();
+    const res = await app.request("/admin/submissions/does-not-exist", {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: { name: "Edited Name" } }),
+    });
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).error, "submission_not_found");
+  });
+
+  test("PUT /admin/submissions/:id — edits program draft name", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: { name: "Admin-Corrected Name" } }),
+    });
+    assert.equal(res.status, 200);
+    const { submission } = await res.json();
+    assert.equal(submission.programDraft.name, "Admin-Corrected Name");
+    // Other fields should be preserved (merged)
+    assert.equal(submission.programDraft.region, sampleSubmission.programDraft.region);
+  });
+
+  test("PUT /admin/submissions/:id — 400 when draft contains price field", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: { nightlyAmount: 99 } }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, "price_field_not_allowed");
+  });
+
+  test("PUT /admin/submissions/:id — 400 when submission is already approved", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    // Approve first
+    await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "prog-edit-guard" }),
+    });
+
+    // Now try to edit — should fail
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: { name: "Too Late" } }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, "invalid_transition");
+  });
+
+  test("admin edit then approve publishes the edited draft to catalog", async () => {
+    const app = await getApp();
+    await seedSubmission(app);
+
+    // Edit the name
+    await app.request(`/admin/submissions/${sampleSubmission.id}`, {
+      method: "PUT",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ programDraft: { name: "Edited Before Publish" } }),
+    });
+
+    // Approve
+    const res = await app.request(`/admin/submissions/${sampleSubmission.id}/approve`, {
+      method: "POST",
+      headers: { ...adminHeader, ...JSON_CT },
+      body: JSON.stringify({ publishedProgramId: "partner-prog-edit-then-approve" }),
+    });
+    assert.equal(res.status, 200);
+    const { catalogEntry } = await res.json();
+    assert.equal(catalogEntry.name, "Edited Before Publish");
   });
 });
