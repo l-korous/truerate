@@ -105,6 +105,11 @@
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelOneKeyExpediaActiveNote": {
+    "message": "Az Expedia One Key aktív ezen az oldalon. A TrueRate azt mutatja, amit egyéb tagságai ehhez hozzáadnak.",
+    "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
   "optionsTitle": {
     "message": "TrueRate beállítások",
     "description": "Options page title"
