@@ -22,6 +22,7 @@ export type AuditAction =
   | "admin.partner.approve"
   | "admin.partner.reject"
   // Admin: submissions
+  | "admin.submission.edit"
   | "admin.submission.approve"
   | "admin.submission.reject";
 
