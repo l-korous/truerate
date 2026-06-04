@@ -162,25 +162,32 @@ app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 // full error (name/message/code/stack) so failures are diagnosable, and return
 // a clean JSON body carrying the correlation id for support.
 app.onError((err, c) => {
-  const log = c.get("logger") ?? createLogger({ route: new URL(c.req.url).pathname });
-  const anyErr = err as unknown as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
-  log.error("unhandled error", {
-    name: anyErr?.name,
-    message: anyErr?.message,
-    code: anyErr?.code,
-    statusCode: anyErr?.statusCode,
-    cosmosBody: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 500) : undefined,
-    stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
-  });
-  const status = err instanceof HTTPException ? err.status : 500;
-  // TEMP DIAG: include the fault detail in the body so the prod 500 is visible
-  // without log access. Revert once the root cause is fixed.
-  return c.json({
-    error: "internal_error",
-    correlationId: c.get("correlationId"),
-    _diag: { name: anyErr?.name, message: anyErr?.message, code: anyErr?.code, statusCode: anyErr?.statusCode,
-             cosmos: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 400) : undefined },
-  }, status);
+  // onError must NEVER throw — if it does, @hono/node-server returns a bare
+  // text/plain 500 with no body, which is undiagnosable. Wrap everything.
+  try {
+    const log = c.get("logger") ?? createLogger({ service: "api" });
+    const anyErr = err as unknown as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
+    log.error("unhandled error", {
+      name: anyErr?.name,
+      message: anyErr?.message,
+      code: anyErr?.code,
+      statusCode: anyErr?.statusCode,
+      cosmosBody: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 500) : undefined,
+      stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
+    });
+    const status = err instanceof HTTPException ? err.status : 500;
+    // TEMP DIAG: include the fault detail in the body so the prod 500 is visible
+    // without log access. Revert once the root cause is fixed.
+    return c.json({
+      error: "internal_error",
+      correlationId: c.get("correlationId"),
+      _diag: { name: anyErr?.name, message: anyErr?.message, code: anyErr?.code, statusCode: anyErr?.statusCode,
+               cosmos: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 400) : undefined },
+    }, status);
+  } catch (onErrFail) {
+    try { (c.get("logger") ?? createLogger({ service: "api" })).error("onError itself failed", { detail: String(onErrFail), original: String((err as Error)?.message) }); } catch { /* give up */ }
+    return c.json({ error: "internal_error" }, 500);
+  }
 });
 
 // Catalog with a plain-language summary of what each program/tier brings, so
