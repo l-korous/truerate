@@ -105,6 +105,11 @@
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelMetasearchAggregationNote": {
+    "message": "Einige hier angezeigte Angebote könnten bereits den Mitgliederpreis eines Anbieters widerspiegeln. TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
+    "description": "Note shown on metasearch sites (e.g. Trivago) when member-rate DOM signals are detected"
+  },
+
   "optionsTitle": {
     "message": "TrueRate-Einstellungen",
     "description": "Options page title"

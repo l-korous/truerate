@@ -137,5 +137,10 @@
   "panelBonvoyActiveNote": {
     "message": "Marriott Bonvoy is active on this page. TrueRate shows what your memberships add on top.",
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelMetasearchAggregationNote": {
+    "message": "Some offers listed here may already reflect a provider's member rate. TrueRate shows what your memberships add on top.",
+    "description": "Note shown on metasearch sites (e.g. Trivago) when member-rate DOM signals are detected; reminds user that listed OTA offers may already incorporate loyalty discounts"
   }
 }

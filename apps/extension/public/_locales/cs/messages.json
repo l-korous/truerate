@@ -137,5 +137,10 @@
   "panelBonvoyActiveNote": {
     "message": "Na této stránce je aktivní Marriott Bonvoy. TrueRate zobrazuje, co vaše členství přidávají navíc.",
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelMetasearchAggregationNote": {
+    "message": "Některé nabídky zde mohou již odrážet členskou sazbu poskytovatele. TrueRate zobrazuje, co vaše členství přidávají navíc.",
+    "description": "Note shown on metasearch sites (e.g. Trivago) when member-rate DOM signals are detected"
   }
 }

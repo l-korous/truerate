@@ -136,5 +136,10 @@
   "optionsShowPanelLabel": {
     "message": "Pokaż panel korzyści na Booking.com",
     "description": "Toggle label for showing the benefits panel"
+  },
+
+  "panelMetasearchAggregationNote": {
+    "message": "Niektóre oferty wyświetlane tutaj mogą już odzwierciedlać cenę członkowską dostawcy. TrueRate pokazuje, co dodają Twoje członkostwa.",
+    "description": "Note shown on metasearch sites (e.g. Trivago) when member-rate DOM signals are detected"
   }
 }
