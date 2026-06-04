@@ -4,9 +4,7 @@ permissions: { id-token: write, contents: read }
 jobs:
   logs:
     runs-on: ubuntu-latest
-    env:
-      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
-      PREFIX: ${{ vars.AZURE_PREFIX || 'truerate' }}
+    env: { RG: ${{ vars.AZURE_RG || 'truerate-rg' }}, PREFIX: ${{ vars.AZURE_PREFIX || 'truerate' }} }
     steps:
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -14,13 +12,15 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Inspect api revision state
+      - name: Reproduce + query LA for crash-guard markers
         run: |
           set -uo pipefail
-          echo "=== ACTIVE running image ==="
-          az containerapp show -g "$RG" -n "${PREFIX}-api" --query "properties.template.containers[0].image" -o tsv 2>&1
-          echo "=== latest 5 revisions: name | active | running | health | imageTag | created ==="
-          az containerapp revision list -g "$RG" -n "${PREFIX}-api" -o json 2>&1 \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); rs=sorted(d,key=lambda r:r['properties'].get('createdTime',''),reverse=True)[:5]; [print(r['name'], r['properties'].get('active'), r['properties'].get('runningState'), r['properties'].get('healthState'), r['properties']['template']['containers'][0]['image'].split(':')[-1][:12], r['properties'].get('createdTime','')) for r in rs]" 2>&1
-          echo "=== traffic weights ==="
-          az containerapp ingress traffic show -g "$RG" -n "${PREFIX}-api" -o json 2>&1 | python3 -c "import sys,json;[print(t) for t in json.load(sys.stdin)]" 2>&1 || true
+          API="https://$(az containerapp show -g "$RG" -n "${PREFIX}-api" --query properties.configuration.ingress.fqdn -o tsv)"
+          TOKEN=$(curl -s -X POST "$API/auth/register" -H 'content-type: application/json' -d "{\"email\":\"diag-$(date +%s)@example.com\",\"password\":\"diag-pass-123\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          echo "add status: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/memberships" -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"programId":"booking_genius","tier":"Level 3"}')"
+          echo "waiting 115s for ingestion..."; sleep 115
+          WS=$(az monitor log-analytics workspace list -g "$RG" --query "[0].customerId" -o tsv)
+          echo "==================== ERROR/CRASH LOGS ===================="
+          az monitor log-analytics query --workspace "$WS" \
+            --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(15m) | where Log_s contains 'uncaughtException' or Log_s contains 'unhandledRejection' or Log_s contains 'unhandled error' or Log_s contains 'onError itself' or Log_s contains '\"level\":\"error\"' | project Log_s | take 8" \
+            -o json 2>&1 | python3 -c "import sys,json;d=json.load(sys.stdin);[print(r.get('Log_s','')) for r in d]" 2>&1 || echo "query failed"
