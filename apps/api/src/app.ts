@@ -172,8 +172,15 @@ app.onError((err, c) => {
     cosmosBody: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 500) : undefined,
     stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
   });
-  if (err instanceof HTTPException) return err.getResponse();
-  return c.json({ error: "internal_error", correlationId: c.get("correlationId") }, 500);
+  const status = err instanceof HTTPException ? err.status : 500;
+  // TEMP DIAG: include the fault detail in the body so the prod 500 is visible
+  // without log access. Revert once the root cause is fixed.
+  return c.json({
+    error: "internal_error",
+    correlationId: c.get("correlationId"),
+    _diag: { name: anyErr?.name, message: anyErr?.message, code: anyErr?.code, statusCode: anyErr?.statusCode,
+             cosmos: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 400) : undefined },
+  }, status);
 });
 
 // Catalog with a plain-language summary of what each program/tier brings, so
