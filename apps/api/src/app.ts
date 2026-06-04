@@ -64,26 +64,6 @@ type AppVariables = { userId: string; email: string; correlationId: string; logg
 export const app = new Hono<{ Variables: AppVariables }>();
 export const engine = new EnrichmentEngine();
 
-// TEMP DIAG: capture the last detached fatal (uncaughtException / unhandledRejection)
-// so /_debug/catalog can surface it. The catalog 500 bypasses onError AND returns
-// an empty text/plain body, which strongly implies a detached throw from the
-// Cosmos SDK / credential callback path (not an awaited rejection). Remove once
-// the root cause is fixed.
-function _serializeErr(e: unknown): Record<string, unknown> {
-  const a = e as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
-  return {
-    name: a?.name,
-    message: a?.message ?? String(e),
-    code: a?.code,
-    statusCode: a?.statusCode,
-    cosmos: typeof a?.body === "string" ? a.body.slice(0, 600) : a?.body ? JSON.stringify(a.body).slice(0, 600) : undefined,
-    stack: a?.stack?.split("\n").slice(0, 12),
-  };
-}
-const _lastFatal: { value: unknown } = { value: null };
-process.on("uncaughtException", (e) => { _lastFatal.value = { kind: "uncaughtException", ..._serializeErr(e) }; });
-process.on("unhandledRejection", (e) => { _lastFatal.value = { kind: "unhandledRejection", ..._serializeErr(e) }; });
-
 // Catalog cache singleton — seeded from the static PROGRAMS catalog on first
 // use (idempotent via seedIfEmpty). Shared across all requests in this process.
 let _catalogCache: CatalogCache | null = null;
@@ -176,57 +156,6 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
 
-// TEMP DEBUG: run the exact catalog vs custom save path in a controlled
-// try/catch and return the full error. Remove once the 500 is fixed.
-app.get("/_debug/save", async (c) => {
-  const { getUserRepo } = await import("@truerate/core");
-  const repo = await getUserRepo();
-  const out: Record<string, unknown> = {};
-  for (const kind of ["catalog", "custom"]) {
-    const uid = uuid();
-    try {
-      await repo.create({ id: uid, email: `${uid}@dbg.invalid`, passwordHash: "h", memberships: [], createdAt: new Date().toISOString() } as unknown as User);
-      const read = await repo.getById(uid);
-      if (!read) { out[kind] = "read-null"; continue; }
-      if (kind === "catalog") {
-        const program = getProgram("booking_genius")!;
-        read.memberships.push({ id: uuid(), label: "dbg", programId: "booking_genius", tier: "Level 3", attributes: {}, benefits: instantiateBenefits(program, "Level 3"), addedAt: new Date().toISOString(), status: "active" } as Membership);
-      } else {
-        read.memberships.push({ id: uuid(), label: "dbg", attributes: {}, benefits: [{ id: uuid(), scope: "brand", match: { brands: ["Marriott"] }, value: { kind: "perk", perks: ["Free breakfast"] }, source: "user-declared" }], addedAt: new Date().toISOString(), status: "active" } as Membership);
-      }
-      await repo.update(read);
-      out[kind] = "OK";
-    } catch (e) {
-      const ae = e as { name?: string; code?: unknown; statusCode?: unknown; message?: string; body?: unknown; stack?: string };
-      out[kind] = { name: ae?.name, code: ae?.code, statusCode: ae?.statusCode, message: ae?.message, body: typeof ae?.body === "string" ? ae.body.slice(0, 800) : JSON.stringify(ae?.body)?.slice(0, 800), stack: ae?.stack?.split("\n").slice(0, 8) };
-    }
-  }
-  return c.json(out);
-});
-
-// TEMP DIAG: exercise each catalog op independently to pinpoint the 500 that
-// breaks add-membership + the catalog read routes. Captures awaited rejections
-// (per-op) AND detached throws (lastFatal). Remove once fixed.
-app.get("/_debug/catalog", async (c) => {
-  _lastFatal.value = null;
-  const out: Record<string, unknown> = {};
-  try {
-    const repo = await getCatalogRepo();
-    out.repo = "OK";
-    try { const cur = await repo.getCurrent("booking_genius"); out.getCurrent = cur ? `OK:${cur.programId}/${cur.status}` : "null"; }
-    catch (e) { out.getCurrent = _serializeErr(e); }
-    try { const list = await repo.listPublished(); out.listPublished = `OK:${list.length}`; }
-    catch (e) { out.listPublished = _serializeErr(e); }
-    try { const r = await repo.seedIfEmpty(PROGRAMS.map(programToCatalogInput)); out.seed = `OK:${JSON.stringify(r)}`; }
-    catch (e) { out.seed = _serializeErr(e); }
-  } catch (e) { out.repo = _serializeErr(e); }
-  try { const cache = await getAppCatalogCache(); const e = await cache.getCurrent("booking_genius"); out.appCache = e ? `OK:${e.programId}` : "null"; }
-  catch (e) { out.appCache = _serializeErr(e); }
-  await new Promise((r) => setTimeout(r, 300)); // let any detached rejection surface
-  out.lastFatal = _lastFatal.value;
-  return c.json(out);
-});
-
 // Centralized error handler. Without this, an uncaught exception returns a bare
 // 500 with NO log line — which is exactly how a broken core action (e.g. a
 // Cosmos write rejection) can ship silently behind green health checks. Log the
@@ -247,14 +176,10 @@ app.onError((err, c) => {
       stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
     });
     const status = err instanceof HTTPException ? err.status : 500;
-    // TEMP DIAG: include the fault detail in the body so the prod 500 is visible
-    // without log access. Revert once the root cause is fixed.
-    return c.json({
-      error: "internal_error",
-      correlationId: c.get("correlationId"),
-      _diag: { name: anyErr?.name, message: anyErr?.message, code: anyErr?.code, statusCode: anyErr?.statusCode,
-               cosmos: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 400) : undefined },
-    }, status);
+    // Return a clean body carrying only the correlation id — the full fault
+    // (name/message/code/Cosmos body/stack) is in the log line above, keyed by
+    // the same correlation id. Never leak internal error detail to clients.
+    return c.json({ error: "internal_error", correlationId: c.get("correlationId") }, status);
   } catch (onErrFail) {
     try { (c.get("logger") ?? createLogger({ service: "api" })).error("onError itself failed", { detail: String(onErrFail), original: String((err as Error)?.message) }); } catch { /* give up */ }
     return c.json({ error: "internal_error" }, 500);

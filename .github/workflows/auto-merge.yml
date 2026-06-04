@@ -124,6 +124,9 @@ jobs:
             body=$(gh pr view "$num" --repo "$REPO" --json body --jq '.body // ""')
             if gh pr merge "$num" --repo "$REPO" --squash --delete-branch; then
               echo "#$num: merged."
+              # Mark that main changed so we dispatch Deploy once after the sweep
+              # (the merge loop runs in a pipe subshell, so a counter wouldn't survive).
+              : > "${RUNNER_TEMP:-/tmp}/deploy_needed"
               # A GITHUB_TOKEN squash-merge does NOT run keyword auto-close, so an
               # issue referenced by "Closes #N" stays open and the backlog runner
               # re-picks already-done work. Close those issues explicitly.
@@ -142,3 +145,13 @@ jobs:
               echo "#$num: merge call failed — will retry next sweep."
             fi
           done
+
+          # CRITICAL: a GITHUB_TOKEN squash-merge pushes to main but does NOT
+          # trigger deploy.yml's push event (recursion guard), so auto-merged
+          # work never reaches production. Dispatch Deploy once per sweep if
+          # anything merged.
+          if [ -f "${RUNNER_TEMP:-/tmp}/deploy_needed" ]; then
+            echo "Merges landed on main — dispatching Deploy (Azure)."
+            gh workflow run "Deploy (Azure)" --repo "$REPO" 2>&1 || echo "could not dispatch Deploy."
+            rm -f "${RUNNER_TEMP:-/tmp}/deploy_needed"
+          fi
