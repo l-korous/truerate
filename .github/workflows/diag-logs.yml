@@ -1,0 +1,40 @@
+name: Diag logs (temporary)
+
+# TEMPORARY diagnostics: pulls recent console logs from the api Container App
+# to capture the stack trace behind the POST /memberships 500. Remove after use.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    env:
+      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
+      PREFIX: ${{ vars.AZURE_PREFIX || 'truerate' }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Trigger a fresh 500 then dump api logs
+        run: |
+          set -uo pipefail
+          API=$(az containerapp show -g "$RG" -n "${PREFIX}-api" --query properties.configuration.ingress.fqdn -o tsv)
+          API="https://$API"
+          echo "==> Reproducing the 500 against $API"
+          TOKEN=$(curl -s -X POST "$API/auth/register" -H 'content-type: application/json' \
+            -d "{\"email\":\"diag-$(date +%s)@example.com\",\"password\":\"diag-pass-123\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          echo "add-membership status: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/memberships" \
+            -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+            -d '{"programId":"booking_genius","tier":"Level 3"}')"
+          sleep 8
+          echo "==================== API CONSOLE LOGS (tail 120) ===================="
+          az containerapp logs show -g "$RG" -n "${PREFIX}-api" --type console --tail 120 2>&1 || \
+            az containerapp logs show -g "$RG" -n "${PREFIX}-api" --tail 120 2>&1 || echo "logs show failed"
