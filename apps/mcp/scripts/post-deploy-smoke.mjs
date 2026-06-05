@@ -98,6 +98,16 @@ async function main() {
   const mcpNoAuth = await http("POST", `${MCP}/mcp`, { body: {} });
   assert(mcpNoAuth.status === 401, `mcp rejects no-token with 401 (got ${mcpNoAuth.status})`);
 
+  // CORS: a real browser blocks every UI→API call unless the API echoes
+  // Access-Control-Allow-Origin for the web's origin. The rest of this smoke is
+  // server-to-server (no CORS enforced), so without this explicit check a
+  // misconfigured allowlist ships green while the actual web app is dead in the
+  // browser (register/login/add-membership all silently fail). Assert the API
+  // grants the web origin.
+  const corsRes = await fetch(`${API}/health`, { headers: { Origin: WEB }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const acao = corsRes?.headers.get("access-control-allow-origin");
+  assert(acao === WEB, `API grants CORS to the web origin (Access-Control-Allow-Origin=${acao ?? "MISSING"} expected ${WEB})`);
+
   console.log("\n[2] Register");
   const email = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@truerate-smoke.invalid`;
   const reg = await http("POST", `${API}/auth/register`, { body: { email, password: "smoke-pass-12345" } });
