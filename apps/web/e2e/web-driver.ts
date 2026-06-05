@@ -135,10 +135,13 @@ export async function runPersonaWebJourney(
     // At least one inventory item must be visible.
     await expect(page.getByTestId("inventory-item").first()).toBeVisible();
 
-    // Every expected perk label must appear in an inventory item.
+    // Every expected perk label must appear in at least one inventory item.
+    // .first() avoids strict-mode failure when one label is a substring of
+    // another (e.g. "Room upgrade when available" ⊂ "Priority room upgrade
+    // when available" — both can appear when two programs both carry room_upgrade).
     for (const ep of persona.expectedPerks) {
       await expect(
-        page.getByTestId("inventory-item").filter({ hasText: ep.label }),
+        page.getByTestId("inventory-item").filter({ hasText: ep.label }).first(),
       ).toBeVisible();
     }
 
