@@ -56,7 +56,7 @@ import {
   type PartnerRole,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
-import { rateLimitMiddleware } from "./rate-limit.js";
+import { rateLimitMiddleware, signupRateLimit } from "./rate-limit.js";
 import { createEmailSender } from "./email.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
@@ -340,7 +340,7 @@ const LoginSchema = z.object({
   password: z.string().min(1, "password required"),
 });
 
-app.post("/auth/register", async (c) => {
+app.post("/auth/register", signupRateLimit, async (c) => {
   const parsed = await parseBody(RegisterSchema, c);
   if (parsed instanceof Response) return parsed;
   const { email, password, market } = parsed;
