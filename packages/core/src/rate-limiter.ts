@@ -43,9 +43,30 @@ export class RateLimiter {
     };
   }
 
+  /**
+   * Check whether a request WOULD be allowed, WITHOUT recording it.
+   * Use when composing several limiters so a request denied by one window
+   * doesn't consume a slot in another (consume only after all windows pass).
+   */
+  peek(key: string): RateLimitResult {
+    const now = Date.now();
+    const cutoff = now - this.config.windowMs;
+    const active = (this.windows.get(key) ?? []).filter((t) => t > cutoff);
+    return {
+      allowed: active.length < this.config.max,
+      remaining: Math.max(0, this.config.max - active.length),
+      resetMs: active.length ? active[0]! + this.config.windowMs : now,
+    };
+  }
+
   /** Remove all state for a key (useful in tests). */
   reset(key: string): void {
     this.windows.delete(key);
+  }
+
+  /** Clear ALL keys (useful in tests). */
+  clear(): void {
+    this.windows.clear();
   }
 }
 
