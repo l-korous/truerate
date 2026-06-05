@@ -12,10 +12,16 @@
  *     + structured perks with bookingChannel/subjectToAvailability conditions.
  *   - persona-de-1 (Booking.com Genius L1 + Marriott Bonvoy Gold): mixed OTA +
  *     hotel-chain; Marriott Gold perks include room upgrade and late check-out.
+ *   - persona-cz-2 (Accor ALL Gold + Emblem Prague): Czech hotel-chain programs;
+ *     lounge_access, spa_credit, dual room_upgrade from distinct memberships.
  *   - persona-at-4 (Marriott Bonvoy Platinum + IHG One Rewards Gold Elite): rich
  *     hotel perk set — free breakfast, lounge access, suite upgrade.
+ *   - persona-gb-5 (Hilton Gold + Amex Platinum + Revolut Metal): financial-card
+ *     + hotel-chain mix with high value-tab rollup.
+ *   - persona-hu-7 (IHG Platinum Elite + Revolut Ultra): top-tier IHG perks
+ *     (guaranteed_availability) + Revolut Ultra lounge access.
  *
- * All three personas are built from real programs.ts data via the factory; the
+ * All personas are built from real programs.ts data via the factory; the
  * driver re-derives the same expectedPerks from the same source and verifies
  * the UI surfaces them correctly.
  */
@@ -24,12 +30,12 @@ import { test, expect } from "@playwright/test";
 import { createPersonaFactory } from "@truerate/harness";
 import { runPersonaWebJourney } from "./web-driver.js";
 
-// Build the four representative personas once (factory is deterministic).
+// Build all eight representative personas once (factory is deterministic).
 const factory = createPersonaFactory();
-// 6 personas → indices 0-5; we use 0 (CZ/OTA), 1 (DE/mixed), 4 (AT/hotel chain),
-// 5 (GB/financial-card mix: Hilton + Amex + Revolut).
-const personas = factory.build(6, 0);
-const [persona0, persona1, , , persona4, persona5] = personas;
+// 8 personas → indices 0-7; we use 0 (CZ/OTA), 1 (DE/mixed), 2 (CZ/hotel-chain),
+// 4 (AT/hotel chain), 5 (GB/financial-card mix), 7 (HU/IHG+Revolut Ultra).
+const personas = factory.build(8, 0);
+const [persona0, persona1, persona2, , persona4, persona5, , persona7] = personas;
 
 // ── persona-cz-0: OTA discount + availability conditions ─────────────────────
 
@@ -109,6 +115,58 @@ test("persona-gb-5: Hilton Honors Gold + Amex Platinum + Revolut Metal — finan
   // All three programs are in the catalog; at least 2 must be added.
   const added = await runPersonaWebJourney(page, persona);
   expect(added.length).toBeGreaterThanOrEqual(2);
+});
+
+// ── persona-cz-2: Accor ALL Gold + Emblem Prague — hotel-chain perks ─────────
+//
+// Covers the Czech market's hotel-chain-only programs:
+//   - Accor ALL Gold: lounge_access, room_upgrade (subjectToAvailability),
+//     welcome_amenity — none tested in any other web persona journey.
+//   - Emblem Prague: boutique-hotel direct programme — spa_credit, early_check_in,
+//     late_check_out, and a second room_upgrade (subjectToAvailability+direct).
+// Both programs carry room_upgrade under distinct membership labels, exercising
+// the perk-inventory dedup-by-membership logic (two separate entries expected).
+
+test("persona-cz-2: Accor ALL Gold + Emblem Prague — hotel-chain perks and spa credit", async ({ page }) => {
+  const persona = persona2!;
+
+  // Accor ALL Gold brings lounge_access — first web journey to cover this program.
+  expect(persona.expectedPerks.some((ep) => ep.perkType === "lounge_access")).toBe(true);
+
+  // Emblem Prague brings spa_credit — boutique direct programme perk.
+  expect(persona.expectedPerks.some((ep) => ep.perkType === "spa_credit")).toBe(true);
+
+  // Both programs carry room_upgrade under different labels — both must appear.
+  const roomUpgrades = persona.expectedPerks.filter((ep) => ep.perkType === "room_upgrade");
+  expect(roomUpgrades.length).toBeGreaterThanOrEqual(2);
+
+  const added = await runPersonaWebJourney(page, persona);
+  expect(added.length).toBeGreaterThanOrEqual(1);
+});
+
+// ── persona-hu-7: IHG Platinum Elite + Revolut Ultra — top-tier IHG perks ───
+//
+// Covers the highest non-Diamond IHG tier and the top Revolut card:
+//   - IHG Platinum Elite: guaranteed_availability (unique to this tier — absent
+//     in Gold Elite tested via persona-at-4), room_upgrade, welcome_amenity.
+//   - Revolut Ultra: lounge_access ("Unlimited worldwide airport lounge access")
+//     distinct from Revolut Metal (intangible-only) tested via persona-gb-5.
+// IHG Platinum perks have non-zero 4★ estimates, exercising the value tab.
+
+test("persona-hu-7: IHG Platinum Elite + Revolut Ultra — top-tier IHG perks and financial card", async ({ page }) => {
+  const persona = persona7!;
+
+  // IHG Platinum Elite guaranteed_availability — unique to Platinum tier,
+  // not present in Gold Elite (persona-at-4) or any other web persona journey.
+  expect(
+    persona.expectedPerks.some((ep) => ep.perkType === "guaranteed_availability"),
+  ).toBe(true);
+
+  // Revolut Ultra brings lounge_access (unlimited worldwide airport access).
+  expect(persona.expectedPerks.some((ep) => ep.perkType === "lounge_access")).toBe(true);
+
+  const added = await runPersonaWebJourney(page, persona);
+  expect(added.length).toBeGreaterThanOrEqual(1);
 });
 
 // ── Cross-persona: no prices on any tab for any persona ─────────────────────
