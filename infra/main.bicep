@@ -268,6 +268,13 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             // Base URL of the MCP service, used to build each user's personal
             // MCP URL (https://<mcp>/u/<token>/mcp) — see issue #82.
             { name: 'MCP_PUBLIC_URL', value: 'https://${mcp.properties.configuration.ingress.fqdn}' }
+            // CORS: the browser blocks the web app's API calls unless the API
+            // echoes Access-Control-Allow-Origin for the web's origin. Without
+            // this the deployed API defaulted to localhost only, so every UI
+            // request (register, login, add-membership) silently failed in the
+            // browser even though the server returned 200. The web FQDN is
+            // stable per app name; web has no bicep dep on api, so this is acyclic.
+            { name: 'CORS_ALLOWED_ORIGINS', value: 'https://${web.properties.configuration.ingress.fqdn}' }
           ])
           probes: [
             {
