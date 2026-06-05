@@ -1,11 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Boots the API (in-memory, no Azure) and the Next dev server, then runs the
-// end-to-end journey against them. Run from the web package:
+// Boots the API (in-memory, no Azure), the MCP server, and the Next dev server,
+// then runs the end-to-end journey against them. Run from the web package:
 //   pnpm --filter @truerate/web test:e2e
 // Commands cd to the repo root because Playwright runs them from this package.
 
 const API_PORT = 8787;
+const MCP_PORT = 8788;
 const WEB_PORT = 3000;
 
 export default defineConfig({
@@ -24,7 +25,12 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
-      command: "pnpm --filter @truerate/api exec node --import tsx src/index.ts",
+      // Combined API+MCP server in one Node.js process so they share the same
+      // MemoryUserRepo singleton when TRUERATE_INMEMORY=true. This enables the
+      // web-to-MCP cross-channel journey test (web-to-mcp-journey.spec.ts):
+      // memberships added via the web UI appear in MCP results accessed via the
+      // URL issued from the MCP tab — because both servers see one in-memory repo.
+      command: "pnpm --filter @truerate/web exec node --import tsx e2e/combined-server.js",
       // Use the /health URL rather than port so Playwright waits until the API
       // is actually serving HTTP, not just that the TCP port is bound.
       url: `http://localhost:${API_PORT}/health`,
@@ -35,6 +41,10 @@ export default defineConfig({
         TRUERATE_JWT_SECRET: "e2e-secret",
         TRUERATE_CRED_KEY: "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMTIzNDU2Nzg=",
         API_PORT: String(API_PORT),
+        MCP_PORT: String(MCP_PORT),
+        // MCP_PUBLIC_URL defaults to http://localhost:8788 in the API when unset,
+        // but we set it explicitly so the URL shown to the user is predictable.
+        MCP_PUBLIC_URL: `http://localhost:${MCP_PORT}`,
       },
     },
     {

@@ -16,6 +16,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
     "@truerate/harness": "workspace:*",
     "@playwright/test": "^1.47.2",
     "@types/node": "^20.16.10",
