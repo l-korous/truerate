@@ -64,7 +64,10 @@ export function createRequestListener(): (
   res: ServerResponse,
 ) => Promise<void> {
   return async (req, res) => {
-    const path = (req.url ?? "").split("?")[0] ?? "";
+    // Error boundary: a single failed request returns 500 instead of becoming an
+    // unhandled rejection that crashes — and crash-loops — the whole container.
+    try {
+      const path = (req.url ?? "").split("?")[0] ?? "";
 
     if (req.method === "GET" && path === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -134,5 +137,18 @@ export function createRequestListener(): (
     res.setHeader("x-correlation-id", correlationId);
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
+    } catch (err) {
+      log.error("mcp request handler failed", { error: String(err) });
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "internal_error" }));
+      } else {
+        try {
+          res.end();
+        } catch {
+          /* response already closing */
+        }
+      }
+    }
   };
 }
