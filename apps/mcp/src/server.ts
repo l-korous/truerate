@@ -39,6 +39,8 @@ export interface McpBenefitResult {
     perks: string[];
     structuredPerks: StructuredPerk[];
     conditions?: string;
+    /** Direct-booking ("realization") URL where the benefit is redeemed — never a price. */
+    realizationUrl?: string;
     /**
      * Staleness level for the catalog entry behind this benefit.
      * "high"/"medium" = fresh; "low" = getting old; "stale" = past TTL.
@@ -80,6 +82,7 @@ export function buildBenefitResult(
       perks: m.benefit.value.perks ?? [],
       structuredPerks,
       conditions: m.benefit.value.conditions,
+      realizationUrl: m.benefit.value.realizationUrl,
       termsConfidenceLevel: m.confidence?.level,
     };
     if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
@@ -162,6 +165,7 @@ export function formatBenefitResult(r: McpBenefitResult): string {
         lines.push(`  discount: ${pct}${cond ? ` (${cond})` : ""}`);
       }
       if (item.perks.length) lines.push(`  perks: ${item.perks.join(", ")}`);
+      if (item.realizationUrl) lines.push(`  book direct: ${item.realizationUrl}`);
     }
   }
 
