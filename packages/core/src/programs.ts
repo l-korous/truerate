@@ -704,6 +704,72 @@ export const PROGRAMS: Program[] = [
       ],
     },
   },
+
+  // ── Czech hotels — direct booking (seed; precursor to the crawler #99) ─────
+  {
+    id: "orea_hotels",
+    name: "OREA Hotels & Resorts",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.orea.cz/en",
+    // Direct-booking benefits (no public loyalty club): free parking and free
+    // stay for children under 6 at selected hotels when booking on orea.cz.
+    // No headline % is advertised → modelled as perks (never a price).
+    realizationUrl: "https://www.orea.cz/en/hotels-apartments",
+    defaultMatch: { brands: ["OREA", "OREA Hotels", "OREA Resort"], domains: ["orea.cz"], categories: ["hotel"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free parking at selected hotels", "Free stay for children under 6"],
+            structuredPerks: [
+              { type: "parking", label: "Free parking at selected hotels", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+              { type: "other", label: "Free stay for children under 6", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "book direct at orea.cz; selected hotels",
+            realizationUrl: "https://www.orea.cz/en/hotels-apartments",
+          },
+        },
+      ],
+    },
+  },
+
+  {
+    id: "cpi_hotels",
+    name: "CPI Hotels (Clarion, Spa & Wellness Nature Resorts)",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.cpihotels.com/rewards-program",
+    // CPI Hotels rewards program: members earn points and unlock perks on direct
+    // bookings. No headline % advertised → modelled as a points/perk benefit
+    // (never a price). Covers Clarion, Spa & Wellness Nature Resorts, etc.
+    realizationUrl: "https://www.cpihotels.com/reservation",
+    defaultMatch: { brands: ["CPI Hotels", "Clarion", "Clarion Congress", "Spa & Wellness Nature Resorts", "Buddha-Bar Hotel"], domains: ["cpihotels.com"], categories: ["hotel"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Loyalty points on direct bookings", "Member perks"],
+            structuredPerks: [
+              { type: "points_bonus", label: "Loyalty points on direct bookings", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "join CPI Hotels rewards; book direct at cpihotels.com",
+            realizationUrl: "https://www.cpihotels.com/reservation",
+          },
+        },
+      ],
+    },
+  },
 ];
 
 const BY_ID = new Map(PROGRAMS.map((p) => [p.id, p]));
