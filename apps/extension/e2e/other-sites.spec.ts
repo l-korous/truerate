@@ -643,3 +643,145 @@ test.describe("Expedia.com — expedia.content.ts", () => {
     }
   });
 });
+
+// ── Trivago HTML pages ─────────────────────────────────────────────────────────
+
+// Trivago — search results page (pathname /en-US/srl/...)
+const TRIVAGO_SEARCH_HTML = `<!DOCTYPE html><html lang="en">
+<head><title>Hotels in Prague | trivago</title></head>
+<body><h1>Search results</h1><p>Showing hotels in Prague.</p></body>
+</html>`;
+
+// Trivago — hotel detail page (pathname /en-US/odr/...)
+// [data-testid="item-name"] is the primary selector for extractTrivagoHotelName().
+const TRIVAGO_HOTEL_HTML = `<!DOCTYPE html><html lang="en">
+<head>
+  <title>Marriott Prague | trivago</title>
+  <meta property="og:title" content="Marriott Prague, Prague | trivago">
+</head>
+<body>
+  <h1 data-testid="item-name">Marriott Prague</h1>
+  <p>5-star hotel · City Centre</p>
+</body>
+</html>`;
+
+// Trivago — hotel detail page as a metasearch: partner booking links are present.
+// The metasearch note must always render because Trivago is inherently a
+// price aggregator (detectTrivagoMetasearchActive always returns true).
+const TRIVAGO_METASEARCH_HOTEL_HTML = `<!DOCTYPE html><html lang="en">
+<head>
+  <title>Marriott Prague | trivago</title>
+  <meta property="og:title" content="Marriott Prague, Prague | trivago">
+</head>
+<body>
+  <h1 data-testid="item-name">Marriott Prague</h1>
+  <a href="https://www.booking.com/hotel/cz/marriott-prague.html" class="deal-link">Book on Booking.com</a>
+  <p>5-star hotel · City Centre</p>
+</body>
+</html>`;
+
+type MockTrivagoPage = "search" | "hotel" | "metasearch-hotel";
+
+function htmlForTrivago(page: MockTrivagoPage): string {
+  if (page === "metasearch-hotel") return TRIVAGO_METASEARCH_HOTEL_HTML;
+  if (page === "hotel") return TRIVAGO_HOTEL_HTML;
+  return TRIVAGO_SEARCH_HTML;
+}
+
+function urlForTrivago(page: MockTrivagoPage): string {
+  if (page === "search") return "https://www.trivago.com/en-US/srl/hotel?search%5Bdestination_name%5D=Prague";
+  return "https://www.trivago.com/en-US/odr/hotel/marriott-prague";
+}
+
+async function makeTrivagoContext(page: MockTrivagoPage): Promise<BrowserContext> {
+  const ctx = await chromium.launchPersistentContext("", {
+    headless: false,
+    args: [
+      "--headless=new",
+      "--no-sandbox",
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+    ],
+  });
+  await ctx.route(/trivago\.com/, (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: htmlForTrivago(page) }),
+  );
+  return ctx;
+}
+
+// =============================================================================
+// Trivago.com tests
+// =============================================================================
+
+test.describe("Trivago.com — trivago.content.ts", () => {
+  test("panel attaches on Trivago search results page when signed out", async () => {
+    const ctx = await makeTrivagoContext("search");
+    try {
+      const page = await ctx.newPage();
+      await page.goto(urlForTrivago("search"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+      // Signed out → sign-in prompt, never a price.
+      expect(html).toContain("Sign in");
+      assertNoPriceViolations(html, "Trivago search (signed out)");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("panel resolves on Trivago hotel detail page when signed in — no price (product rule #1)", async () => {
+    const ctx = await makeTrivagoContext("hotel");
+    try {
+      const token = await registerUser();
+      await addMembership(token, "booking_genius", "Level 3");
+      await injectToken(ctx, token);
+
+      const page = await ctx.newPage();
+      await page.goto(urlForTrivago("hotel"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+
+      // Panel must reach a resolved state (close button present, not stuck loading).
+      expect(html).toContain("tr-close");
+
+      assertNoPriceViolations(html, "Trivago detail (signed in)");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("metasearch note always renders on Trivago and never implies a discount is already applied", async () => {
+    // detectTrivagoMetasearchActive() always returns true because Trivago is
+    // always a metasearch aggregator. The panel must always show the metasearch
+    // note so users are not misled about whether OTA loyalty discounts are baked
+    // into listed prices (product rule #1 / issue #1).
+    const ctx = await makeTrivagoContext("metasearch-hotel");
+    try {
+      const token = await registerUser();
+      await addMembership(token, "booking_genius", "Level 3");
+      await injectToken(ctx, token);
+
+      const page = await ctx.newPage();
+      await page.goto(urlForTrivago("metasearch-hotel"));
+      await waitForPanelReady(page);
+
+      const html = await panelHtml(page);
+      expect(html).toContain("TrueRate");
+
+      // Metasearch-awareness note must be present.
+      expect(html).toContain("tr-trivago-metasearch-note");
+
+      // The note must never imply TrueRate applied or computed a final price.
+      expect(html).not.toMatch(/already\s+applied/i);
+      expect(html).not.toMatch(/trivago\s+price/i);
+      expect(html).not.toMatch(/trivago\s+rate/i);
+      assertNoPriceViolations(html, "Trivago detail (metasearch note)");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
