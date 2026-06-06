@@ -26,6 +26,24 @@ export function worstStalenessLevel(matches: MatchedBenefit[]): "stale" | "low" 
 }
 
 /**
+ * Render a "book direct" CTA anchor for a benefit with a realization URL.
+ *
+ * When pct is provided (0-1, e.g. 0.15 == 15%) the label reads
+ * "members save X% — book direct →", communicating the discount without ever
+ * stating a price. When pct is absent the label is just "book direct →".
+ *
+ * The URL is HTML-escaped to prevent XSS. The link opens in a new tab and
+ * carries rel="noopener noreferrer". Never computes or implies a final price.
+ */
+export function bookDirectLink(url: string, pct?: number): string {
+  const label =
+    pct !== undefined
+      ? `members save ${Math.round(pct * 100)}% — book direct →`
+      : "book direct →";
+  return `<a class="tr-book-direct" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
+/**
  * Render a single perk estimate row as an HTML string.
  *
  * Shows the perk label, estimated USD value across 3★/4★/5★ hotel bands,

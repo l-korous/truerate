@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, perkEstimateRow, worstStalenessLevel } from "../utils/render-helpers.js";
+import { esc, perkEstimateRow, worstStalenessLevel, bookDirectLink } from "../utils/render-helpers.js";
 import type { MatchedBenefit, MatchedPerkEstimate } from "@truerate/core";
 
 // --- esc ---
@@ -76,6 +76,55 @@ test("perkEstimateRow escapes HTML in perk label", () => {
 test("perkEstimateRow never includes price-like keys", () => {
   const html = perkEstimateRow(baseEstimate);
   // These strings should not appear in any form that implies a computed price
+  assert.ok(!html.includes("finalPrice"), "no finalPrice");
+  assert.ok(!html.includes("totalSavings"), "no totalSavings");
+  assert.ok(!html.includes("indicativeOffer"), "no indicativeOffer");
+});
+
+// --- bookDirectLink ---
+
+test("bookDirectLink with pct renders 'members save X% — book direct →'", () => {
+  const html = bookDirectLink("https://hotel.example.com/book", 0.15);
+  assert.ok(html.includes("members save 15% — book direct →"), "label with pct");
+});
+
+test("bookDirectLink without pct renders 'book direct →'", () => {
+  const html = bookDirectLink("https://hotel.example.com/book");
+  assert.ok(html.includes("book direct →"), "label without pct");
+  assert.ok(!html.includes("members save"), "no 'members save' when no pct");
+});
+
+test("bookDirectLink renders an <a> tag with correct href", () => {
+  const html = bookDirectLink("https://hotel.example.com/book", 0.1);
+  assert.ok(html.startsWith("<a "), "starts with <a");
+  assert.ok(html.includes('href="https://hotel.example.com/book"'), "href present");
+});
+
+test("bookDirectLink opens in new tab with rel=noopener", () => {
+  const html = bookDirectLink("https://hotel.example.com/book");
+  assert.ok(html.includes('target="_blank"'), "opens in new tab");
+  assert.ok(html.includes("noopener"), "noopener present");
+  assert.ok(html.includes("noreferrer"), "noreferrer present");
+});
+
+test("bookDirectLink escapes URL to prevent XSS", () => {
+  const html = bookDirectLink('https://hotel.example.com/"onmouseover="alert(1)', 0.2);
+  assert.ok(!html.includes('"onmouseover='), "raw XSS payload not present");
+  assert.ok(html.includes("&quot;"), "quote is escaped");
+});
+
+test("bookDirectLink applies tr-book-direct class", () => {
+  const html = bookDirectLink("https://hotel.example.com/book", 0.1);
+  assert.ok(html.includes('class="tr-book-direct"'), "class present");
+});
+
+test("bookDirectLink rounds fractional percent correctly", () => {
+  const html = bookDirectLink("https://hotel.example.com/book", 0.155);
+  assert.ok(html.includes("members save 16%"), "rounds correctly");
+});
+
+test("bookDirectLink never contains price-like keys", () => {
+  const html = bookDirectLink("https://hotel.example.com/book", 0.15);
   assert.ok(!html.includes("finalPrice"), "no finalPrice");
   assert.ok(!html.includes("totalSavings"), "no totalSavings");
   assert.ok(!html.includes("indicativeOffer"), "no indicativeOffer");
