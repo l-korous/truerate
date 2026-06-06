@@ -20,5 +20,6 @@ WORKDIR /app
 COPY --from=build /export/node_modules ./node_modules
 COPY --from=build /export/dist ./dist
 COPY --from=build /repo/packages/core/dist ./node_modules/@truerate/core/dist
+COPY --from=build /repo/packages/core/data ./node_modules/@truerate/core/data
 EXPOSE 8788
 CMD ["node", "dist/index.js"]
