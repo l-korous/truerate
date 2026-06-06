@@ -142,5 +142,10 @@
   "panelOneKeyExpediaActiveNote": {
     "message": "Expedia One Key is active on this page. TrueRate shows what your other memberships add on top.",
     "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago is a metasearch engine. Prices from booking partners may already include their loyalty discounts (e.g. Booking Genius). TrueRate shows what your memberships add on top.",
+    "description": "Note always shown on Trivago pages; informs users that OTA prices may already include loyalty discounts so TrueRate never implies a listed price is unaffected by loyalty programmes (product rule #1)"
   }
 }

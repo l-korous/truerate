@@ -110,6 +110,11 @@
     "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago ist eine Metasuchmaschine. Preise von Buchungspartnern können bereits Treuerabatte enthalten (z.B. Booking Genius). TrueRate zeigt, was Ihre Mitgliedschaften zusätzlich bieten.",
+    "description": "Note always shown on Trivago pages; informs users that OTA prices may already include loyalty discounts"
+  },
+
   "optionsTitle": {
     "message": "TrueRate-Einstellungen",
     "description": "Options page title"
