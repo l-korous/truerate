@@ -160,6 +160,13 @@ export interface BenefitValue {
   pointsPerUnit?: number;
   /** Conditions/caveats shown to the user, e.g. "direct booking only". */
   conditions?: string;
+  /**
+   * Direct-booking ("realization") URL where this benefit is actually redeemed
+   * — e.g. the hotel's own booking page. Channels surface it as
+   * "members save X% — book direct at <URL>". This is NOT a price; the
+   * consumer/AI does any math. Distinct from Program.sourceUrl (provenance).
+   */
+  realizationUrl?: string;
 }
 
 /** How a benefit is recognised against a page / search target. */
@@ -225,6 +232,12 @@ export interface Program {
   // from and when, and which region it reflects, so the catalog can be audited
   // and refreshed (and eventually moved to an ops-editable store).
   sourceUrl?: string;
+  /**
+   * Default direct-booking ("realization") URL for this program's benefits —
+   * where a guest books to actually get the discount/perks. Per-benefit
+   * BenefitValue.realizationUrl overrides it. Never a price.
+   */
+  realizationUrl?: string;
   asOf?: string; // e.g. "2026-05"
   region?: string; // e.g. "CZ", "Global", "US (varies by region)"
 }

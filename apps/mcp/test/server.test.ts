@@ -210,3 +210,57 @@ test("buildBenefitResult never includes price fields in staleness warnings", () 
   const warning = result.stalenessWarnings[0] ?? "";
   assert.doesNotMatch(warning, /price|amount|nightly|total|member.*rate/i);
 });
+
+// --- #311 realization URL ("book direct at <URL>", never a price) ---
+
+test("buildBenefitResult carries the realization URL from the benefit value", () => {
+  const matches = [
+    {
+      benefit: {
+        id: "b1",
+        scope: "property" as const,
+        match: { propertyNames: ["Hotel PECR"] },
+        value: {
+          kind: "percentDiscount" as const,
+          percentOff: 0.15,
+          conditions: "direct booking only",
+          realizationUrl: "https://hotel-pecr.cz/en/book",
+        },
+        source: "catalog" as const,
+        programId: "pecr",
+      },
+      membershipId: "m1",
+      membershipLabel: "Hotel PECR Club",
+    },
+  ];
+  const result = buildBenefitResult(matches, { hotel: "Hotel PECR", stars: 4 });
+  assert.strictEqual(result.matches[0]!.realizationUrl, "https://hotel-pecr.cz/en/book");
+});
+
+test("formatBenefitResult shows 'book direct' with the realization URL and no price", () => {
+  const r: McpBenefitResult = {
+    context: { hotel: "Hotel PECR", stars: 4 },
+    matches: [
+      {
+        membershipId: "m1",
+        membershipLabel: "Hotel PECR Club",
+        benefitId: "b1",
+        discount: { percentOff: 0.15, conditions: "direct booking only" },
+        perks: [],
+        structuredPerks: [],
+        conditions: "direct booking only",
+        realizationUrl: "https://hotel-pecr.cz/en/book",
+      },
+    ],
+    perkValueEstimates: [],
+    programsApplied: ["pecr"],
+    generatedAt: new Date().toISOString(),
+    stalenessWarnings: [],
+  };
+  const text = formatBenefitResult(r);
+  assert.match(text, /15% off/);
+  assert.match(text, /book direct/i);
+  assert.match(text, /hotel-pecr\.cz\/en\/book/);
+  assert.match(text, /Prices are not returned/i);
+  assert.doesNotMatch(text, /member.*price|indicative|\$\d|€\d/i);
+});
