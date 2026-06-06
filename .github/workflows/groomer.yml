@@ -20,6 +20,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
+  id-token: write # claude-code-action@v1 fetches an OIDC token even on the OAuth path
 
 jobs:
   groom:
