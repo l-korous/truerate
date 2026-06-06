@@ -215,18 +215,34 @@ class MemoryUserRepo implements UserRepo {
   }
 }
 
-let repo: UserRepo | null = null;
+let repoPromise: Promise<UserRepo> | null = null;
 
-/** Singleton repo, chosen by env. Call once at startup, then reuse. */
-export async function getUserRepo(): Promise<UserRepo> {
-  if (repo) return repo;
-  const inMemory = process.env.TRUERATE_INMEMORY === "true" || !process.env.COSMOS_ENDPOINT;
-  repo = inMemory ? new MemoryUserRepo() : new CosmosUserRepo();
-  await repo.init();
-  return repo;
+/**
+ * Singleton repo, chosen by env. Concurrency-safe: caches the in-flight
+ * *promise*, not the instance. Caching the instance (assigned before
+ * `await init()` resolved) let a concurrent caller receive a not-yet-initialized
+ * repo — `this.container` undefined → `getByMcpTokenHash` threw "Cannot read
+ * properties of undefined (reading 'items')" and crash-looped the MCP container
+ * on cold-start request bursts. On init failure the cache is cleared so the next
+ * call retries instead of caching a permanently-rejected promise.
+ */
+export function getUserRepo(): Promise<UserRepo> {
+  if (!repoPromise) {
+    repoPromise = (async () => {
+      const inMemory =
+        process.env.TRUERATE_INMEMORY === "true" || !process.env.COSMOS_ENDPOINT;
+      const r: UserRepo = inMemory ? new MemoryUserRepo() : new CosmosUserRepo();
+      await r.init();
+      return r;
+    })().catch((e) => {
+      repoPromise = null;
+      throw e;
+    });
+  }
+  return repoPromise;
 }
 
 /** Reset the user repo singleton — for tests only. */
 export function resetUserRepo(): void {
-  repo = null;
+  repoPromise = null;
 }
