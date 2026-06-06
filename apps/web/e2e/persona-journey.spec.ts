@@ -22,6 +22,10 @@
  *     highest Genius tier (20% off); Accor Silver perks distinct from Gold.
  *   - persona-hu-7 (IHG Platinum Elite + Revolut Ultra): top-tier IHG perks
  *     (guaranteed_availability) + Revolut Ultra lounge access.
+ *   - persona-pl-3 (Booking.com Genius Level 1 + Revolut Premium): PL market;
+ *     only archetype with an intangible-only perk vault (all Revolut Premium
+ *     structured perks are type "other" with $0 monetary estimates); exercises
+ *     the perk inventory's intangible rendering path.
  *
  * All personas are built from real programs.ts data via the factory; the
  * driver re-derives the same expectedPerks from the same source and verifies
@@ -34,11 +38,9 @@ import { runPersonaWebJourney } from "./web-driver.js";
 
 // Build all eight representative personas once (factory is deterministic).
 const factory = createPersonaFactory();
-// 8 personas → indices 0-7; we use 0 (CZ/OTA), 1 (DE/mixed), 2 (CZ/hotel-chain),
-// 4 (AT/hotel chain), 5 (GB/financial-card mix), 6 (SK/Genius-L3+Accor-Silver),
-// 7 (HU/IHG+Revolut Ultra).
+// 8 personas → indices 0-7; all eight archetypes are exercised.
 const personas = factory.build(8, 0);
-const [persona0, persona1, persona2, , persona4, persona5, persona6, persona7] = personas;
+const [persona0, persona1, persona2, persona3, persona4, persona5, persona6, persona7] = personas;
 
 // ── persona-cz-0: OTA discount + availability conditions ─────────────────────
 
@@ -212,6 +214,45 @@ test("persona-sk-6: Booking.com Genius Level 3 + Accor ALL Silver — 20% off an
 
   const added = await runPersonaWebJourney(page, persona);
   // Both catalog programs (booking_genius + accor_all) must be in the vault.
+  expect(added.length).toBeGreaterThanOrEqual(2);
+});
+
+// ── persona-pl-3: Genius Level 1 (10% off) + Revolut Premium (intangible) ────
+//
+// Closes the final web-channel persona gap: persona-pl-3 is the only archetype
+// missing from this suite. Two unique characteristics make it high-value:
+//
+//   1. Intangible-only perk vault: Revolut Premium contributes four "other" type
+//      perks (interbank FX, ATM, partner subscriptions, purchase protection)
+//      with $0 monetary estimates at every star band. Every other persona has at
+//      least one perk with a non-zero 4★ USD estimate. This exercises the perk
+//      inventory's intangible-only rendering path and confirms the value tab
+//      correctly handles a $0 rollup (hasMonetaryPerks = false → value tab skipped).
+//
+//   2. PL market: Poland is the third-priority launch market (CZ → DE → PL per
+//      issue #1). No other web persona journey uses a PL-market user, so this
+//      test exercises the Polish localisation path for the first time.
+//
+// Genius Level 1 contributes a bare 10% OTA discount (no structured perks), so
+// all expectedPerks in this persona come exclusively from Revolut Premium —
+// unlike every other persona which mixes discount + structured perks.
+
+test("persona-pl-3: Booking.com Genius Level 1 + Revolut Premium — intangible-only perk vault, PL market", async ({ page }) => {
+  const persona = persona3!;
+
+  // Genius Level 1 gives 10% off but has no structured perks — so all
+  // expectedPerks originate from Revolut Premium.
+  expect(persona.memberships.some((m) => m.tier === "Level 1")).toBe(true);
+  expect(
+    persona.memberships.some((m) => /revolut/i.test(m.label) && m.tier === "Premium"),
+  ).toBe(true);
+
+  // Revolut Premium perks are all "other" type with $0 monetary estimates.
+  // This is the only persona whose value-tab rollup equals zero.
+  expect(persona.expectedPerks.every((ep) => ep.valueTier === "intangible")).toBe(true);
+
+  const added = await runPersonaWebJourney(page, persona);
+  // Both catalog programs (booking_genius + revolut) must be in the vault.
   expect(added.length).toBeGreaterThanOrEqual(2);
 });
 
