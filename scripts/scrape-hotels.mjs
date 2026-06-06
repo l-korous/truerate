@@ -19,15 +19,17 @@ const OVERPASS = "https://overpass-api.de/api/interpreter";
 
 // Czechia is the focus (uncapped). A few hundred each are "sprinkled" from
 // elsewhere via an Overpass-level cap so those queries stay light.
+const CAP = Number(process.env.SPRINKLE_CAP || 300); // per non-CZ country
 const COUNTRIES = {
-  CZ: { cap: 0 },   // 0 = no cap (the focus)
-  DE: { cap: 400 },
-  GB: { cap: 400 },
-  US: { cap: 400 },
-  JP: { cap: 300 },
-  AT: { cap: 250 },
-  PL: { cap: 250 },
-  SK: { cap: 200 },
+  CZ: { cap: 0 }, // 0 = no cap (the focus — literally thousands)
+  // "Sprinkle" a few hundred each from major markets worldwide → ~10k total.
+  DE: { cap: CAP }, GB: { cap: CAP }, FR: { cap: CAP }, IT: { cap: CAP },
+  ES: { cap: CAP }, AT: { cap: CAP }, PL: { cap: CAP }, SK: { cap: CAP },
+  NL: { cap: CAP }, BE: { cap: CAP }, CH: { cap: CAP }, PT: { cap: CAP },
+  GR: { cap: CAP }, HU: { cap: CAP }, HR: { cap: CAP }, SI: { cap: CAP },
+  DK: { cap: CAP }, SE: { cap: CAP }, NO: { cap: CAP }, FI: { cap: CAP },
+  IE: { cap: CAP }, RO: { cap: CAP }, US: { cap: CAP }, CA: { cap: CAP },
+  JP: { cap: CAP }, KR: { cap: CAP }, AU: { cap: CAP }, TR: { cap: CAP },
 };
 const KINDS = ["hotel", "guest_house", "hostel", "motel", "apartment", "chalet"];
 
