@@ -1,0 +1,77 @@
+name: Log watcher
+
+# Every ~30 min: scan Azure logs (Container Apps console via Log Analytics) across
+# api/mcp/web for errors / exceptions / failures. For GENUINE problems, file a
+# deduped backlog issue with priority + repro + correlationIds. Conservative by
+# design — expected 401s/429s and transient cold-start noise are ignored.
+#
+# Model runs on the Max plan via CLAUDE_CODE_OAUTH_TOKEN. Azure read via OIDC.
+
+on:
+  schedule:
+    - cron: "22,52 * * * *" # every ~30 min, offset from the implementer (7,37)
+  workflow_dispatch: {}
+
+concurrency:
+  group: log-watcher
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write # OIDC for azure/login
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pull recent error logs into a file
+        id: logs
+        run: |
+          set -uo pipefail
+          az config set extension.use_dynamic_install=yes_without_prompt -o none || true
+          WID=$(az monitor log-analytics workspace show -g "$RG" -n truerate-logs --query customerId -o tsv 2>/dev/null || true)
+          OUT="[]"
+          if [ -n "$WID" ]; then
+            OUT=$(az monitor log-analytics query -w "$WID" --analytics-query \
+              "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(40m) | where Log_s has_any ('error','Error','ERROR','exception','Exception','unhandled','TypeError','rejected','CredentialUnavailable',' 500 ',' 502 ',' 503 ','crash') | project TimeGenerated, app=ContainerAppName_s, Log_s | order by TimeGenerated desc | take 150" \
+              -o json 2>/dev/null || echo "[]")
+          fi
+          printf '%s' "$OUT" > "${RUNNER_TEMP}/errors.json"
+          n=$(printf '%s' "$OUT" | grep -c "Log_s" || true)
+          echo "Captured ~$n error-ish log lines into errors.json"
+          echo "path=${RUNNER_TEMP}/errors.json" >> "$GITHUB_OUTPUT"
+
+      - name: Triage with Claude (file deduped issues)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "*"
+          claude_args: "--max-turns 40 --permission-mode bypassPermissions"
+          prompt: |
+            You are a headless log-triage agent for TrueRate (repo ${{ github.repository }}).
+            The file ${{ steps.logs.outputs.path }} holds recent Azure Container Apps error-ish
+            log lines for api/mcp/web (last ~40 min). It may be empty or mostly noise.
+
+            1. Read that file. Group lines into DISTINCT real problems. IGNORE expected noise:
+               401s on invalid tokens, 429 rate-limits, and transient cold-start 503/timeouts.
+            2. For each GENUINE problem (errors, exceptions, unhandled rejections, 5xx, crashes):
+               - DEDUPE first: `gh issue list --repo ${{ github.repository }} --state open --search "<key error phrase>"`.
+                 If an open issue already covers it, add a short comment (new occurrence + correlationId + timestamp) — do NOT open a duplicate.
+               - Otherwise open ONE issue: precise title; the error + stack; affected service; correlationIds;
+                 steps to reproduce if inferable; priority label (P0 = crash/all-users/data-loss, P1 = degraded, P2 = minor);
+                 `bug` + the right `area:*`; `agent-ready` if safely auto-fixable else `needs-design`;
+                 milestone "v0.x — Ops & safety".
+            3. If nothing genuine is found, do NOTHING. Be conservative — zero noise is the goal.
+            Never print or include secrets. Read CLAUDE.md for product context.

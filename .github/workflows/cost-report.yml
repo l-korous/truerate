@@ -43,21 +43,22 @@ jobs:
           az config set extension.use_dynamic_install=yes_without_prompt -o none || true
           az extension add --name costmanagement -o none 2>/dev/null || true
 
-          # ---- Azure month-to-date (RG scope) ----
-          AZ_COST="unavailable"; AZ_CUR=""
-          COST_JSON=$(az costmanagement query --type ActualCost --timeframe MonthToDate \
+          # ---- Azure month-to-date, BY SERVICE (concrete numbers, not assurances) ----
+          DOM=$(date -u +%-d)
+          DIM=$(date -u -d "$(date -u +%Y-%m-01) +1 month -1 day" +%-d 2>/dev/null || echo 30)
+          SVC_JSON=$(az costmanagement query --type ActualCost --timeframe MonthToDate \
             --scope "/subscriptions/$SUB/resourceGroups/$RG" \
             --dataset-aggregation '{"totalCost":{"name":"PreTaxCost","function":"Sum"}}' \
-            -o json 2>/dev/null || echo "")
-          if [ -n "$COST_JSON" ] && echo "$COST_JSON" | jq -e '.properties.rows' >/dev/null 2>&1; then
-            AZ_COST=$(echo "$COST_JSON" | jq -r '(([.properties.rows[]?[0]] | add) // 0)')
-            AZ_CUR=$(echo "$COST_JSON" | jq -r '(.properties.rows[0][1]) // ""')
-          fi
-          if [ "$AZ_COST" = "unavailable" ]; then
-            AZ_LINE="Azure (RG ${RG}): figure pending (Cost Management data lags up to ~24h / role just granted). HARD CAP: EUR 5/mo budget with email alerts at 50/90/100% + forecast, so it cannot exceed ~5 EUR without emailing you."
+            --dataset-grouping name="ServiceName" type="Dimension" -o json 2>/dev/null || echo "")
+          AZ_BODY=""; AZ_TOTAL="0"; AZ_CUR="EUR"
+          if echo "$SVC_JSON" | jq -e '.properties.rows | length > 0' >/dev/null 2>&1; then
+            AZ_BODY=$(echo "$SVC_JSON" | jq -r '.properties.rows | sort_by(-.[0]) | .[] | "    - \(.[1]): \(((.[0])*100|round)/100) \(.[2] // "EUR")"')
+            AZ_TOTAL=$(echo "$SVC_JSON" | jq -r '(([.properties.rows[][0]] | add)*100|round)/100')
+            AZ_CUR=$(echo "$SVC_JSON" | jq -r '(.properties.rows[0][2]) // "EUR"')
           else
-            AZ_LINE="Azure (RG ${RG}): ${AZ_COST} ${AZ_CUR} month-to-date. HARD CAP: EUR 5/mo budget with email alerts at 50/90/100%."
+            AZ_BODY="    (per-service figures pending — Cost Management data lags ~24h)"
           fi
+          PROJ=$(awk -v t="$AZ_TOTAL" -v d="$DOM" -v m="$DIM" 'BEGIN{ if(d+0>0){printf "%.2f", (t+0)/d*m}else{printf "%.2f", t+0} }')
 
           # ---- GitHub Actions (trust a figure only if it's sane; else guardrail) ----
           GH_LINE="GitHub Actions: Free plan includes 2,000 private-repo minutes/mo; the overage spending limit defaults to \$0, so workflows PAUSE at the cap instead of billing. Exact usage: https://github.com/settings/billing"
@@ -76,9 +77,9 @@ jobs:
           P_OPEN=$(gh issue list --repo "$REPO" --state open --json number --jq 'length' 2>/dev/null || echo "?")
           P_READY=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number --jq 'length' 2>/dev/null || echo "?")
           P_MERGED=$(gh pr list --repo "$REPO" --state merged --search "merged:>=$SINCE" --json number --jq 'length' 2>/dev/null || echo "?")
-          P_MVP=$(gh issue list --repo "$REPO" --milestone "MVP — core loop" --state open --json number --jq 'length' 2>/dev/null || echo "?")
+          P_V1=$(gh issue list --repo "$REPO" --milestone "v1 — Direct-booking value + admin self-serve" --state open --json number --jq 'length' 2>/dev/null || echo "?")
           P_DEPLOY=$(gh run list --repo "$REPO" --workflow "Deploy (Azure)" --limit 1 --json conclusion --jq '.[0].conclusion // "none"' 2>/dev/null || echo "?")
-          PROG_LINE="Progress (24h): ${P_MERGED} PRs merged · ${P_OPEN} issues open (${P_READY} agent-ready) · MVP open: ${P_MVP} · last deploy: ${P_DEPLOY}"
+          PROG_LINE="Progress (24h): ${P_MERGED} PRs merged · ${P_OPEN} issues open (${P_READY} agent-ready) · v1 open: ${P_V1} · last deploy: ${P_DEPLOY}"
 
           MONTH=$(date -u +%Y-%m)
           NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
@@ -89,8 +90,10 @@ jobs:
             echo "  ${PROG_LINE}"
             echo "  Live: https://truerate-web.victoriousdune-875f3535.westeurope.azurecontainerapps.io"
             echo ""
-            echo "COST"
-            echo "  ${AZ_LINE}"
+            echo "COST — Azure RG ${RG} (month-to-date, by service):"
+            printf '%s\n' "${AZ_BODY}"
+            echo "  Total MTD: ${AZ_TOTAL} ${AZ_CUR}  |  Projected month-end: ${PROJ} ${AZ_CUR}  (vs EUR 5 budget; alerts at 50/90/100%)"
+            echo "  Rate card: Cosmos serverless ~EUR0.25/1M RU + EUR0.21/GB-mo · Container Apps free grant 180k vCPU-s + 360k GiB-s/mo then ~EUR0.000024/vCPU-s · Log Analytics 5GB/mo free then EUR2.30/GB (hard-capped 0.5GB/day) · Key Vault ~EUR0.03/10k ops"
             echo ""
             echo "  ${GH_LINE}"
             echo ""
@@ -101,7 +104,7 @@ jobs:
           } > body.txt
           cat body.txt >> "$GITHUB_STEP_SUMMARY"
           echo "----- report -----"; cat body.txt
-          echo "subject=TrueRate daily summary — ${P_MERGED} merged/24h, MVP open ${P_MVP} (${NOW})" >> "$GITHUB_OUTPUT"
+          echo "subject=TrueRate daily summary — ${P_MERGED} merged/24h, MTD ${AZ_TOTAL} ${AZ_CUR} (proj ${PROJ}) (${NOW})" >> "$GITHUB_OUTPUT"
 
       - name: Send email
         if: ${{ env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' }}
