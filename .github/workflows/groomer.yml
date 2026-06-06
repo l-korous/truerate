@@ -1,0 +1,59 @@
+name: Backlog groomer
+
+# Every 4h: re-groom the backlog — version-milestone correctness, label hygiene,
+# scope/AC clarifications where the pivot changed things, dependency reconciliation,
+# and queue health. Lands roughly once per 8 implementer runs (the desired
+# impl:groom ratio). Conservative: small correct adjustments, no churn.
+#
+# Model runs on the Max plan via CLAUDE_CODE_OAUTH_TOKEN.
+
+on:
+  schedule:
+    - cron: "13 */4 * * *" # every 4 hours (offset off :00)
+  workflow_dispatch: {}
+
+concurrency:
+  group: groomer
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  id-token: write # claude-code-action@v1 fetches an OIDC token even on the OAuth path
+
+jobs:
+  groom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Groom the backlog with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "*"
+          claude_args: "--max-turns 50 --permission-mode bypassPermissions"
+          prompt: |
+            You are a headless backlog-groomer for TrueRate (repo ${{ github.repository }}).
+            Read CLAUDE.md and issue #1 (authoritative product model + 2026 direction:
+            consumers free forever, providers pay later, the realization-URL surface
+            "save X% — book direct at <URL>", NEVER prices, desktop scraping for the
+            catalog, and version milestones v0.x / v1 / v2 / v3 / v4).
+
+            Review the OPEN backlog (`gh issue list --repo ${{ github.repository }} --state open --limit 300 --json number,title,labels,milestone,body`)
+            and conservatively fix what is wrong:
+            1. VERSION: every open issue should sit in the right milestone — v0.x (CI/deploy/observability/
+               security/cost/testing/infra), v1 (realization-URL surface, admin self-serve, value/onboarding,
+               core/api/mcp/extension serving near-term value), v2 (scraping/catalog/country/i18n/discovery-scale),
+               v3 (paid partner/monetization), v4 (domains/stores/marketing/legal). Move mis-filed ones.
+            2. LABELS: add `desktop` to browser/scraping/bulk work; add `hold` + remove `agent-ready` on v3/deferred;
+               remove `agent-ready` from anything `blocked`/`needs-design`/`type:epic`/`desktop`; add `agent-ready`
+               to ONE or two genuinely-ready, unblocked, well-specified non-desktop issues only if the cloud queue is thin.
+            3. SCOPE/AC: where the pivot changed scope (realization URL, no prices, desktop scraping), add a short
+               clarifying comment. Do NOT rewrite issue bodies wholesale.
+            4. DEPENDENCIES: if issue A clearly depends on an unmerged issue B, label A `blocked` and remove `agent-ready`.
+            5. DUPLICATES: comment linking the canonical issue (do not close without certainty).
+
+            Make changes via `gh issue edit` / `gh issue comment`. Keep it small and correct — no churn, no mass edits.
+            Summarize what you changed at the end. Never introduce price handling (see #1).
