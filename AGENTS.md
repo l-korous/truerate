@@ -8,6 +8,12 @@
 > member price, or cross-provider **price** comparison are **superseded** — read them as "surface the
 > applicable discount/perk/condition and an estimated perk value", not "compute a price". The strategic
 > framing and engineering invariants below remain valid.
+>
+> **Direction refresh (2026-06):** consumers are **free forever**; **providers (hotels) pay later**
+> (`v3 — Monetization`). New core surface — the extension and MCP say **"members save X% — book direct
+> at `<URL>`"** (a discount + the **realization URL** where it's redeemed; still no prices). The catalog
+> is built by **desktop scraping** (terms + realization URLs, never prices) → admin review → publish, and
+> discovery scales by name / location / map. Work is versioned `v0`→`v4` (see `CLAUDE.md` / issue #1).
 
 Context for any agent (or human) extending this codebase. Read this before
 making product or architecture decisions. The code tells you *how* things work;
