@@ -37,6 +37,10 @@ param credKey string
 @secure()
 param credKeyPrev string = ''
 
+@description('Shared admin-console secret (header x-admin-secret). Empty = admin console disabled (admin endpoints 401). Set the TRUERATE_ADMIN_SECRET GitHub secret to enable.')
+@secure()
+param adminSecret string = ''
+
 @description('Re-encryption job image. CI replaces this with ghcr.io/<owner>/truerate-reencrypt-job:<sha>.')
 param reencryptJobImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -89,6 +93,14 @@ resource credKeyPrevRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!em
   parent: kv
   name: 'cred-key-prev'
   properties: { value: credKeyPrev }
+}
+
+// Optional admin-console secret. Created only when adminSecret is supplied; when
+// empty, no secret/env is wired and admin endpoints stay 401 (current behavior).
+resource adminSecretRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(adminSecret)) {
+  parent: kv
+  name: 'admin-secret'
+  properties: { value: adminSecret }
 }
 
 // Key Vault Secrets User for the identity
@@ -261,6 +273,10 @@ var prevKeyEnv = empty(credKeyPrev)
   ? []
   : [{ name: 'TRUERATE_CRED_KEY_PREV', secretRef: credKeyPrevSecretName }]
 
+// Optional admin secret wiring for the api + web containers (empty = no-op).
+var adminSecretEntry = empty(adminSecret) ? [] : [{ name: 'admin-secret', keyVaultUrl: adminSecretRes.properties.secretUri, identity: mi.id }]
+var adminEnv = empty(adminSecret) ? [] : [{ name: 'ADMIN_SECRET', secretRef: 'admin-secret' }]
+
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-api'
   location: location
@@ -270,7 +286,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8787, transport: 'auto' }
-      secrets: kvSecrets
+      secrets: concat(kvSecrets, adminSecretEntry)
     }
     template: {
       containers: [
@@ -278,7 +294,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'api'
           image: apiImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: concat(cosmosEnv, secretEnv, [
+          env: concat(cosmosEnv, secretEnv, adminEnv, [
             { name: 'API_PORT', value: '8787' }
             // Base URL of the MCP service, used to build each user's personal
             // MCP URL (https://<mcp>/u/<token>/mcp) — see issue #82.
@@ -386,6 +402,7 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 3000, transport: 'auto' }
+      secrets: adminSecretEntry
     }
     template: {
       containers: [
@@ -394,6 +411,9 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
           image: webImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
           // NEXT_PUBLIC_* is baked at build time; set it as a build arg in CI.
+          // ADMIN_SECRET (optional) lets the Next.js /api/admin/* proxy reach the
+          // backend admin endpoints (e.g. the leaderboard). Empty = no admin env.
+          env: adminEnv
           probes: [
             {
               type: 'Startup'
@@ -425,6 +445,8 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
       scale: { minReplicas: 0, maxReplicas: 5 } // scale-to-zero: $0 when idle, cold-start on first request after idle
     }
   }
+  // Needs the KV-reader role when an admin-secret is wired (harmless otherwise).
+  dependsOn: [ kvSecretsUser ]
 }
 
 // ─── Re-encryption Container Apps Job ───────────────────────────────────────

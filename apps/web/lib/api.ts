@@ -399,3 +399,35 @@ export const adminConfigApi = {
     adminConfigReq<{ config: AppConfig }>(`/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(input) }),
   delete: (key: string) => adminConfigReq<void>(`/${encodeURIComponent(key)}`, { method: "DELETE" }),
 };
+
+// --- Usage analytics / leaderboard API (via Next.js proxy route) -------------
+
+export interface UsageBucket {
+  key: string;
+  count: number;
+}
+
+export interface UsageAggregation {
+  total: number;
+  byProvider: UsageBucket[];
+  byPerk: UsageBucket[];
+  byCountry: UsageBucket[];
+  byDay: UsageBucket[];
+}
+
+export const adminUsageApi = {
+  /** Aggregated usage; pass { country } for a per-country leaderboard, omit for global. */
+  get: async (filter: { country?: string } = {}): Promise<UsageAggregation> => {
+    const qs = new URLSearchParams();
+    if (filter.country) qs.set("country", filter.country);
+    const s = qs.toString();
+    const res = await fetch(`/api/admin/analytics/usage${s ? `?${s}` : ""}`, {
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+      throw new Error(String(msg));
+    }
+    return res.json() as Promise<UsageAggregation>;
+  },
+};
