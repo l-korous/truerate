@@ -188,6 +188,9 @@ importers:
 
   packages/harness:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.4
+        version: 1.29.0(zod@3.25.76)
       '@truerate/core':
         specifier: workspace:*
         version: link:../core
