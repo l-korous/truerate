@@ -25,6 +25,11 @@ export type AuditAction =
   | "admin.submission.edit"
   | "admin.submission.approve"
   | "admin.submission.reject"
+  // Admin: scraped proposals
+  | "admin.proposal.ingest"
+  | "admin.proposal.edit"
+  | "admin.proposal.approve"
+  | "admin.proposal.reject"
   // Admin: feature flags
   | "admin.flag.create"
   | "admin.flag.update"
