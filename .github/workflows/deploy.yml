@@ -127,15 +127,23 @@ jobs:
         env:
           JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
           CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
+          # Optional: enables the admin console (catalog editor, flags, leaderboard).
+          # If the repo secret is unset this is empty and the admin endpoints stay
+          # 401 — non-breaking. Set TRUERATE_ADMIN_SECRET to activate.
+          ADMIN_SECRET: ${{ secrets.TRUERATE_ADMIN_SECRET }}
           OWNER_LC: ${{ steps.ns.outputs.owner_lc }}
         run: |
           set -euo pipefail
           test -n "$JWT_SECRET" || { echo "::error::TRUERATE_JWT_SECRET secret is not set"; exit 1; }
           test -n "$CRED_KEY"   || { echo "::error::TRUERATE_CRED_KEY secret is not set"; exit 1; }
+          if [ -z "${ADMIN_SECRET:-}" ]; then
+            echo "::notice::TRUERATE_ADMIN_SECRET not set — admin console stays disabled (401). Set it to enable."
+          fi
 
           echo "==> Deploying Bicep (idempotent)"
           az deployment group create -g "$RG" -f infra/main.bicep -o none \
             -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" \
+               adminSecret="${ADMIN_SECRET:-}" \
                apiImage="ghcr.io/${OWNER_LC}/truerate-api:${IMAGE_TAG}" \
                mcpImage="ghcr.io/${OWNER_LC}/truerate-mcp:${IMAGE_TAG}" \
                webImage="ghcr.io/${OWNER_LC}/truerate-web:${IMAGE_TAG}"
@@ -182,6 +190,7 @@ jobs:
         env:
           JWT_SECRET: ${{ secrets.TRUERATE_JWT_SECRET }}
           CRED_KEY: ${{ secrets.TRUERATE_CRED_KEY }}
+          ADMIN_SECRET: ${{ secrets.TRUERATE_ADMIN_SECRET }}
           OWNER_LC: ${{ steps.ns.outputs.owner_lc }}
           LAST_GOOD: ${{ steps.api-url.outputs.last_good_tag }}
         run: |
@@ -189,6 +198,7 @@ jobs:
           echo "::error::Post-deploy smoke FAILED — rolling back to ${LAST_GOOD}"
           az deployment group create -g "$RG" -f infra/main.bicep -o none \
             -p namePrefix="$PREFIX" jwtSecret="$JWT_SECRET" credKey="$CRED_KEY" \
+               adminSecret="${ADMIN_SECRET:-}" \
                apiImage="ghcr.io/${OWNER_LC}/truerate-api:${LAST_GOOD}" \
                mcpImage="ghcr.io/${OWNER_LC}/truerate-mcp:${LAST_GOOD}" \
                webImage="ghcr.io/${OWNER_LC}/truerate-web:${LAST_GOOD}" \
