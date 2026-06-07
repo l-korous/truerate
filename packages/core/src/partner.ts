@@ -165,6 +165,8 @@ export interface PartnerSubmissionRepo {
   update(sub: PartnerSubmission): Promise<PartnerSubmission>;
   listByOrg(orgId: string): Promise<PartnerSubmission[]>;
   listByStatus(status: SubmissionStatus): Promise<PartnerSubmission[]>;
+  /** List submissions by source (e.g. "scraped"), optionally filtered by status. */
+  listBySource(source: SubmissionSource, status?: SubmissionStatus): Promise<PartnerSubmission[]>;
 }
 
 export interface PartnerNotificationRepo {
@@ -247,6 +249,12 @@ export class MemoryPartnerSubmissionRepo implements PartnerSubmissionRepo {
 
   async listByStatus(status: SubmissionStatus): Promise<PartnerSubmission[]> {
     return [...this.byId.values()].filter((s) => s.status === status);
+  }
+
+  async listBySource(source: SubmissionSource, status?: SubmissionStatus): Promise<PartnerSubmission[]> {
+    return [...this.byId.values()].filter(
+      (s) => s.source === source && (status === undefined || s.status === status),
+    );
   }
 }
 
@@ -382,6 +390,30 @@ export class PartnerWorkflow {
       rejectReason: reason,
     };
     return this.orgs.updateOrg(updated);
+  }
+
+  /**
+   * Create a scraped proposal directly (no org membership check).
+   * The proposal starts in "submitted" status, ready for admin review.
+   * The orgId is set to the system constant "SCRAPER-SYSTEM".
+   */
+  async createScrapedProposal(
+    draft: PartnerProgramDraft,
+    submissionId: string,
+  ): Promise<PartnerSubmission> {
+    assertNoPriceFields(draft);
+    const now = new Date().toISOString();
+    const sub: PartnerSubmission = {
+      id: submissionId,
+      orgId: "SCRAPER-SYSTEM",
+      submittedByUserId: "SCRAPER",
+      status: "submitted",
+      source: "scraped",
+      programDraft: draft,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return this.submissions.create(sub);
   }
 
   /**
