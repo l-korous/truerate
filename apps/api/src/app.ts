@@ -27,6 +27,10 @@ import {
   getCatalogRepo,
   getCatalogCache,
   resetCatalogCache,
+  getUsageRepo,
+  recordUsageSafe,
+  type UsageEventInput,
+  type UsageChannel,
   catalogEntryToProgram,
   programToCatalogInput,
   getPartnerOrgRepo,
@@ -593,7 +597,29 @@ app.post("/benefits/match", requireAuth, async (c) => {
     await saveUser(user);
     c.get("logger").info("activation milestone", { event: "extension_connected", userIdHash: hashUserId(user.id) });
   }
-  return c.json(engine.matchPage(parsed, user.memberships));
+  const result = engine.matchPage(parsed, user.memberships);
+
+  // Usage analytics (#333): record which provider/perk surfaced in this channel,
+  // for client-ROI insight. Default channel is the extension (this is its
+  // rendering path); a caller may declare another via x-truerate-channel.
+  // Fail-soft, fire-and-forget — never blocks/breaks the response. No prices.
+  const hdr = c.req.header("x-truerate-channel");
+  const channel: UsageChannel = hdr === "mcp" || hdr === "web" || hdr === "extension" ? hdr : "extension";
+  const country = user.market ? user.market.toUpperCase() : undefined;
+  const uHash = hashUserId(user.id);
+  const usageEvents: UsageEventInput[] = [];
+  for (const m of result.matches) {
+    const programId = m.benefit.programId ?? m.benefit.id;
+    if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
+      usageEvents.push({ channel, programId, benefitKind: "percentDiscount", country, userIdHash: uHash });
+    }
+    for (const sp of m.benefit.value.structuredPerks ?? []) {
+      usageEvents.push({ channel, programId, benefitKind: "perk", perkType: sp.type, country, userIdHash: uHash });
+    }
+  }
+  void recordUsageSafe(usageEvents);
+
+  return c.json(result);
 });
 
 // --- Client-side error reporting (unauthenticated, fire-and-forget) ----------
@@ -693,6 +719,26 @@ function requireCatalogEditor(c: any): Response | null {
 function adminActor(c: any): string {
   return c.req.header("x-admin-actor") ?? "admin";
 }
+
+// GET /admin/analytics/usage — provider/perk usage counts for client-ROI insight (#333).
+// Admin-authed (x-admin-secret). Returns counts by provider, perk, country, and day.
+// Filters (query): fromDay, toDay (YYYY-MM-DD), country, channel, programId.
+// ?country=CZ + .byProvider = the per-country provider leaderboard data source (#334).
+app.get("/admin/analytics/usage", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const q = c.req.query();
+  const channel = q.channel === "mcp" || q.channel === "extension" || q.channel === "web" ? q.channel : undefined;
+  const repo = await getUsageRepo();
+  const report = await repo.aggregate({
+    fromDay: q.fromDay || undefined,
+    toDay: q.toDay || undefined,
+    country: q.country || undefined,
+    channel,
+    programId: q.programId || undefined,
+  });
+  return c.json(report);
+});
 
 // GET /admin/catalog — list catalog entries, optionally filtered by ?status=
 app.get("/admin/catalog", async (c) => {

@@ -14,7 +14,9 @@ import {
   matchHotelDirectory,
   estimatePerkValue,
   estimatePerkValueAllBands,
+  recordUsageSafe,
   PROGRAMS,
+  type UsageEventInput,
   type Membership,
   type StructuredPerk,
   type StarBand,
@@ -319,6 +321,22 @@ export function buildServer(userId: string, correlationId: string = generateCorr
         matchCount: matches.length,
         programsApplied: result.programsApplied,
       });
+
+      // Usage analytics (#333): record which provider/perk surfaced, for client
+      // ROI insight. Fire-and-forget + fail-soft — never blocks/breaks the tool.
+      // No prices, hashed user id only.
+      const usageEvents: UsageEventInput[] = [];
+      const uHash = hashUserId(userId);
+      for (const m of matches) {
+        const programId = m.benefit.programId ?? m.benefit.id;
+        if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
+          usageEvents.push({ channel: "mcp", programId, benefitKind: "percentDiscount", country, userIdHash: uHash });
+        }
+        for (const sp of m.benefit.value.structuredPerks ?? []) {
+          usageEvents.push({ channel: "mcp", programId, benefitKind: "perk", perkType: sp.type, country, userIdHash: uHash });
+        }
+      }
+      void recordUsageSafe(usageEvents);
 
       return {
         content: [{ type: "text", text: formatBenefitResult(result) }],

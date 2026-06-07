@@ -170,6 +170,21 @@ resource catalogContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
   }
 }
 
+// usage container — provider/perk usage analytics events (#333).
+// Partition key: /day (YYYY-MM-DD) so date-range aggregations touch few
+// partitions. Default indexing covers the GROUP BY fields (programId, perkType,
+// country, day). No prices are ever stored (issue #1).
+resource usageContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDb
+  name: 'usage'
+  properties: {
+    resource: {
+      id: 'usage'
+      partitionKey: { paths: [ '/day' ], kind: 'Hash' }
+    }
+  }
+}
+
 // Cosmos built-in Data Contributor role for the identity (data-plane).
 resource cosmosDataRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
   parent: cosmos
