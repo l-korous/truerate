@@ -62,3 +62,14 @@ If anything here or in `AGENTS.md` conflicts with #1, **#1 wins**.
 - **Issue-triggered:** comment **`@claude`** on an issue or PR (GitHub Action in
   `.github/workflows/claude.yml`; requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret and the Claude
   GitHub App). Runs on GitHub Actions minutes.
+
+### Cloud vs desktop lanes (orchestrate everything via Issues + Actions)
+All work is coordinated through **GitHub Issues + Actions** — including desktop work. The
+`agent-ready` label is the cloud queue. The **`desktop`** label is the desktop lane:
+- **Cloud scheduled jobs ignore `desktop` issues** — the backlog-runner skips them both when
+  feeding the queue and when picking work; the groomer keeps `agent-ready` off them.
+- **`desktop`** is for work needing a real browser or local resources: bulk scraping,
+  OSM/Overpass crawls, large local compute.
+- **Run ONE desktop agent, manually**, and point it at the open **`desktop` + `agent-ready`**
+  issues (lowest number first). Don't run several desktop agents at once.
+- **To hand a task to the desktop:** add the **`desktop`** label (+ `agent-ready`).
