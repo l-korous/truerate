@@ -35,6 +35,7 @@ export default defineConfig({
         TRUERATE_JWT_SECRET: "e2e-secret",
         TRUERATE_CRED_KEY: "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMTIzNDU2Nzg=",
         API_PORT: String(API_PORT),
+        ADMIN_SECRET: "e2e-admin-secret",
       },
     },
     {
@@ -45,7 +46,12 @@ export default defineConfig({
       url: `http://localhost:${WEB_PORT}`,
       reuseExistingServer: !process.env.CI,
       timeout: 150_000,
-      env: { NEXT_PUBLIC_API_BASE_URL: `http://localhost:${API_PORT}` },
+      env: {
+        NEXT_PUBLIC_API_BASE_URL: `http://localhost:${API_PORT}`,
+        // Server-side only — lets the /api/admin/* proxy reach the backend admin
+        // endpoints (e.g. the leaderboard's usage analytics). Never NEXT_PUBLIC_.
+        ADMIN_SECRET: "e2e-admin-secret",
+      },
     },
   ],
 });
