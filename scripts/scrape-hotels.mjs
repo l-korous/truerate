@@ -12,21 +12,28 @@
 //
 // Usage:  node scripts/scrape-hotels.mjs [CC ...]      (default: all configured)
 //   e.g.  node scripts/scrape-hotels.mjs CZ
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+// Default instance; override with OVERPASS_URL to use a mirror when the main
+// instance rate-limits (e.g. https://overpass.kumi.systems/api/interpreter).
+const OVERPASS = process.env.OVERPASS_URL || "https://overpass-api.de/api/interpreter";
+// Overpass rejects requests without a descriptive User-Agent (HTTP 406).
+const USER_AGENT = "TrueRate-directory-scraper/1.0 (+https://github.com/l-korous/truerate; ODbL OpenStreetMap)";
 
 // Czechia is the focus (uncapped). A few hundred each are "sprinkled" from
 // elsewhere via an Overpass-level cap so those queries stay light.
-const CAP = Number(process.env.SPRINKLE_CAP || 300); // per non-CZ country
+const CAP = Number(process.env.SPRINKLE_CAP || 300); // per far/sprinkle country
+// TrueRate's home markets get deep coverage; the rest are sprinkled for reach.
+const CORE = Number(process.env.CORE_CAP || 3000); // per core neighbour market
 const COUNTRIES = {
-  CZ: { cap: 0 }, // 0 = no cap (the focus — literally thousands)
-  // "Sprinkle" a few hundred each from major markets worldwide → ~10k total.
-  DE: { cap: CAP }, GB: { cap: CAP }, FR: { cap: CAP }, IT: { cap: CAP },
-  ES: { cap: CAP }, AT: { cap: CAP }, PL: { cap: CAP }, SK: { cap: CAP },
-  NL: { cap: CAP }, BE: { cap: CAP }, CH: { cap: CAP }, PT: { cap: CAP },
-  GR: { cap: CAP }, HU: { cap: CAP }, HR: { cap: CAP }, SI: { cap: CAP },
+  CZ: { cap: 0 }, // 0 = no cap (the focus — every CZ accommodation with a site)
+  // Core neighbour markets (areaServed) — deep coverage.
+  DE: { cap: CORE }, AT: { cap: CORE }, PL: { cap: CORE }, SK: { cap: CORE }, HU: { cap: CORE },
+  // "Sprinkle" a few hundred each from other markets worldwide.
+  GB: { cap: CAP }, FR: { cap: CAP }, IT: { cap: CAP },
+  ES: { cap: CAP }, NL: { cap: CAP }, BE: { cap: CAP }, CH: { cap: CAP }, PT: { cap: CAP },
+  GR: { cap: CAP }, HR: { cap: CAP }, SI: { cap: CAP },
   DK: { cap: CAP }, SE: { cap: CAP }, NO: { cap: CAP }, FI: { cap: CAP },
   IE: { cap: CAP }, RO: { cap: CAP }, US: { cap: CAP }, CA: { cap: CAP },
   JP: { cap: CAP }, KR: { cap: CAP }, AU: { cap: CAP }, TR: { cap: CAP },
@@ -38,7 +45,7 @@ function overpass(query) {
   // check the proxy can't satisfy. (A clean env can swap this for fetch().)
   const out = execFileSync(
     "curl",
-    ["-sS", "-m", "250", "--ssl-no-revoke", "-G", OVERPASS, "--data-urlencode", `data=${query}`],
+    ["-sS", "-m", "250", "--ssl-no-revoke", "-A", USER_AGENT, "-G", OVERPASS, "--data-urlencode", `data=${query}`],
     { maxBuffer: 512 * 1024 * 1024, encoding: "utf8" },
   );
   return JSON.parse(out);
@@ -53,7 +60,10 @@ function domainOf(url) {
 }
 
 function buildQuery(cc, cap) {
-  const filt = KINDS.map((k) => `nwr["tourism"="${k}"]["website"](area.c);`).join("");
+  // Match a published site under any of website / contact:website / url so we
+  // catch accommodations that only tag one of them — more breadth, still a
+  // direct-booking URL for each. (Was website-only.)
+  const filt = KINDS.map((k) => `nwr["tourism"="${k}"][~"^((contact:)?website|url)$"~"."](area.c);`).join("");
   const out = cap > 0 ? `out tags center ${cap};` : "out tags center;";
   return `[out:json][timeout:240];area["ISO3166-1"="${cc}"][admin_level=2]->.c;(${filt});${out}`;
 }
@@ -77,7 +87,7 @@ for (const cc of targets) {
   for (const el of data.elements ?? []) {
     const t = el.tags ?? {};
     const name = (t.name || t["name:en"] || "").trim();
-    const website = (t.website || t["contact:website"] || "").trim();
+    const website = (t.website || t["contact:website"] || t.url || "").trim();
     const domain = domainOf(website);
     if (!name || !domain) continue;
     const key = `${domain}|${name.toLowerCase()}`;
@@ -100,8 +110,25 @@ for (const cc of targets) {
   process.stderr.write(`  ${cc}: ${n} entries\n`);
 }
 
-all.sort((a, b) => (a.country + a.name).localeCompare(b.country + b.name));
 mkdirSync("packages/core/data", { recursive: true });
 const outPath = "packages/core/data/hotel-directory.json";
-writeFileSync(outPath, JSON.stringify(all));
-process.stderr.write(`\nWrote ${all.length} entries to ${outPath}\n`);
+
+// Merge: keep entries for countries we did NOT scrape this run, replace the ones
+// we did. So an incremental run (e.g. just CZ) grows that country without
+// dropping the rest. A country whose Overpass query failed keeps its prior data.
+let merged = all;
+if (existsSync(outPath)) {
+  try {
+    const prev = JSON.parse(readFileSync(outPath, "utf8"));
+    const refreshed = new Set(targets.filter((cc) => all.some((h) => h.country === cc)));
+    const kept = prev.filter((h) => !refreshed.has(h.country));
+    merged = [...kept, ...all.filter((h) => refreshed.has(h.country))];
+    process.stderr.write(`Merged: kept ${kept.length} from ${[...new Set(kept.map((h) => h.country))].length} un-refreshed countries.\n`);
+  } catch {
+    /* unreadable prior file — write fresh */
+  }
+}
+
+merged.sort((a, b) => (a.country + a.name).localeCompare(b.country + b.name));
+writeFileSync(outPath, JSON.stringify(merged));
+process.stderr.write(`\nWrote ${merged.length} entries to ${outPath} (this run scraped: ${targets.join(", ")})\n`);
