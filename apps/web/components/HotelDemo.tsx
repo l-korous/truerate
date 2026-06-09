@@ -115,6 +115,25 @@ export function HotelDemo() {
                     <a href={h.realizationUrl} target="_blank" rel="noreferrer" className="text-sea hover:underline">
                       {host(h.realizationUrl)}
                     </a>
+                    {h.terms ? (
+                      <div className="mt-1 rounded-lg bg-sun-soft/50 px-2.5 py-1.5 text-[0.82rem] leading-snug">
+                        {(h.terms.discountPercent ?? 0) > 0 && (
+                          <span className="font-semibold text-sun-deep">
+                            −{Math.round((h.terms.discountPercent ?? 0) * 100)}%{h.terms.openToAnyone ? " — register & save" : ""}
+                          </span>
+                        )}
+                        {h.terms.perks.length > 0 && (
+                          <span className="text-ink-soft">
+                            {(h.terms.discountPercent ?? 0) > 0 ? " · " : ""}{h.terms.perks.join(" · ")}
+                          </span>
+                        )}
+                        {h.terms.loyaltyProgram && <div className="text-ink-muted">{h.terms.loyaltyProgram}</div>}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[0.82rem] italic text-ink-muted">
+                        Is this your hotel? Claim it to show your members&apos; perks here.
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -15,12 +15,15 @@ import {
   summariseBenefits,
   estimatePerkValueAllBands,
   getUsageRepo,
+  termsForDomain,
   type HotelDirectoryEntry,
+  type HotelTermsIndex,
   type Program,
 } from "@truerate/core";
 
 const _require = createRequire(import.meta.url);
 let _dir: HotelDirectoryEntry[] | null = null;
+let _terms: HotelTermsIndex | null = null;
 let _commonTokens: Set<string> | null = null;
 let _searchIndex: { h: HotelDirectoryEntry; nn: string }[] | null = null;
 
@@ -36,6 +39,18 @@ function directory(): HotelDirectoryEntry[] {
     _dir = [];
   }
   return _dir;
+}
+
+/** Lazy, fail-soft load of scraped per-hotel terms (#367), keyed by bare domain. */
+function termsIndex(): HotelTermsIndex {
+  if (_terms) return _terms;
+  try {
+    const coreDist = path.dirname(_require.resolve("@truerate/core"));
+    _terms = JSON.parse(readFileSync(path.join(coreDist, "..", "data", "hotel-terms.json"), "utf-8")) as HotelTermsIndex;
+  } catch {
+    _terms = {};
+  }
+  return _terms;
 }
 
 /** Substring typeahead over the directory: hotels whose (diacritic-folded) name
@@ -146,13 +161,30 @@ export const demoRoutes = new Hono();
 demoRoutes.get("/demo/hotel", (c) => {
   const q = (c.req.query("q") ?? "").trim();
   if (!q) return c.json({ error: "missing_query" }, 400);
-  const directBooking = searchDirectory(q, 6).map((h) => ({
-    name: h.name,
-    city: h.city,
-    country: h.country,
-    kind: h.kind,
-    realizationUrl: h.realizationUrl,
-  }));
+  const terms = termsIndex();
+  const directBooking = searchDirectory(q, 6).map((h) => {
+    const t = termsForDomain(terms, h.domain);
+    return {
+      name: h.name,
+      city: h.city,
+      country: h.country,
+      kind: h.kind,
+      realizationUrl: h.realizationUrl,
+      // Scraped direct-booking terms for this exact hotel (#367), if we have them.
+      terms: t
+        ? {
+            discountPercent: t.discountPercent,
+            openToAnyone: t.openToAnyone,
+            perks: t.perks,
+            bestRateGuarantee: t.bestRateGuarantee,
+            loyaltyProgram: t.loyaltyProgram,
+            conditions: t.conditions,
+            confidence: t.confidence,
+            sourceUrl: t.sourceUrl,
+          }
+        : null,
+    };
+  });
   const memberPrograms = matchingPrograms(q).map(programView);
   return c.json({ query: q, directBooking, memberPrograms });
 });

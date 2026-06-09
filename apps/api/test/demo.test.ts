@@ -106,6 +106,28 @@ test("/demo/hotel surfaces a catalog program by property name (not just brand/do
   assert.ok((emblem!.percentOff ?? 0) > 0, "exposes a headline discount % for the register & save line");
 });
 
+test("/demo/hotel attaches scraped per-hotel terms (no prices) (#367)", async () => {
+  const app = await getApp();
+  // pecr.cz has seeded terms: 15% register-and-save + perks.
+  const d = (await (await app.request("/demo/hotel?q=pecr")).json()) as {
+    directBooking: {
+      name: string;
+      realizationUrl: string;
+      terms?: { discountPercent?: number; openToAnyone?: boolean; perks: string[]; loyaltyProgram?: string } | null;
+    }[];
+  };
+  const withTerms = d.directBooking.find((h) => h.terms);
+  assert.ok(withTerms, "a pecr.cz hotel carries scraped terms");
+  assert.equal(withTerms!.terms!.discountPercent, 0.15, "pecr.cz is 15% off");
+  assert.equal(withTerms!.terms!.openToAnyone, true, "open to anyone (free account)");
+  assert.ok(withTerms!.terms!.perks.length > 0, "has named perks");
+  // No price/rate fields leak through the terms payload.
+  const raw = JSON.stringify(d).toLowerCase();
+  for (const k of ["nightly", "roomrate", "\"rate\"", "per night", "/night"]) {
+    assert.ok(!raw.includes(k), `terms payload must not contain '${k}'`);
+  }
+});
+
 test("/demo/hotel requires a query", async () => {
   const app = await getApp();
   assert.equal((await app.request("/demo/hotel")).status, 400);

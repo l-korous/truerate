@@ -22,6 +22,11 @@ test("for-hotels demo shows platform scale and what an end-user sees for a hotel
   await expect(page.getByTestId("demo-direct")).toBeVisible();
   await expect(page.getByTestId("demo-direct")).toContainText(/olymp/i);
 
+  // Scraped per-hotel terms (#367): a hotel we have terms for shows its real
+  // direct-booking discount/perks, not just name + URL.
+  await page.getByTestId("hotel-demo-input").fill("pecr");
+  await expect(page.getByTestId("demo-direct")).toContainText(/register & save/i);
+
   // No hotel price/rate leaks on the page (perk value estimates like "$25" are allowed).
   const body = (await page.locator("body").textContent()) ?? "";
   expect(body).not.toMatch(/nightly|room rate|member price|per room/i);
