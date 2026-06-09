@@ -751,13 +751,20 @@ app.post("/admin/analytics/seed-demo", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
   const count = Math.max(1, Math.min(Number(c.req.query("count") ?? 800), 10000));
+  const days = Math.max(1, Math.min(Number(c.req.query("days") ?? 45), 180));
   const countries = ["CZ", "DE", "AT", "PL", "SK", "HU", "IT", "ES", "FR", "GB"];
   const channels: UsageChannel[] = ["mcp", "extension"];
+  const now = Date.now();
   const events: UsageEventInput[] = [];
   for (let i = 0; i < count; i++) {
     const p = PROGRAMS[Math.floor(Math.pow(Math.random(), 2) * PROGRAMS.length)] ?? PROGRAMS[0]!;
     const perks = Object.values(p.benefits).flat().flatMap((t) => t.value.structuredPerks ?? []);
     const sp = perks.length ? perks[Math.floor(Math.random() * perks.length)] : undefined;
+    // Backdate across the last `days` days (recency-weighted) so events land on
+    // many Cosmos `/day` partitions — a single-partition burst of thousands of
+    // writes throttles — and so the byDay trend looks realistic for the demo.
+    const back = Math.floor(Math.pow(Math.random(), 1.5) * days);
+    const ts = new Date(now - back * 86_400_000 - Math.floor(Math.random() * 86_400_000)).toISOString();
     events.push({
       channel: channels[Math.floor(Math.random() * channels.length)]!,
       programId: p.id,
@@ -765,10 +772,25 @@ app.post("/admin/analytics/seed-demo", async (c) => {
       benefitKind: sp ? "perk" : "percentDiscount",
       country: countries[Math.floor(Math.random() * countries.length)],
       userIdHash: `demo-${Math.floor(Math.random() * 2500)}`,
+      ts,
     });
   }
-  await (await getUsageRepo()).recordMany(events);
-  return c.json({ seeded: events.length });
+  // Write in small sequential batches (not one giant Promise.all) so we never
+  // slam the store with thousands of concurrent creates; tolerate the odd
+  // throttled batch so a partial hiccup still seeds the rest (best-effort).
+  const repo = await getUsageRepo();
+  const CHUNK = 50;
+  let seeded = 0;
+  for (let i = 0; i < events.length; i += CHUNK) {
+    const chunk = events.slice(i, i + CHUNK);
+    try {
+      await repo.recordMany(chunk);
+      seeded += chunk.length;
+    } catch {
+      /* a few throttled writes in this batch — keep going */
+    }
+  }
+  return c.json({ seeded });
 });
 
 // GET /admin/catalog — list catalog entries, optionally filtered by ?status=
