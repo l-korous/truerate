@@ -22,6 +22,7 @@ import {
 
 const _require = createRequire(import.meta.url);
 let _dir: HotelDirectoryEntry[] | null = null;
+let _commonTokens: Set<string> | null = null;
 
 /** Lazy, fail-soft load of the hotel directory (same data the MCP serves).
  *  Resolve the package MAIN (allowed by `exports`) → <core>/dist → ../data;
@@ -37,13 +38,26 @@ function directory(): HotelDirectoryEntry[] {
   return _dir;
 }
 
-/** Catalog programs whose brand/domain appears in the searched hotel text. */
+/** Catalog programs that apply to the searched hotel text: by brand/domain
+ *  substring, or because a brand / known property name's distinctive tokens are
+ *  ALL present in the query — so "Emblem Prague" → Emblem Prague and "Hotel Roma"
+ *  → Your Prague Hotels, while "Hilton Prague" does not match Emblem (shares only
+ *  the city, which isn't distinctive). */
 function matchingPrograms(q: string): Program[] {
   const ql = q.toLowerCase();
+  const qt = distinctiveTokens(q);
+  const namedInQuery = (name: string): boolean => {
+    const nt = distinctiveTokens(name);
+    if (nt.size === 0) return false;
+    for (const t of nt) if (!qt.has(t)) return false;
+    return true;
+  };
   return PROGRAMS.filter((p) => {
     const brands = (p.defaultMatch.brands ?? []).map((b) => b.toLowerCase());
     const domains = (p.defaultMatch.domains ?? []).map((d) => d.toLowerCase().replace(/\..*$/, ""));
-    return brands.some((b) => b.length > 2 && ql.includes(b)) || domains.some((d) => d.length > 2 && ql.includes(d));
+    if (brands.some((b) => b.length > 2 && ql.includes(b))) return true;
+    if (domains.some((d) => d.length > 2 && ql.includes(d))) return true;
+    return [...(p.defaultMatch.brands ?? []), ...(p.defaultMatch.propertyNames ?? [])].some(namedInQuery);
   });
 }
 
@@ -79,14 +93,34 @@ function norm(s: string): string {
 function sigTokens(s: string): Set<string> {
   return new Set(norm(s).split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOP.has(t)));
 }
-/** A directory hit is relevant only if it shares a DISTINCTIVE token with the
- *  query — not merely a generic word. (Substring containment is avoided: it
- *  false-matches "hotel 99" ⊆ "hotel 999".) If the query itself has no
- *  distinctive token (e.g. just "hotel"), don't over-filter. */
+// A token that recurs across many hotel names is a location/common word (e.g.
+// "prague"/"praha", "wien") — NOT a distinctive signal. Detected by document
+// frequency over the directory (language-agnostic), so "Emblem Prague" matches
+// on "emblem", not on every Prague hotel. Built once, lazily.
+const COMMON_TOKEN_MIN = 25;
+function commonTokens(): Set<string> {
+  if (_commonTokens) return _commonTokens;
+  const df = new Map<string, number>();
+  for (const h of directory()) for (const t of sigTokens(h.name)) df.set(t, (df.get(t) ?? 0) + 1);
+  const common = new Set<string>();
+  for (const [t, n] of df) if (n >= COMMON_TOKEN_MIN) common.add(t);
+  _commonTokens = common;
+  return common;
+}
+/** sigTokens minus common/location tokens — the truly distinctive part of a name. */
+function distinctiveTokens(s: string): Set<string> {
+  const common = commonTokens();
+  const out = new Set<string>();
+  for (const t of sigTokens(s)) if (!common.has(t)) out.add(t);
+  return out;
+}
+/** A directory hit is relevant only if it shares a DISTINCTIVE (non-generic,
+ *  non-location) token with the query. If the query has no such token (e.g. just
+ *  a city, or "hotel"), don't over-filter. */
 function relevantHotel(query: string, name: string): boolean {
-  const qt = sigTokens(query);
+  const qt = distinctiveTokens(query);
   if (qt.size === 0) return true;
-  for (const t of sigTokens(name)) if (qt.has(t)) return true;
+  for (const t of distinctiveTokens(name)) if (qt.has(t)) return true;
   return false;
 }
 

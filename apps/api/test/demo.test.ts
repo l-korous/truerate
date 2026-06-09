@@ -76,6 +76,19 @@ test("/demo/hotel returns no irrelevant results for an unknown hotel", async () 
   }
 });
 
+test("/demo/hotel surfaces a catalog program by property name (not just brand/domain)", async () => {
+  const app = await getApp();
+  // The exact boutique hotel may not be in the OSM directory, but its loyalty
+  // program must still surface when a guest types its name — matched on the
+  // distinctive token ("Emblem"), ignoring the shared city word ("Prague").
+  const d = (await (await app.request("/demo/hotel?q=Emblem Prague")).json()) as {
+    memberPrograms: { programId: string; realizationUrl?: string }[];
+  };
+  const emblem = d.memberPrograms.find((p) => p.programId === "emblem_prague");
+  assert.ok(emblem, "emblem_prague surfaced for 'Emblem Prague'");
+  assert.ok(emblem!.realizationUrl?.includes("emblemprague.com"), "with its book-direct URL");
+});
+
 test("/demo/hotel requires a query", async () => {
   const app = await getApp();
   assert.equal((await app.request("/demo/hotel")).status, 400);
