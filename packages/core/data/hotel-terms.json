@@ -1,0 +1,72 @@
+{
+  "pecr.cz": {
+    "domain": "pecr.cz",
+    "discountPercent": 0.15,
+    "openToAnyone": true,
+    "perks": ["buffet breakfast", "wellness access"],
+    "loyaltyProgram": "Loyalty program — Silver (15% off, free account), Gold (25% off), Platinum (35% off)",
+    "conditions": "Silver tier is free to join; higher tiers are spend-based",
+    "confidence": "high",
+    "sourceUrl": "https://www.pecr.cz/vernostni-program",
+    "scrapedAt": "2026-06-09"
+  },
+  "hotelavion.cz": {
+    "domain": "hotelavion.cz",
+    "discountPercent": 0.12,
+    "openToAnyone": true,
+    "perks": ["free wifi", "buffet breakfast"],
+    "confidence": "high",
+    "sourceUrl": "https://hotelavion.cz/",
+    "scrapedAt": "2026-06-09"
+  },
+  "absolutumhotel.cz": {
+    "domain": "absolutumhotel.cz",
+    "discountPercent": 0.1,
+    "openToAnyone": true,
+    "perks": ["free sauna entrance"],
+    "confidence": "high",
+    "sourceUrl": "https://www.absolutumhotel.cz/",
+    "scrapedAt": "2026-06-09"
+  },
+  "adamantino.cz": {
+    "domain": "adamantino.cz",
+    "discountPercent": 0.05,
+    "openToAnyone": true,
+    "perks": ["free breakfast", "free parking", "unlimited wellness access", "free bike and scooter rental", "complimentary daily soup"],
+    "confidence": "high",
+    "sourceUrl": "https://www.adamantino.cz/",
+    "scrapedAt": "2026-06-09"
+  },
+  "987praguehotel.com": {
+    "domain": "987praguehotel.com",
+    "openToAnyone": true,
+    "perks": ["free parking for direct bookings", "free one-way airport transfer (3+ nights)", "complimentary breakfast", "free wifi"],
+    "confidence": "high",
+    "sourceUrl": "https://www.987praguehotel.com/",
+    "scrapedAt": "2026-06-09"
+  },
+  "hotel14dveri.cz": {
+    "domain": "hotel14dveri.cz",
+    "openToAnyone": true,
+    "perks": ["free breakfast", "free wifi", "free parking"],
+    "confidence": "medium",
+    "sourceUrl": "https://hotel14dveri.cz/",
+    "scrapedAt": "2026-06-09"
+  },
+  "arigone.cz": {
+    "domain": "arigone.cz",
+    "openToAnyone": true,
+    "perks": ["free wifi", "free accommodation for children under 6"],
+    "confidence": "medium",
+    "sourceUrl": "https://www.arigone.cz/",
+    "scrapedAt": "2026-06-09"
+  },
+  "hotelatrium.cz": {
+    "domain": "hotelatrium.cz",
+    "openToAnyone": true,
+    "perks": ["free breakfast", "courtyard parking", "wifi"],
+    "confidence": "medium",
+    "sourceUrl": "http://www.hotelatrium.cz/",
+    "scrapedAt": "2026-06-09"
+  }
+}
