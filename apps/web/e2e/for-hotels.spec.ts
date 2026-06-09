@@ -13,6 +13,8 @@ test("for-hotels demo shows platform scale and what an end-user sees for a hotel
   await page.getByTestId("hotel-demo-input").fill("Marriott");
   await expect(page.getByTestId("hotel-demo-result")).toBeVisible();
   await expect(page.getByTestId("demo-perks")).toContainText("Marriott Bonvoy");
+  // Open-to-anyone programs invite non-members to register & book direct.
+  await expect(page.getByTestId("demo-perks")).toContainText(/register/i);
 
   // Substring typeahead: a partial name surfaces matching properties with their
   // country (the old exact-token matcher missed "Olympia" for "olymp").

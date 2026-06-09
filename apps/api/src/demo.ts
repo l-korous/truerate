@@ -85,13 +85,16 @@ function programView(p: Program) {
   const tier = p.tiers?.[p.tiers.length - 1]; // top tier = best illustration
   const templates = templatesForTier(p, tier);
   const summary = summariseBenefits(templates);
+  // Headline discount (a fraction, e.g. 0.15 → 15%). For open-to-anyone programs
+  // the demo tells a non-member "−X% for you if you register at <url>".
+  const percentOff = Math.max(0, ...templates.map((t) => t.value.percentOff ?? 0));
   const seen = new Set<string>();
   const perkValues = templates
     .flatMap((t) => t.value.structuredPerks ?? [])
     .filter((sp) => (seen.has(sp.type) ? false : (seen.add(sp.type), true)))
     .map((sp) => ({ label: sp.label, estUsd: estimatePerkValueAllBands(sp.type)[4].estimatedUsd }))
     .filter((pv) => pv.estUsd > 0);
-  return { programId: p.id, name: p.name, category: p.category, region: p.region, topTier: tier, summary, perkValues, realizationUrl: p.realizationUrl };
+  return { programId: p.id, name: p.name, category: p.category, region: p.region, topTier: tier, summary, perkValues, realizationUrl: p.realizationUrl, openToAnyone: p.openToAnyone ?? false, percentOff };
 }
 
 // Generic accommodation words that must not, alone, make two names "match" —
