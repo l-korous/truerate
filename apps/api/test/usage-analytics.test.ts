@@ -117,3 +117,21 @@ test("usage report never contains price/money fields (rule #1)", async () => {
     assert.ok(!raw.includes(`"${k}"`), `usage report must not contain '${k}'`);
   }
 });
+
+test("seed-demo populates realistic usage (admin only)", async () => {
+  const app = await getApp();
+  // No admin secret → 401.
+  assert.equal((await app.request("/admin/analytics/seed-demo?count=10", { method: "POST" })).status, 401);
+  // With the secret → seeds the requested count.
+  const r = await app.request("/admin/analytics/seed-demo?count=400", {
+    method: "POST",
+    headers: { "x-admin-secret": "test-admin-secret" },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(((await r.json()) as { seeded: number }).seeded, 400);
+  // The leaderboard reflects it across multiple providers + countries.
+  const agg = (await (await getUsage(app)).json()) as { total: number; byProvider: unknown[]; byCountry: unknown[] };
+  assert.ok(agg.total >= 400, "events recorded");
+  assert.ok(agg.byProvider.length > 1, "multiple providers");
+  assert.ok(agg.byCountry.length > 1, "multiple countries");
+});
