@@ -415,6 +415,50 @@ export interface UsageAggregation {
   byDay: UsageBucket[];
 }
 
+// --- Public "TrueRate for your hotel" demo (no auth) -------------------------
+
+export interface DemoDirectBooking {
+  name: string;
+  city?: string;
+  country: string;
+  kind?: string;
+  realizationUrl: string;
+}
+export interface DemoProgram {
+  programId: string;
+  name: string;
+  category: string;
+  region?: string;
+  topTier?: string;
+  summary: string[];
+  perkValues: { label: string; estUsd: number }[];
+  realizationUrl?: string;
+}
+export interface DemoHotelResult {
+  query: string;
+  directBooking: DemoDirectBooking[];
+  memberPrograms: DemoProgram[];
+}
+export interface PlatformStats {
+  hotelsCovered: number;
+  programs: number;
+  countries: number;
+  benefitSurfaces: number;
+}
+
+export const demoApi = {
+  hotel: async (q: string): Promise<DemoHotelResult> => {
+    const res = await fetch(`${API}/demo/hotel?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+    return res.json() as Promise<DemoHotelResult>;
+  },
+  stats: async (): Promise<PlatformStats> => {
+    const res = await fetch(`${API}/stats/overview`);
+    if (!res.ok) throw new Error(`Stats failed (${res.status})`);
+    return res.json() as Promise<PlatformStats>;
+  },
+};
+
 export const adminUsageApi = {
   /** Aggregated usage; pass { country } for a per-country leaderboard, omit for global. */
   get: async (filter: { country?: string } = {}): Promise<UsageAggregation> => {
