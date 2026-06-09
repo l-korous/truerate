@@ -55,6 +55,18 @@ test("/demo/hotel never leaks hotel prices/rates (perk value estimates are allow
   }
 });
 
+test("/demo/hotel returns no irrelevant results for an unknown hotel", async () => {
+  const app = await getApp();
+  // A made-up name sharing only generic words ("Hotel") must NOT surface random
+  // hotels — a hotel client should see a clean "not found", never noise.
+  const d = (await (await app.request("/demo/hotel?q=Zzz Nonexistent Hotel 999")).json()) as {
+    directBooking: unknown[];
+    memberPrograms: unknown[];
+  };
+  assert.equal(d.directBooking.length, 0, "no irrelevant book-direct results");
+  assert.equal(d.memberPrograms.length, 0, "no spurious programs");
+});
+
 test("/demo/hotel requires a query", async () => {
   const app = await getApp();
   assert.equal((await app.request("/demo/hotel")).status, 400);
