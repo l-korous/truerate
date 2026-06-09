@@ -417,12 +417,24 @@ export interface UsageAggregation {
 
 // --- Public "CustomRates for your hotel" demo (no auth) -------------------------
 
+export interface DemoTerms {
+  discountPercent?: number;
+  openToAnyone?: boolean;
+  perks: string[];
+  bestRateGuarantee?: boolean;
+  loyaltyProgram?: string;
+  conditions?: string;
+  confidence: "low" | "medium" | "high";
+  sourceUrl: string;
+}
 export interface DemoDirectBooking {
   name: string;
   city?: string;
   country: string;
   kind?: string;
   realizationUrl: string;
+  /** Scraped direct-booking terms for this hotel, if we have them (#367). */
+  terms?: DemoTerms | null;
 }
 export interface DemoProgram {
   programId: string;
