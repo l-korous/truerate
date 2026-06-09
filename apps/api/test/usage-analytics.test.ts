@@ -129,9 +129,17 @@ test("seed-demo populates realistic usage (admin only)", async () => {
   });
   assert.equal(r.status, 200);
   assert.equal(((await r.json()) as { seeded: number }).seeded, 400);
-  // The leaderboard reflects it across multiple providers + countries.
-  const agg = (await (await getUsage(app)).json()) as { total: number; byProvider: unknown[]; byCountry: unknown[] };
+  // The leaderboard reflects it across multiple providers + countries, and the
+  // events are spread across many days (not all stamped "today") so the byDay
+  // trend looks realistic — and, in prod, writes hit many Cosmos partitions.
+  const agg = (await (await getUsage(app)).json()) as {
+    total: number;
+    byProvider: unknown[];
+    byCountry: unknown[];
+    byDay: unknown[];
+  };
   assert.ok(agg.total >= 400, "events recorded");
   assert.ok(agg.byProvider.length > 1, "multiple providers");
   assert.ok(agg.byCountry.length > 1, "multiple countries");
+  assert.ok(agg.byDay.length > 1, "spread across multiple days");
 });

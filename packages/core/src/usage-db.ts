@@ -39,8 +39,11 @@ export interface UsageEvent {
   day: string;
 }
 
-/** Input to record() — the repo stamps id, ts, and day. */
-export type UsageEventInput = Omit<UsageEvent, "id" | "ts" | "day">;
+/** Input to record() — the repo stamps id, ts, and day. An optional `ts` may
+ *  be supplied to backdate an event (used by the demo seeder to spread synthetic
+ *  demand across days so it lands on many Cosmos `/day` partitions); when absent
+ *  the event is stamped "now". */
+export type UsageEventInput = Omit<UsageEvent, "id" | "ts" | "day"> & { ts?: string };
 
 /** Filters for an aggregation query. All optional → aggregate everything. */
 export interface UsageFilter {
@@ -85,7 +88,7 @@ function dayOf(iso: string): string {
 }
 
 function stamp(input: UsageEventInput): UsageEvent {
-  const ts = new Date().toISOString();
+  const ts = input.ts ?? new Date().toISOString();
   return { ...input, id: randomUUID(), ts, day: dayOf(ts) };
 }
 
