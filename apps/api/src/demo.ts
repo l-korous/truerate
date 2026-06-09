@@ -60,19 +60,48 @@ function programView(p: Program) {
   return { programId: p.id, name: p.name, category: p.category, region: p.region, topTier: tier, summary, perkValues, realizationUrl: p.realizationUrl };
 }
 
+// Generic accommodation words that must not, alone, make two names "match" —
+// otherwise "Hotel Sacher" loosely matches any "... Hotel ...". The matcher
+// returns those weak token-overlap hits; for the demo we drop them so a hotel
+// sees their property or a clean "not found", never irrelevant results.
+const STOP = new Set([
+  "hotel", "hotels", "apartment", "apartments", "apartmany", "penzion", "pension", "guesthouse", "guest",
+  "house", "resort", "spa", "wellness", "hostel", "motel", "chalet", "villa", "rooms", "room", "inn",
+  "the", "and", "by", "of", "garni", "boutique", "design", "park", "grand", "city", "old", "town",
+]);
+function norm(s: string): string {
+  return s.toLowerCase().normalize("NFKD").replace(/\p{Diacritic}/gu, "");
+}
+function sigTokens(s: string): Set<string> {
+  return new Set(norm(s).split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOP.has(t)));
+}
+/** A directory hit is relevant only if it shares a DISTINCTIVE token with the
+ *  query — not merely a generic word. (Substring containment is avoided: it
+ *  false-matches "hotel 99" ⊆ "hotel 999".) If the query itself has no
+ *  distinctive token (e.g. just "hotel"), don't over-filter. */
+function relevantHotel(query: string, name: string): boolean {
+  const qt = sigTokens(query);
+  if (qt.size === 0) return true;
+  for (const t of sigTokens(name)) if (qt.has(t)) return true;
+  return false;
+}
+
 export const demoRoutes = new Hono();
 
 // GET /demo/hotel?q= — what an end-user sees for a given hotel. Public.
 demoRoutes.get("/demo/hotel", (c) => {
   const q = (c.req.query("q") ?? "").trim();
   if (!q) return c.json({ error: "missing_query" }, 400);
-  const directBooking = matchHotelDirectory(directory(), { hotel: q }, 5).map((h) => ({
-    name: h.name,
-    city: h.city,
-    country: h.country,
-    kind: h.kind,
-    realizationUrl: h.realizationUrl,
-  }));
+  const directBooking = matchHotelDirectory(directory(), { hotel: q }, 12)
+    .filter((h) => relevantHotel(q, h.name))
+    .slice(0, 5)
+    .map((h) => ({
+      name: h.name,
+      city: h.city,
+      country: h.country,
+      kind: h.kind,
+      realizationUrl: h.realizationUrl,
+    }));
   const memberPrograms = matchingPrograms(q).map(programView);
   return c.json({ query: q, directBooking, memberPrograms });
 });
