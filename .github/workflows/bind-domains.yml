@@ -31,6 +31,10 @@ jobs:
           set -uo pipefail
           addbind() {
             app="$1"; host="$2"; method="$3"
+            existing=$(az containerapp hostname list -g "$RG" -n "$app" --query "[?name=='$host'].bindingType | [0]" -o tsv 2>/dev/null || true)
+            if [ -n "$existing" ] && [ "$existing" != "Disabled" ]; then
+              echo "── $host → $app already bound ($existing) — skip"; return
+            fi
             echo "── $host → $app (cert validation: $method) ──"
             az containerapp hostname add  -g "$RG" -n "$app" --hostname "$host" -o none 2>&1 | sed 's/^/  add:  /' || true
             az containerapp hostname bind -g "$RG" -n "$app" --hostname "$host" \
@@ -46,3 +50,13 @@ jobs:
             az containerapp hostname list -g "$RG" -n "$app" \
               --query "[].{host:name,binding:bindingType}" -o table 2>&1 | sed 's/^/  /' || true
           done
+
+      - name: Allow customrates.online origins in API CORS
+        run: |
+          set -uo pipefail
+          WEB_FQDN=$(az containerapp show -g "$RG" -n truerate-web --query "properties.configuration.ingress.fqdn" -o tsv)
+          ORIGINS="https://${WEB_FQDN},https://customrates.online,https://www.customrates.online"
+          echo "setting CORS_ALLOWED_ORIGINS=$ORIGINS"
+          az containerapp update -g "$RG" -n truerate-api \
+            --set-env-vars "CORS_ALLOWED_ORIGINS=$ORIGINS" -o none 2>&1 | sed 's/^/  cors: /' || true
+          echo "API CORS now: $(az containerapp show -g "$RG" -n truerate-api --query "properties.template.containers[0].env[?name=='CORS_ALLOWED_ORIGINS'].value | [0]" -o tsv)"
