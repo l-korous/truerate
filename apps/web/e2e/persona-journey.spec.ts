@@ -4,7 +4,7 @@
  * Uses synthetic personas from @truerate/harness to run real browser journeys
  * against apps/web. Each persona carries an expectedPerks contract that the
  * web channel driver asserts against: perk labels, condition tags, and
- * estimated-value tiers must match — and no TrueRate-produced price may appear
+ * estimated-value tiers must match — and no CustomRates-produced price may appear
  * (product rule #1, issue #1).
  *
  * Persona selection rationale:
@@ -217,7 +217,7 @@ test("persona-sk-6: Booking.com Genius Level 3 + Accor ALL Silver — 20% off an
 
 // ── Cross-persona: no prices on any tab for any persona ─────────────────────
 
-test("no TrueRate-produced price on any tab (persona-cz-0 smoke)", async ({ page }) => {
+test("no CustomRates-produced price on any tab (persona-cz-0 smoke)", async ({ page }) => {
   // runPersonaWebJourney already asserts this internally; this test is an
   // explicit no-price-anywhere marker for CI reporting clarity.
   const persona = persona0!;

@@ -143,7 +143,7 @@ export function AddMembership({
         {mode === "custom" && (
           <div>
             <p className="mb-4 text-sm text-ink-muted">
-              Tell TrueRate about a benefit you hold — a negotiated rate at one hotel, a club discount.
+              Tell CustomRates about a benefit you hold — a negotiated rate at one hotel, a club discount.
               We&apos;ll surface the applicable discounts and perks when you&apos;re on that site.
             </p>
             <label className="label">Name</label>

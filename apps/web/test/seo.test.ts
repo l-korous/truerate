@@ -34,9 +34,9 @@ test("siteMetadata: every locale has title, description, ogDescription", () => {
 });
 
 test("siteMetadata: no locale computes or returns prices (final price, discounted price, etc.)", () => {
-  // Per product rule #1: TrueRate never computes or returns prices.
-  // Metadata may mention that TrueRate does NOT touch prices ("without touching prices").
-  // Forbidden: implying TrueRate returns or computes a final/discounted/indicative price.
+  // Per product rule #1: CustomRates never computes or returns prices.
+  // Metadata may mention that CustomRates does NOT touch prices ("without touching prices").
+  // Forbidden: implying CustomRates returns or computes a final/discounted/indicative price.
   const forbiddenTerms = /final price|discounted price|member price|indicative price|from \$|from €/i;
   for (const locale of locales) {
     const { title, description, ogDescription } = siteMetadata[locale];
@@ -104,7 +104,7 @@ test("buildPageMetadata: en includes OG tags", () => {
   assert.equal(og["type"], "website");
   assert.ok(og["title"], "missing og:title");
   assert.ok(og["description"], "missing og:description");
-  assert.equal(og["siteName"], "TrueRate");
+  assert.equal(og["siteName"], "CustomRates");
 });
 
 test("buildPageMetadata: en includes Twitter card", () => {
@@ -178,7 +178,7 @@ test("softwareApplicationJsonLd: required schema.org fields present", () => {
   assert.ok(softwareApplicationJsonLd.operatingSystem, "missing operatingSystem");
 });
 
-test("softwareApplicationJsonLd: no price offers (TrueRate never handles prices)", () => {
+test("softwareApplicationJsonLd: no price offers (CustomRates never handles prices)", () => {
   assert.ok(
     !("offers" in softwareApplicationJsonLd),
     "softwareApplicationJsonLd must not contain offers/price fields",

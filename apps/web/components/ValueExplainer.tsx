@@ -262,7 +262,7 @@ export function ValueExplainer({
       )}
 
       <p className="mt-4 text-xs text-ink-muted" data-testid="value-disclaimer">
-        Estimated values (≈) are illustrative only — not prices or guarantees. TrueRate never
+        Estimated values (≈) are illustrative only — not prices or guarantees. CustomRates never
         handles prices; estimates reflect perk replacement cost, not what you pay or save.
       </p>
     </div>
