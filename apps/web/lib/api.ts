@@ -433,6 +433,10 @@ export interface DemoProgram {
   summary: string[];
   perkValues: { label: string; estUsd: number }[];
   realizationUrl?: string;
+  /** Free to join — anyone can register and get the discount/perks. */
+  openToAnyone?: boolean;
+  /** Headline discount as a fraction (0.15 → 15%); 0 if perk-only. */
+  percentOff?: number;
 }
 export interface DemoHotelResult {
   query: string;

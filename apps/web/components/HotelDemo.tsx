@@ -121,8 +121,12 @@ export function HotelDemo() {
                 <div key={p.programId} style={{ marginBottom: "0.75rem" }}>
                   <div style={{ fontWeight: 600 }}>{p.name}{p.topTier ? ` · ${p.topTier}` : ""}</div>
                   {p.realizationUrl && (
-                    <div style={{ fontSize: "0.85rem", color: "#1a7f37", margin: "2px 0" }}>
-                      ✓ members book direct at{" "}
+                    <div style={{ fontSize: "0.85rem", color: "#1a7f37", margin: "3px 0", fontWeight: p.openToAnyone ? 700 : 400 }}>
+                      {p.openToAnyone
+                        ? (p.percentOff ?? 0) > 0
+                          ? `✓ −${Math.round((p.percentOff ?? 0) * 100)}% for you — just register & book direct at `
+                          : "✓ Free to join — register & book direct at "
+                        : "✓ members book direct at "}
                       <a href={p.realizationUrl} target="_blank" rel="noreferrer">
                         {p.realizationUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                       </a>

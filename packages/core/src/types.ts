@@ -238,6 +238,14 @@ export interface Program {
    * BenefitValue.realizationUrl overrides it. Never a price.
    */
   realizationUrl?: string;
+  /**
+   * Whether this membership/program is OPEN TO ANYONE — i.e. a guest can simply
+   * register (free, no status or invite) and immediately get the discount/perks.
+   * When true, channels may tell a NON-enrolled guest "register at <realizationUrl>
+   * and save X% booking direct". Paid cards/subscriptions or invite-only programs
+   * are false. (X% is a discount, not a price — the consumer does any math.)
+   */
+  openToAnyone?: boolean;
   asOf?: string; // e.g. "2026-05"
   region?: string; // e.g. "CZ", "Global", "US (varies by region)"
 }
