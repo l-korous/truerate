@@ -142,6 +142,7 @@ export const PROGRAMS: Program[] = [
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.yourpraguehotels.com/en/about-loyalty-program/",
+    realizationUrl: "https://www.yourpraguehotels.com/en/",
     // Largest private hotel chain in Prague (Hotel Roma, Caesar, Michelangelo,
     // Galileo, Praga 1, Nová Živohošť). Free loyalty programme; direct only.
     defaultMatch: { domains: ["yourpraguehotels.com"], propertyNames: ["Hotel Roma", "Hotel Caesar", "Michelangelo Grand Hotel", "Hotel Galileo", "Hotel Praga 1"] },
@@ -172,6 +173,7 @@ export const PROGRAMS: Program[] = [
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.emblemprague.com/about-us/loyalty",
+    realizationUrl: "https://www.emblemprague.com/",
     // 5-star boutique hotel, Prague Old Town. Member rate is direct-only.
     defaultMatch: { domains: ["emblemprague.com"], propertyNames: ["Emblem Hotel", "Emblem Prague"] },
     requiresCredential: false,
@@ -202,6 +204,7 @@ export const PROGRAMS: Program[] = [
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.orea.cz/en",
+    realizationUrl: "https://www.orea.cz/en/hotels-apartments",
     // Large Czech chain (mountains, cities, spa towns). Discounts via promo code
     // on orea.cz; ~15% on selected stays/dates; peak periods excluded.
     defaultMatch: { domains: ["orea.cz"], brands: ["OREA"] },
@@ -222,6 +225,7 @@ export const PROGRAMS: Program[] = [
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://all.accor.com/loyalty-program/",
+    realizationUrl: "https://all.accor.com/",
     defaultMatch: {
       domains: ["all.accor.com", "accor.com"],
       brands: ["Sofitel", "Pullman", "Novotel", "Mercure", "ibis", "Raffles", "Fairmont", "MGallery", "Adagio", "Mövenpick", "Swissôtel", "Mama Shelter"],
@@ -319,6 +323,7 @@ export const PROGRAMS: Program[] = [
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.ihg.com/onerewards/",
+    realizationUrl: "https://www.ihg.com/",
     defaultMatch: {
       domains: ["ihg.com"],
       brands: ["InterContinental", "Crowne Plaza", "Holiday Inn", "Hotel Indigo", "Kimpton", "voco", "Regent", "Six Senses", "Staybridge", "Candlewood"],
@@ -403,6 +408,7 @@ export const PROGRAMS: Program[] = [
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.hilton.com/en/hilton-honors/",
+    realizationUrl: "https://www.hilton.com/",
     defaultMatch: {
       domains: ["hilton.com"],
       brands: ["Hilton", "DoubleTree", "Hampton", "Conrad", "Waldorf Astoria", "Canopy", "Curio", "Embassy Suites", "Hilton Garden Inn"],
@@ -480,6 +486,7 @@ export const PROGRAMS: Program[] = [
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.marriott.com/loyalty.mi",
+    realizationUrl: "https://www.marriott.com/",
     defaultMatch: {
       domains: ["marriott.com"],
       brands: ["Marriott", "Sheraton", "Westin", "Courtyard", "St. Regis", "Ritz-Carlton", "W Hotels", "Le Méridien", "Autograph", "Aloft", "Four Points", "Renaissance", "Moxy"],
