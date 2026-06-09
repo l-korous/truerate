@@ -305,7 +305,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             // request (register, login, add-membership) silently failed in the
             // browser even though the server returned 200. The web FQDN is
             // stable per app name; web has no bicep dep on api, so this is acyclic.
-            { name: 'CORS_ALLOWED_ORIGINS', value: 'https://${web.properties.configuration.ingress.fqdn}' }
+            { name: 'CORS_ALLOWED_ORIGINS', value: 'https://${web.properties.configuration.ingress.fqdn},https://customrates.online,https://www.customrates.online' }
           ])
           probes: [
             {
