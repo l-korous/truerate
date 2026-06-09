@@ -52,6 +52,18 @@ test("/demo/hotel returns well-formed book-direct options from the directory", a
   }
 });
 
+test("/demo/hotel substring-matches hotel names (typeahead, not just exact tokens)", async () => {
+  const app = await getApp();
+  // "olymp" must surface every "Olympia"/"Olymp..." — the old exact-token matcher
+  // returned only a literal "Olymp" token. Each hit must contain the substring.
+  const d = (await (await app.request("/demo/hotel?q=olymp")).json()) as { directBooking: { name: string }[] };
+  assert.ok(d.directBooking.length >= 2, `several 'Olymp...' hotels match (got ${d.directBooking.length})`);
+  for (const h of d.directBooking) assert.match(h.name.toLowerCase(), /olymp/, "every hit contains the substring");
+  // Mid-word substrings match too (true substring, not prefix-only).
+  const mid = (await (await app.request("/demo/hotel?q=lympi")).json()) as { directBooking: { name: string }[] };
+  assert.ok(mid.directBooking.some((h) => /olympia/i.test(h.name)), "'lympi' matches mid-word inside 'Olympia'");
+});
+
 test("/demo/hotel never leaks hotel prices/rates (perk value estimates are allowed)", async () => {
   const app = await getApp();
   const raw = (await (await app.request("/demo/hotel?q=Hilton")).text()).toLowerCase();
