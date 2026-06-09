@@ -28,13 +28,12 @@ const CAP = Number(process.env.SPRINKLE_CAP || 300); // per far/sprinkle country
 const CORE = Number(process.env.CORE_CAP || 3000); // per core neighbour market
 const COUNTRIES = {
   CZ: { cap: 0 }, // 0 = no cap (the focus — every CZ accommodation with a site)
-  // Core neighbour markets (areaServed) — deep coverage.
+  // European focus markets (owner: rest-of-Europe hotels) — deep coverage.
   DE: { cap: CORE }, AT: { cap: CORE }, PL: { cap: CORE }, SK: { cap: CORE }, HU: { cap: CORE },
+  IT: { cap: CORE }, ES: { cap: CORE }, FR: { cap: CORE }, GB: { cap: CORE }, HR: { cap: CORE }, SI: { cap: CORE },
   // "Sprinkle" a few hundred each from other markets worldwide.
-  GB: { cap: CAP }, FR: { cap: CAP }, IT: { cap: CAP },
-  ES: { cap: CAP }, NL: { cap: CAP }, BE: { cap: CAP }, CH: { cap: CAP }, PT: { cap: CAP },
-  GR: { cap: CAP }, HR: { cap: CAP }, SI: { cap: CAP },
-  DK: { cap: CAP }, SE: { cap: CAP }, NO: { cap: CAP }, FI: { cap: CAP },
+  NL: { cap: CAP }, BE: { cap: CAP }, CH: { cap: CAP }, PT: { cap: CAP },
+  GR: { cap: CAP }, DK: { cap: CAP }, SE: { cap: CAP }, NO: { cap: CAP }, FI: { cap: CAP },
   IE: { cap: CAP }, RO: { cap: CAP }, US: { cap: CAP }, CA: { cap: CAP },
   JP: { cap: CAP }, KR: { cap: CAP }, AU: { cap: CAP }, TR: { cap: CAP },
 };
@@ -45,7 +44,7 @@ function overpass(query) {
   // check the proxy can't satisfy. (A clean env can swap this for fetch().)
   const out = execFileSync(
     "curl",
-    ["-sS", "-m", "250", "--ssl-no-revoke", "-A", USER_AGENT, "-G", OVERPASS, "--data-urlencode", `data=${query}`],
+    ["-sS", "-m", "310", "--ssl-no-revoke", "-A", USER_AGENT, "-G", OVERPASS, "--data-urlencode", `data=${query}`],
     { maxBuffer: 512 * 1024 * 1024, encoding: "utf8" },
   );
   return JSON.parse(out);
@@ -60,12 +59,13 @@ function domainOf(url) {
 }
 
 function buildQuery(cc, cap) {
-  // Match a published site under any of website / contact:website / url so we
-  // catch accommodations that only tag one of them — more breadth, still a
-  // direct-booking URL for each. (Was website-only.)
-  const filt = KINDS.map((k) => `nwr["tourism"="${k}"][~"^((contact:)?website|url)$"~"."](area.c);`).join("");
+  // Match website OR contact:website with EXACT keys — these use Overpass's tag
+  // index, so the query stays fast even for big countries. (A key-regex filter
+  // scans every tag with no index and times out on large areas like FR/ES/GB.)
+  const tags = ["website", "contact:website"];
+  const filt = KINDS.flatMap((k) => tags.map((tag) => `nwr["tourism"="${k}"]["${tag}"](area.c);`)).join("");
   const out = cap > 0 ? `out tags center ${cap};` : "out tags center;";
-  return `[out:json][timeout:240];area["ISO3166-1"="${cc}"][admin_level=2]->.c;(${filt});${out}`;
+  return `[out:json][timeout:300];area["ISO3166-1"="${cc}"][admin_level=2]->.c;(${filt});${out}`;
 }
 
 const want = process.argv.slice(2).filter((a) => COUNTRIES[a]);
