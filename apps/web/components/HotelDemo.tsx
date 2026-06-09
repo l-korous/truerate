@@ -16,6 +16,13 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** ISO 3166-1 alpha-2 → regional-indicator flag emoji (e.g. "CZ" → 🇨🇿). */
+function flag(cc?: string): string {
+  if (!cc || !/^[a-z]{2}$/i.test(cc)) return "";
+  const base = 0x1f1e6;
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((ch) => base + ch.charCodeAt(0) - 65));
+}
+
 export function HotelDemo() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [q, setQ] = useState("");
@@ -27,22 +34,33 @@ export function HotelDemo() {
     demoApi.stats().then(setStats).catch(() => {});
   }, []);
 
-  const run = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!q.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setResult(await demoApi.hotel(q.trim()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Lookup failed");
-    } finally {
+  // Search-as-you-type: debounce keystrokes, fire at >= 2 chars, clear below.
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setResult(null);
+      setError(null);
       setLoading(false);
+      return;
     }
-  };
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        setResult(await demoApi.hotel(query));
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Lookup failed");
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const inDirectory = (result?.directBooking.length ?? 0) > 0;
   const programs = result?.memberPrograms ?? [];
+  const count = (result?.directBooking.length ?? 0) + programs.length;
+  const settled = q.trim().length >= 2 && !loading && result !== null;
 
   return (
     <section data-testid="hotel-demo" style={{ maxWidth: 720, margin: "0 auto" }}>
@@ -55,23 +73,23 @@ export function HotelDemo() {
         </div>
       )}
 
-      <form onSubmit={run} style={{ display: "flex", gap: 8 }}>
-        <input
-          data-testid="hotel-demo-input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Enter your hotel name — e.g. Marriott Prague, or your own property"
-          style={{ flex: 1, padding: "0.7rem 0.9rem", fontSize: "1rem", border: "1px solid #ccd", borderRadius: 8 }}
-        />
-        <button data-testid="hotel-demo-go" type="submit" disabled={loading || !q.trim()} style={{ padding: "0.7rem 1.2rem", fontSize: "1rem", fontWeight: 700, color: "#fff", background: "#1d3a8a", border: "none", borderRadius: 8, cursor: "pointer" }}>
-          {loading ? "…" : "Show me"}
-        </button>
-      </form>
+      <input
+        data-testid="hotel-demo-input"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Start typing your hotel name — e.g. Olympia, Marriott Prague, your own property"
+        autoComplete="off"
+        aria-label="Hotel name"
+        style={{ width: "100%", boxSizing: "border-box", padding: "0.7rem 0.9rem", fontSize: "1rem", border: "1px solid #ccd", borderRadius: 8 }}
+      />
+      <div data-testid="hotel-demo-status" style={{ minHeight: 18, fontSize: "0.8rem", color: "#889", margin: "4px 2px 0" }}>
+        {q.trim().length === 1 ? "Keep typing…" : loading ? "Searching…" : settled ? `${count} result${count === 1 ? "" : "s"}` : ""}
+      </div>
 
       {error && <p role="alert" style={{ color: "#b00020" }}>{error}</p>}
 
       {result && (
-        <div data-testid="hotel-demo-result" style={{ marginTop: "1.5rem" }}>
+        <div data-testid="hotel-demo-result" style={{ marginTop: "0.75rem" }}>
           <p style={{ color: "#667", fontSize: "0.9rem", margin: "0 0 0.75rem" }}>
             This is exactly what a traveler&apos;s AI assistant or TrueRate browser extension tells them about <strong>{result.query}</strong>:
           </p>
@@ -81,9 +99,15 @@ export function HotelDemo() {
               <div style={{ fontWeight: 700, color: "#1a7f37" }}>✓ Book direct — skip the OTA commission</div>
               <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
                 {result.directBooking.map((h) => (
-                  <li key={h.realizationUrl} style={{ marginBottom: 2 }}>
-                    <strong>{h.name}</strong>{h.city ? ` · ${h.city}` : ""} — “book direct at{" "}
-                    <a href={h.realizationUrl} target="_blank" rel="noreferrer">{h.realizationUrl.replace(/^https?:\/\//, "")}</a>”
+                  <li key={h.realizationUrl} style={{ marginBottom: 6 }}>
+                    <strong>{h.name}</strong>{" "}
+                    <span style={{ color: "#667", fontSize: "0.9rem" }}>
+                      {flag(h.country)} {[h.city, h.country].filter(Boolean).join(", ")}
+                    </span>
+                    <br />
+                    <a href={h.realizationUrl} target="_blank" rel="noreferrer" style={{ fontSize: "0.9rem" }}>
+                      {h.realizationUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -121,7 +145,7 @@ export function HotelDemo() {
             </div>
           )}
 
-          {!inDirectory && programs.length === 0 && (
+          {settled && !inDirectory && programs.length === 0 && (
             <div data-testid="demo-empty" style={{ color: "#667" }}>
               We don&apos;t have <strong>{result.query}</strong> yet — that&apos;s exactly the gap TrueRate fills. Add your direct-booking offer and travelers start seeing it.
             </div>

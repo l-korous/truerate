@@ -11,7 +11,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   PROGRAMS,
-  matchHotelDirectory,
   templatesForTier,
   summariseBenefits,
   estimatePerkValueAllBands,
@@ -23,6 +22,7 @@ import {
 const _require = createRequire(import.meta.url);
 let _dir: HotelDirectoryEntry[] | null = null;
 let _commonTokens: Set<string> | null = null;
+let _searchIndex: { h: HotelDirectoryEntry; nn: string }[] | null = null;
 
 /** Lazy, fail-soft load of the hotel directory (same data the MCP serves).
  *  Resolve the package MAIN (allowed by `exports`) → <core>/dist → ../data;
@@ -38,13 +38,32 @@ function directory(): HotelDirectoryEntry[] {
   return _dir;
 }
 
+/** Substring typeahead over the directory: hotels whose (diacritic-folded) name
+ *  contains the query anywhere — so "olymp" AND "lympi" both match every
+ *  "Olympia". Ranked: name-prefix < word-prefix < mid-substring, then shorter
+ *  names. The folded-name index is built once, lazily. */
+function searchDirectory(q: string, limit: number): HotelDirectoryEntry[] {
+  const nq = norm(q).trim();
+  if (nq.length < 2) return [];
+  if (!_searchIndex) _searchIndex = directory().map((h) => ({ h, nn: norm(h.name) }));
+  const hits: { h: HotelDirectoryEntry; rank: number; idx: number; len: number }[] = [];
+  for (const e of _searchIndex) {
+    const idx = e.nn.indexOf(nq);
+    if (idx < 0) continue;
+    const rank = idx === 0 ? 0 : e.nn[idx - 1] === " " ? 1 : 2;
+    hits.push({ h: e.h, rank, idx, len: e.nn.length });
+  }
+  hits.sort((a, b) => a.rank - b.rank || a.idx - b.idx || a.len - b.len || a.h.name.localeCompare(b.h.name));
+  return hits.slice(0, limit).map((s) => s.h);
+}
+
 /** Catalog programs that apply to the searched hotel text: by brand/domain
  *  substring, or because a brand / known property name's distinctive tokens are
  *  ALL present in the query — so "Emblem Prague" → Emblem Prague and "Hotel Roma"
  *  → Your Prague Hotels, while "Hilton Prague" does not match Emblem (shares only
  *  the city, which isn't distinctive). */
 function matchingPrograms(q: string): Program[] {
-  const ql = q.toLowerCase();
+  const ql = q.toLowerCase().trim();
   const qt = distinctiveTokens(q);
   const namedInQuery = (name: string): boolean => {
     const nt = distinctiveTokens(name);
@@ -52,11 +71,12 @@ function matchingPrograms(q: string): Program[] {
     for (const t of nt) if (!qt.has(t)) return false;
     return true;
   };
+  const pfx = (s: string): boolean => ql.length >= 3 && s.startsWith(ql); // typeahead: typing a brand prefix
   return PROGRAMS.filter((p) => {
     const brands = (p.defaultMatch.brands ?? []).map((b) => b.toLowerCase());
     const domains = (p.defaultMatch.domains ?? []).map((d) => d.toLowerCase().replace(/\..*$/, ""));
-    if (brands.some((b) => b.length > 2 && ql.includes(b))) return true;
-    if (domains.some((d) => d.length > 2 && ql.includes(d))) return true;
+    if (brands.some((b) => b.length > 2 && (ql.includes(b) || pfx(b)))) return true;
+    if (domains.some((d) => d.length > 2 && (ql.includes(d) || pfx(d)))) return true;
     return [...(p.defaultMatch.brands ?? []), ...(p.defaultMatch.propertyNames ?? [])].some(namedInQuery);
   });
 }
@@ -107,21 +127,14 @@ function commonTokens(): Set<string> {
   _commonTokens = common;
   return common;
 }
-/** sigTokens minus common/location tokens — the truly distinctive part of a name. */
+/** sigTokens minus common/location tokens — the truly distinctive part of a name.
+ *  Used to match programs by brand / property name without a shared city word
+ *  (e.g. "Prague") creating false matches. */
 function distinctiveTokens(s: string): Set<string> {
   const common = commonTokens();
   const out = new Set<string>();
   for (const t of sigTokens(s)) if (!common.has(t)) out.add(t);
   return out;
-}
-/** A directory hit is relevant only if it shares a DISTINCTIVE (non-generic,
- *  non-location) token with the query. If the query has no such token (e.g. just
- *  a city, or "hotel"), don't over-filter. */
-function relevantHotel(query: string, name: string): boolean {
-  const qt = distinctiveTokens(query);
-  if (qt.size === 0) return true;
-  for (const t of distinctiveTokens(name)) if (qt.has(t)) return true;
-  return false;
 }
 
 export const demoRoutes = new Hono();
@@ -130,16 +143,13 @@ export const demoRoutes = new Hono();
 demoRoutes.get("/demo/hotel", (c) => {
   const q = (c.req.query("q") ?? "").trim();
   if (!q) return c.json({ error: "missing_query" }, 400);
-  const directBooking = matchHotelDirectory(directory(), { hotel: q }, 12)
-    .filter((h) => relevantHotel(q, h.name))
-    .slice(0, 5)
-    .map((h) => ({
-      name: h.name,
-      city: h.city,
-      country: h.country,
-      kind: h.kind,
-      realizationUrl: h.realizationUrl,
-    }));
+  const directBooking = searchDirectory(q, 6).map((h) => ({
+    name: h.name,
+    city: h.city,
+    country: h.country,
+    kind: h.kind,
+    realizationUrl: h.realizationUrl,
+  }));
   const memberPrograms = matchingPrograms(q).map(programView);
   return c.json({ query: q, directBooking, memberPrograms });
 });

@@ -9,11 +9,16 @@ test("for-hotels demo shows platform scale and what an end-user sees for a hotel
   await expect(page.getByTestId("platform-stats")).toBeVisible();
   await expect(page.getByTestId("platform-stats")).toContainText("hotels covered");
 
-  // Search a chain → member perks surface.
+  // Search-as-you-type a chain (no submit button) → member perks surface.
   await page.getByTestId("hotel-demo-input").fill("Marriott");
-  await page.getByTestId("hotel-demo-go").click();
   await expect(page.getByTestId("hotel-demo-result")).toBeVisible();
   await expect(page.getByTestId("demo-perks")).toContainText("Marriott Bonvoy");
+
+  // Substring typeahead: a partial name surfaces matching properties with their
+  // country (the old exact-token matcher missed "Olympia" for "olymp").
+  await page.getByTestId("hotel-demo-input").fill("olymp");
+  await expect(page.getByTestId("demo-direct")).toBeVisible();
+  await expect(page.getByTestId("demo-direct")).toContainText(/olymp/i);
 
   // No hotel price/rate leaks on the page (perk value estimates like "$25" are allowed).
   const body = (await page.locator("body").textContent()) ?? "";
