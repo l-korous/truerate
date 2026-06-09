@@ -742,6 +742,35 @@ app.get("/admin/analytics/usage", async (c) => {
   return c.json(report);
 });
 
+// POST /admin/analytics/seed-demo?count=N — populate usage analytics with
+// realistic synthetic demand so the leaderboard + /stats look alive for demos.
+// TrueRate is pre-launch (no real users to conflate with). Admin-authed.
+// Power-law-skewed toward popular programs; varied perks/countries/channels;
+// events tagged userIdHash "demo-…" so they're identifiable. No prices (#1).
+app.post("/admin/analytics/seed-demo", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const count = Math.max(1, Math.min(Number(c.req.query("count") ?? 800), 10000));
+  const countries = ["CZ", "DE", "AT", "PL", "SK", "HU", "IT", "ES", "FR", "GB"];
+  const channels: UsageChannel[] = ["mcp", "extension"];
+  const events: UsageEventInput[] = [];
+  for (let i = 0; i < count; i++) {
+    const p = PROGRAMS[Math.floor(Math.pow(Math.random(), 2) * PROGRAMS.length)] ?? PROGRAMS[0]!;
+    const perks = Object.values(p.benefits).flat().flatMap((t) => t.value.structuredPerks ?? []);
+    const sp = perks.length ? perks[Math.floor(Math.random() * perks.length)] : undefined;
+    events.push({
+      channel: channels[Math.floor(Math.random() * channels.length)]!,
+      programId: p.id,
+      perkType: sp?.type,
+      benefitKind: sp ? "perk" : "percentDiscount",
+      country: countries[Math.floor(Math.random() * countries.length)],
+      userIdHash: `demo-${Math.floor(Math.random() * 2500)}`,
+    });
+  }
+  await (await getUsageRepo()).recordMany(events);
+  return c.json({ seeded: events.length });
+});
+
 // GET /admin/catalog — list catalog entries, optionally filtered by ?status=
 app.get("/admin/catalog", async (c) => {
   const authErr = requireCatalogEditor(c);
