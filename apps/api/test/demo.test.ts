@@ -29,11 +29,16 @@ test("/demo/hotel for a chain returns member programs with perk-value estimates"
   const app = await getApp();
   const r = await app.request("/demo/hotel?q=Marriott");
   assert.equal(r.status, 200);
-  const d = (await r.json()) as { memberPrograms: { programId: string; summary: string[]; perkValues: { estUsd: number }[] }[] };
+  const d = (await r.json()) as {
+    memberPrograms: { programId: string; summary: string[]; perkValues: { estUsd: number }[]; realizationUrl?: string }[];
+  };
   const bonvoy = d.memberPrograms.find((p) => p.programId === "marriott_bonvoy");
   assert.ok(bonvoy, "Marriott Bonvoy surfaced for 'Marriott'");
   assert.ok(bonvoy!.summary.length > 0, "has a perk summary");
   assert.ok(bonvoy!.perkValues.some((v) => v.estUsd > 0), "has perk value estimates");
+  // The core message is "members save X% — book direct at <URL>": a hotel-brand
+  // program must carry its direct-booking realization URL.
+  assert.ok(bonvoy!.realizationUrl?.includes("marriott.com"), "Bonvoy has a book-direct realization URL");
 });
 
 test("/demo/hotel returns well-formed book-direct options from the directory", async () => {
@@ -59,12 +64,16 @@ test("/demo/hotel returns no irrelevant results for an unknown hotel", async () 
   const app = await getApp();
   // A made-up name sharing only generic words ("Hotel") must NOT surface random
   // hotels — a hotel client should see a clean "not found", never noise.
-  const d = (await (await app.request("/demo/hotel?q=Zzz Nonexistent Hotel 999")).json()) as {
-    directBooking: unknown[];
-    memberPrograms: unknown[];
-  };
-  assert.equal(d.directBooking.length, 0, "no irrelevant book-direct results");
-  assert.equal(d.memberPrograms.length, 0, "no spurious programs");
+  for (const q of ["Zzz Nonexistent Hotel 999", "Flooble Wibbleton Suites"]) {
+    // The second name shares only a generic accommodation-type word ("Suites"),
+    // which must be treated like "Hotel" — not a distinctive match.
+    const d = (await (await app.request(`/demo/hotel?q=${encodeURIComponent(q)}`)).json()) as {
+      directBooking: unknown[];
+      memberPrograms: unknown[];
+    };
+    assert.equal(d.directBooking.length, 0, `no irrelevant book-direct results for ${q}`);
+    assert.equal(d.memberPrograms.length, 0, `no spurious programs for ${q}`);
+  }
 });
 
 test("/demo/hotel requires a query", async () => {

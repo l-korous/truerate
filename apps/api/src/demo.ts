@@ -68,6 +68,10 @@ const STOP = new Set([
   "hotel", "hotels", "apartment", "apartments", "apartmany", "penzion", "pension", "guesthouse", "guest",
   "house", "resort", "spa", "wellness", "hostel", "motel", "chalet", "villa", "rooms", "room", "inn",
   "the", "and", "by", "of", "garni", "boutique", "design", "park", "grand", "city", "old", "town",
+  // generic accommodation-type words (and a few non-EN equivalents) — like
+  // "hotel" they must not, alone, make two names match.
+  "lodge", "lodges", "suites", "suite", "residence", "residences", "aparthotel", "aparthotels",
+  "bnb", "camping", "gasthof", "gasthaus", "albergo", "locanda", "hostal", "ostello", "ferienwohnung",
 ]);
 function norm(s: string): string {
   return s.toLowerCase().normalize("NFKD").replace(/\p{Diacritic}/gu, "");
