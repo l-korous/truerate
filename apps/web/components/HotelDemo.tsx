@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import { demoApi, type DemoHotelResult, type PlatformStats } from "@/lib/api";
 
-// "TrueRate for your hotel" — the demo a prospective hotel client sees: type a
-// hotel, see exactly what a TrueRate end-user is told (book direct + perks +
+// "CustomRates for your hotel" — the demo a prospective hotel client sees: type a
+// hotel, see exactly what a CustomRates end-user is told (book direct + perks +
 // perk-value estimates). No prices — perk values are estimates, not room rates.
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <div style={{ textAlign: "center", minWidth: 110 }}>
-      <div style={{ fontSize: "1.9rem", fontWeight: 800, color: "#1d3a8a", lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: "0.8rem", color: "#667", marginTop: 4 }}>{label}</div>
+    <div className="min-w-[96px] text-center">
+      <div className="font-display text-3xl font-semibold leading-none text-sunset">{value}</div>
+      <div className="mt-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</div>
     </div>
   );
 }
@@ -21,6 +21,10 @@ function flag(cc?: string): string {
   if (!cc || !/^[a-z]{2}$/i.test(cc)) return "";
   const base = 0x1f1e6;
   return String.fromCodePoint(...[...cc.toUpperCase()].map((ch) => base + ch.charCodeAt(0) - 65));
+}
+
+function host(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
 export function HotelDemo() {
@@ -63,9 +67,12 @@ export function HotelDemo() {
   const settled = q.trim().length >= 2 && !loading && result !== null;
 
   return (
-    <section data-testid="hotel-demo" style={{ maxWidth: 720, margin: "0 auto" }}>
+    <section data-testid="hotel-demo" className="mx-auto max-w-2xl">
       {stats && (
-        <div data-testid="platform-stats" style={{ display: "flex", gap: "1.5rem", justifyContent: "center", flexWrap: "wrap", padding: "1.25rem", background: "#f4f6fc", borderRadius: 12, marginBottom: "1.5rem" }}>
+        <div
+          data-testid="platform-stats"
+          className="mb-6 flex flex-wrap justify-center gap-x-8 gap-y-4 rounded-xl2 border border-line bg-card px-6 py-5 shadow-soft"
+        >
           <Stat value={stats.hotelsCovered.toLocaleString()} label="hotels covered" />
           <Stat value={String(stats.countries)} label="countries" />
           <Stat value={String(stats.programs)} label="loyalty programs" />
@@ -77,36 +84,36 @@ export function HotelDemo() {
         data-testid="hotel-demo-input"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Start typing your hotel name — e.g. Olympia, Marriott Prague, your own property"
+        placeholder="Start typing your hotel — e.g. Olympia, Marriott Prague, your own property"
         autoComplete="off"
         aria-label="Hotel name"
-        style={{ width: "100%", boxSizing: "border-box", padding: "0.7rem 0.9rem", fontSize: "1rem", border: "1px solid #ccd", borderRadius: 8 }}
+        className="field text-lg shadow-soft"
       />
-      <div data-testid="hotel-demo-status" style={{ minHeight: 18, fontSize: "0.8rem", color: "#889", margin: "4px 2px 0" }}>
+      <div data-testid="hotel-demo-status" className="mb-1 mt-2 min-h-[18px] px-1 text-sm text-ink-muted">
         {q.trim().length === 1 ? "Keep typing…" : loading ? "Searching…" : settled ? `${count} result${count === 1 ? "" : "s"}` : ""}
       </div>
 
-      {error && <p role="alert" style={{ color: "#b00020" }}>{error}</p>}
+      {error && <p role="alert" className="text-sun-deep">{error}</p>}
 
       {result && (
-        <div data-testid="hotel-demo-result" style={{ marginTop: "0.75rem" }}>
-          <p style={{ color: "#667", fontSize: "0.9rem", margin: "0 0 0.75rem" }}>
-            This is exactly what a traveler&apos;s AI assistant or TrueRate browser extension tells them about <strong>{result.query}</strong>:
+        <div data-testid="hotel-demo-result" className="mt-3 space-y-4">
+          <p className="text-sm text-ink-muted">
+            This is exactly what a traveler&apos;s AI assistant or CustomRates browser extension tells them about <strong className="text-ink">{result.query}</strong>:
           </p>
 
           {inDirectory && (
-            <div data-testid="demo-direct" style={{ border: "1px solid #d6e6d6", background: "#f3faf3", borderRadius: 10, padding: "1rem", marginBottom: "1rem" }}>
-              <div style={{ fontWeight: 700, color: "#1a7f37" }}>✓ Book direct — skip the OTA commission</div>
-              <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
+            <div data-testid="demo-direct" className="rounded-xl2 border border-sea/20 bg-sea-soft/60 p-5">
+              <div className="font-semibold text-sea-deep">✓ Book direct — skip the OTA commission</div>
+              <ul className="mt-2 space-y-2.5">
                 {result.directBooking.map((h) => (
-                  <li key={h.realizationUrl} style={{ marginBottom: 6 }}>
-                    <strong>{h.name}</strong>{" "}
-                    <span style={{ color: "#667", fontSize: "0.9rem" }}>
+                  <li key={h.realizationUrl} className="text-sm">
+                    <span className="font-semibold text-ink">{h.name}</span>{" "}
+                    <span className="text-ink-muted">
                       {flag(h.country)} {[h.city, h.country].filter(Boolean).join(", ")}
                     </span>
                     <br />
-                    <a href={h.realizationUrl} target="_blank" rel="noreferrer" style={{ fontSize: "0.9rem" }}>
-                      {h.realizationUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                    <a href={h.realizationUrl} target="_blank" rel="noreferrer" className="text-sea hover:underline">
+                      {host(h.realizationUrl)}
                     </a>
                   </li>
                 ))}
@@ -115,43 +122,47 @@ export function HotelDemo() {
           )}
 
           {programs.length > 0 && (
-            <div data-testid="demo-perks" style={{ border: "1px solid #dde", borderRadius: 10, padding: "1rem" }}>
-              <div style={{ fontWeight: 700, marginBottom: "0.5rem" }}>Loyalty perks a member sees here</div>
-              {programs.map((p) => (
-                <div key={p.programId} style={{ marginBottom: "0.75rem" }}>
-                  <div style={{ fontWeight: 600 }}>{p.name}{p.topTier ? ` · ${p.topTier}` : ""}</div>
-                  {p.realizationUrl && (
-                    <div style={{ fontSize: "0.85rem", color: "#1a7f37", margin: "3px 0", fontWeight: p.openToAnyone ? 700 : 400 }}>
-                      {p.openToAnyone
-                        ? (p.percentOff ?? 0) > 0
-                          ? `✓ −${Math.round((p.percentOff ?? 0) * 100)}% for you — just register & book direct at `
-                          : "✓ Free to join — register & book direct at "
-                        : "✓ members book direct at "}
-                      <a href={p.realizationUrl} target="_blank" rel="noreferrer">
-                        {p.realizationUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                      </a>
+            <div data-testid="demo-perks" className="rounded-xl2 border border-line bg-card p-5 shadow-soft">
+              <div className="mb-2 font-semibold text-ink">Loyalty perks a member sees here</div>
+              <div className="space-y-4">
+                {programs.map((p) => (
+                  <div key={p.programId}>
+                    <div className="font-semibold text-ink">
+                      {p.name}{p.topTier ? <span className="text-ink-muted"> · {p.topTier}</span> : null}
                     </div>
-                  )}
-                  <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.1rem", color: "#445" }}>
-                    {p.summary.map((s, i) => <li key={i}>{s}</li>)}
-                  </ul>
-                  {p.perkValues.length > 0 && (
-                    <div style={{ fontSize: "0.85rem", color: "#667", marginTop: 4 }}>
-                      est. perk value:{" "}
-                      {p.perkValues.map((v, i) => (
-                        <span key={i}>{i > 0 ? " · " : ""}{v.label} ≈ ${v.estUsd}</span>
-                      ))}
-                      <span style={{ fontStyle: "italic" }}> (estimate, not a price)</span>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    {p.realizationUrl && (
+                      <div className={`my-1 text-sm text-sun-deep ${p.openToAnyone ? "font-semibold" : ""}`}>
+                        {p.openToAnyone
+                          ? (p.percentOff ?? 0) > 0
+                            ? `✓ −${Math.round((p.percentOff ?? 0) * 100)}% for you — just register & book direct at `
+                            : "✓ Free to join — register & book direct at "
+                          : "✓ members book direct at "}
+                        <a href={p.realizationUrl} target="_blank" rel="noreferrer" className="underline">
+                          {host(p.realizationUrl)}
+                        </a>
+                      </div>
+                    )}
+                    <ul className="ml-4 list-disc text-sm text-ink-soft">
+                      {p.summary.map((s, i) => <li key={i}>{s}</li>)}
+                    </ul>
+                    {p.perkValues.length > 0 && (
+                      <div className="mt-1 text-sm text-ink-muted">
+                        est. perk value:{" "}
+                        {p.perkValues.map((v, i) => (
+                          <span key={i}>{i > 0 ? " · " : ""}{v.label} ≈ ${v.estUsd}</span>
+                        ))}
+                        <span className="italic"> (estimate, not a price)</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {settled && !inDirectory && programs.length === 0 && (
-            <div data-testid="demo-empty" style={{ color: "#667" }}>
-              We don&apos;t have <strong>{result.query}</strong> yet — that&apos;s exactly the gap TrueRate fills. Add your direct-booking offer and travelers start seeing it.
+            <div data-testid="demo-empty" className="rounded-xl2 border border-dashed border-line bg-paper p-5 text-ink-muted">
+              We don&apos;t have <strong className="text-ink">{result.query}</strong> yet — that&apos;s exactly the gap CustomRates fills. Add your direct-booking offer and travelers start seeing it.
             </div>
           )}
         </div>

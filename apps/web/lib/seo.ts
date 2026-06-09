@@ -24,7 +24,7 @@ export function buildPageMetadata(locale: Locale = defaultLocale, path = ""): Me
   return {
     title: {
       default: meta.title,
-      template: "%s | TrueRate",
+      template: "%s | CustomRates",
     },
     description: meta.description,
     metadataBase: new URL(siteUrl),
@@ -37,7 +37,7 @@ export function buildPageMetadata(locale: Locale = defaultLocale, path = ""): Me
       url: canonical,
       title: meta.title,
       description: meta.ogDescription,
-      siteName: "TrueRate",
+      siteName: "CustomRates",
     },
     twitter: {
       card: "summary_large_image",
@@ -61,26 +61,26 @@ export function buildNoindexMetadata(title: string): Metadata {
 export const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "TrueRate",
+  name: "CustomRates",
   url: siteUrl,
   description:
-    "TrueRate is a vault of travel loyalty memberships and perks. It shows which discounts, perks, and conditions apply for any hotel — without handling prices.",
+    "CustomRates is a vault of travel loyalty memberships and perks. It shows which discounts, perks, and conditions apply for any hotel — without handling prices.",
   areaServed: ["CZ", "DE", "PL", "AT", "SK", "HU"],
 };
 
 export const websiteJsonLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "TrueRate",
+  name: "CustomRates",
   url: siteUrl,
   description:
-    "Keep all your loyalty memberships and perks in one place. TrueRate shows which discounts, perks, and conditions apply for any hotel.",
+    "Keep all your loyalty memberships and perks in one place. CustomRates shows which discounts, perks, and conditions apply for any hotel.",
 };
 
 export const softwareApplicationJsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "TrueRate",
+  name: "CustomRates",
   applicationCategory: "TravelApplication",
   operatingSystem: "Web",
   url: siteUrl,

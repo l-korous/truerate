@@ -1,12 +1,12 @@
 /**
- * Web channel driver for the TrueRate synthetic-user harness (issue #41).
+ * Web channel driver for the CustomRates synthetic-user harness (issue #41).
  *
  * Accepts a TestPersona from @truerate/harness and a Playwright Page, then:
  *   1. Registers the persona in the web UI.
  *   2. Adds each of their catalog memberships.
  *   3. Asserts that displayed perks/conditions match the persona's expectedPerks
  *      contract (perk labels, condition tags, estimated value labels).
- *   4. Asserts that no TrueRate-produced price appears anywhere — product rule
+ *   4. Asserts that no CustomRates-produced price appears anywhere — product rule
  *      #1 (issue #1): only perk-value estimate tiers, never prices.
  *
  * Product rule invariants enforced here:
@@ -18,7 +18,7 @@
 import { expect, type Page } from "@playwright/test";
 import type { TestPersona } from "@truerate/harness";
 
-// Patterns whose presence would violate product rule #1 (no prices from TrueRate).
+// Patterns whose presence would violate product rule #1 (no prices from CustomRates).
 const FORBIDDEN_PRICE_PATTERNS = [
   /indicative member savings/i,
   /reveal my rates/i,

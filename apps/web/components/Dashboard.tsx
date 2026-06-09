@@ -75,7 +75,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
     <div className="min-h-screen bg-grain">
       <header className="border-b border-line bg-paper/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2 font-display text-xl" aria-label="TrueRate"><span className="h-2 w-2 rounded-full bg-save" aria-hidden="true" /> TrueRate</div>
+          <div className="flex items-center gap-2 font-display text-xl" aria-label="CustomRates"><span className="h-2 w-2 rounded-full bg-save" aria-hidden="true" /> CustomRates</div>
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <span className="hidden truncate text-sm text-ink-muted sm:block" title={user.email}>{user.email}</span>
             <button className="shrink-0 text-sm text-ink-muted underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
@@ -140,7 +140,7 @@ export function Dashboard({ user: initial, onSignOut }: { user: PublicUser; onSi
             <div className="mb-6 flex items-end justify-between">
               <div>
                 <h1 className="font-display text-3xl text-ink">Your memberships</h1>
-                <p className="mt-1 text-ink-muted">The more complete this is, the more TrueRate can find for you.</p>
+                <p className="mt-1 text-ink-muted">The more complete this is, the more CustomRates can find for you.</p>
               </div>
               <button className="btn-primary" data-testid="add-membership" onClick={() => setAdding(true)}>+ Add</button>
             </div>

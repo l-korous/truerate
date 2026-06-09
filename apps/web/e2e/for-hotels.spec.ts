@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Public "TrueRate for your hotel" demo page (#wow). No auth.
+// Public "CustomRates for your hotel" demo page (#wow). No auth.
 
 test("for-hotels demo shows platform scale and what an end-user sees for a hotel", async ({ page }) => {
   await page.goto("/for-hotels");

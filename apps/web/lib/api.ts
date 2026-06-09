@@ -415,7 +415,7 @@ export interface UsageAggregation {
   byDay: UsageBucket[];
 }
 
-// --- Public "TrueRate for your hotel" demo (no auth) -------------------------
+// --- Public "CustomRates for your hotel" demo (no auth) -------------------------
 
 export interface DemoDirectBooking {
   name: string;
