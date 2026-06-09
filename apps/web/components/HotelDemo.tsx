@@ -96,6 +96,14 @@ export function HotelDemo() {
               {programs.map((p) => (
                 <div key={p.programId} style={{ marginBottom: "0.75rem" }}>
                   <div style={{ fontWeight: 600 }}>{p.name}{p.topTier ? ` · ${p.topTier}` : ""}</div>
+                  {p.realizationUrl && (
+                    <div style={{ fontSize: "0.85rem", color: "#1a7f37", margin: "2px 0" }}>
+                      ✓ members book direct at{" "}
+                      <a href={p.realizationUrl} target="_blank" rel="noreferrer">
+                        {p.realizationUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                      </a>
+                    </div>
+                  )}
                   <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.1rem", color: "#445" }}>
                     {p.summary.map((s, i) => <li key={i}>{s}</li>)}
                   </ul>
