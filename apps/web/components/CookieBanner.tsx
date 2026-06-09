@@ -35,7 +35,7 @@ export function CookieBanner() {
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p id="cookie-banner-desc" className="text-sm text-ink-muted">
-          We use analytics to understand how people discover and activate TrueRate. No prices,
+          We use analytics to understand how people discover and activate CustomRates. No prices,
           no personal data beyond what you share during sign-up.{" "}
           <a
             href="/privacy"

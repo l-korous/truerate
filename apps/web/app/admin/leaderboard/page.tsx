@@ -1,7 +1,7 @@
 import { Leaderboard } from "@/components/Leaderboard";
 
 export const metadata = {
-  title: "Leaderboard — TrueRate admin",
+  title: "Leaderboard — CustomRates admin",
   robots: { index: false, follow: false },
 };
 

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 // MCP URL management journey — McpUrlManager.tsx (apps/web/components/McpUrlManager.tsx).
 //
-// The MCP tab is the core product surface letting users connect their TrueRate
+// The MCP tab is the core product surface letting users connect their CustomRates
 // vault to Claude Desktop or another AI assistant via a personal MCP URL.
 //
 // Gap closed: McpUrlManager.tsx had 16.43% line coverage (lines 36-213 entirely

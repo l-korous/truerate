@@ -12,29 +12,59 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle paper grain via layered radial dots — atmosphere without an image. */
+/* Warm sun-glow wash behind hero sections — atmosphere, no image. */
+.bg-sunwash {
+  background:
+    radial-gradient(60% 50% at 50% -10%, rgba(255, 191, 87, 0.35), transparent 70%),
+    radial-gradient(50% 40% at 85% 0%, rgba(240, 138, 174, 0.28), transparent 70%),
+    theme("colors.paper");
+}
+
+/* Subtle paper grain via layered dots. */
 .bg-grain {
   background-image: radial-gradient(theme("colors.line") 0.5px, transparent 0.5px);
   background-size: 22px 22px;
 }
 
+/* Sunset gradient text for hero accents. */
+.text-sunset {
+  background: linear-gradient(120deg, #ff6f4d 0%, #ffbf57 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 @layer components {
   .field {
     @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-ink
-           outline-none transition focus:border-ink/40 focus:ring-2 focus:ring-ink/20;
+           outline-none transition placeholder:text-ink-muted/70
+           focus:border-sun/50 focus:ring-2 focus:ring-sun/25;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3
-           font-medium transition active:scale-[.98]
-           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:ring-offset-2;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3
+           font-semibold transition active:scale-[.98]
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sun/40 focus-visible:ring-offset-2;
   }
+  /* Primary CTA — warm sunset gradient. */
   .btn-primary {
-    @apply btn bg-ink text-paper hover:bg-ink-soft;
+    @apply btn bg-grad-sun text-white shadow-sun hover:brightness-[1.04];
+  }
+  /* Cool secondary — the sea. */
+  .btn-sea {
+    @apply btn bg-sea text-white hover:bg-sea-deep;
   }
   .btn-ghost {
-    @apply btn border border-line bg-transparent text-ink hover:bg-white;
+    @apply btn border border-line bg-white/70 text-ink backdrop-blur hover:bg-white;
   }
   .label {
     @apply mb-1.5 block text-sm font-medium text-ink-muted;
+  }
+  /* Soft rounded surface used across cards. */
+  .card-soft {
+    @apply rounded-xl2 border border-line bg-card shadow-soft;
+  }
+  /* Small pill used for eyebrows/tags. */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-sun-soft px-3 py-1 text-sm font-medium text-sun-deep;
   }
 }
