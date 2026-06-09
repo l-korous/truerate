@@ -63,6 +63,7 @@ import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware, signupRateLimit } from "./rate-limit.js";
 import { createEmailSender } from "./email.js";
 import { proposalRoutes } from "./review.js";
+import { demoRoutes } from "./demo.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
 
@@ -1947,6 +1948,7 @@ app.delete("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
 // --- Admin proposal review queue (issue #106) --------------------------------
 // Routes are defined in ./review.ts; mounted here to share CORS and rate-limit middleware.
 app.route("/", proposalRoutes);
+app.route("/", demoRoutes);
 
 // --- helpers ----------------------------------------------------------------
 
