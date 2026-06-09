@@ -29,6 +29,7 @@ export const PROGRAMS: Program[] = [
   // ── OTA ────────────────────────────────────────────────────────────────
   {
     id: "booking_genius",
+    openToAnyone: true,
     name: "Booking.com Genius",
     category: "ota",
     region: "Global",
@@ -74,6 +75,7 @@ export const PROGRAMS: Program[] = [
 
   {
     id: "hotels_com_one_key",
+    openToAnyone: true,
     name: "Hotels.com One Key",
     category: "ota",
     region: "Global",
@@ -137,6 +139,7 @@ export const PROGRAMS: Program[] = [
   // ── Czech direct-booking / independent (the cold-start sweet spot) ───────
   {
     id: "your_prague_hotels",
+    openToAnyone: true,
     name: "Your Prague Hotels — Select",
     category: "hotel",
     region: "CZ",
@@ -168,6 +171,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "emblem_prague",
+    openToAnyone: true,
     name: "Emblem Prague — Emblematic",
     category: "hotel",
     region: "CZ",
@@ -199,6 +203,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "orea",
+    openToAnyone: true,
     name: "OREA Hotels & Resorts",
     category: "hotel",
     region: "CZ",
@@ -220,6 +225,7 @@ export const PROGRAMS: Program[] = [
   // ── International chains operating in Czechia ─────────────────────────────
   {
     id: "accor_all",
+    openToAnyone: true,
     name: "ALL — Accor Live Limitless",
     category: "hotel",
     region: "Global",
@@ -318,6 +324,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "ihg_one_rewards",
+    openToAnyone: true,
     name: "IHG One Rewards",
     category: "hotel",
     region: "Global",
@@ -403,6 +410,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "hilton_honors",
+    openToAnyone: true,
     name: "Hilton Honors",
     category: "hotel",
     region: "Global",
@@ -481,6 +489,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "marriott_bonvoy",
+    openToAnyone: true,
     name: "Marriott Bonvoy",
     category: "hotel",
     region: "Global",
@@ -576,6 +585,7 @@ export const PROGRAMS: Program[] = [
   // ── Cards / fintech (broader than hospitality) ───────────────────────────
   {
     id: "amex_platinum",
+    openToAnyone: false,
     name: "American Express Platinum",
     category: "card",
     region: "US (benefits vary by region)",
@@ -621,6 +631,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "revolut",
+    openToAnyone: false,
     name: "Revolut",
     category: "subscription",
     region: "EEA/UK (perks vary by country)",
@@ -687,6 +698,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "miles_and_more",
+    openToAnyone: true,
     name: "Miles & More (Lufthansa Group)",
     category: "airline",
     region: "Global",
@@ -715,6 +727,7 @@ export const PROGRAMS: Program[] = [
   // ── Czech hotels — direct booking (seed; precursor to the crawler #99) ─────
   {
     id: "orea_hotels",
+    openToAnyone: true,
     name: "OREA Hotels & Resorts",
     category: "hotel",
     region: "CZ",
@@ -748,6 +761,7 @@ export const PROGRAMS: Program[] = [
 
   {
     id: "cpi_hotels",
+    openToAnyone: true,
     name: "CPI Hotels (Clarion, Spa & Wellness Nature Resorts)",
     category: "hotel",
     region: "CZ",

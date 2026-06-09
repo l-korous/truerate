@@ -30,7 +30,7 @@ test("/demo/hotel for a chain returns member programs with perk-value estimates"
   const r = await app.request("/demo/hotel?q=Marriott");
   assert.equal(r.status, 200);
   const d = (await r.json()) as {
-    memberPrograms: { programId: string; summary: string[]; perkValues: { estUsd: number }[]; realizationUrl?: string }[];
+    memberPrograms: { programId: string; summary: string[]; perkValues: { estUsd: number }[]; realizationUrl?: string; openToAnyone?: boolean }[];
   };
   const bonvoy = d.memberPrograms.find((p) => p.programId === "marriott_bonvoy");
   assert.ok(bonvoy, "Marriott Bonvoy surfaced for 'Marriott'");
@@ -39,6 +39,8 @@ test("/demo/hotel for a chain returns member programs with perk-value estimates"
   // The core message is "members save X% — book direct at <URL>": a hotel-brand
   // program must carry its direct-booking realization URL.
   assert.ok(bonvoy!.realizationUrl?.includes("marriott.com"), "Bonvoy has a book-direct realization URL");
+  // Bonvoy is free to join → open to anyone (so non-members can be told to register).
+  assert.equal(bonvoy!.openToAnyone, true, "Bonvoy is open to anyone");
 });
 
 test("/demo/hotel returns well-formed book-direct options from the directory", async () => {
@@ -94,11 +96,14 @@ test("/demo/hotel surfaces a catalog program by property name (not just brand/do
   // program must still surface when a guest types its name — matched on the
   // distinctive token ("Emblem"), ignoring the shared city word ("Prague").
   const d = (await (await app.request("/demo/hotel?q=Emblem Prague")).json()) as {
-    memberPrograms: { programId: string; realizationUrl?: string }[];
+    memberPrograms: { programId: string; realizationUrl?: string; openToAnyone?: boolean; percentOff?: number }[];
   };
   const emblem = d.memberPrograms.find((p) => p.programId === "emblem_prague");
   assert.ok(emblem, "emblem_prague surfaced for 'Emblem Prague'");
   assert.ok(emblem!.realizationUrl?.includes("emblemprague.com"), "with its book-direct URL");
+  // Open-to-anyone: a non-member can be told "−X% for you if you register at <url>".
+  assert.equal(emblem!.openToAnyone, true, "Emblem is open to anyone (free to join)");
+  assert.ok((emblem!.percentOff ?? 0) > 0, "exposes a headline discount % for the register & save line");
 });
 
 test("/demo/hotel requires a query", async () => {
