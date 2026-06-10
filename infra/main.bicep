@@ -41,6 +41,17 @@ param credKeyPrev string = ''
 @secure()
 param adminSecret string = ''
 
+@description('Stripe secret API key (sk_...). Empty = billing endpoints stay 501. Set STRIPE_SECRET_KEY GitHub secret to enable.')
+@secure()
+param stripeSecretKey string = ''
+
+@description('Stripe webhook signing secret (whsec_...). Empty = /webhooks/stripe stays 501.')
+@secure()
+param stripeWebhookSecret string = ''
+
+@description('Stripe recurring price ID (price_...) for the hotel subscription. Not secret.')
+param stripePriceId string = ''
+
 @description('Re-encryption job image. CI replaces this with ghcr.io/<owner>/truerate-reencrypt-job:<sha>.')
 param reencryptJobImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -101,6 +112,18 @@ resource adminSecretRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!em
   parent: kv
   name: 'admin-secret'
   properties: { value: adminSecret }
+}
+
+// Optional Stripe secrets — created only when supplied; empty = billing inert (501).
+resource stripeSecretKeyRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(stripeSecretKey)) {
+  parent: kv
+  name: 'stripe-secret-key'
+  properties: { value: stripeSecretKey }
+}
+resource stripeWebhookSecretRes 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(stripeWebhookSecret)) {
+  parent: kv
+  name: 'stripe-webhook-secret'
+  properties: { value: stripeWebhookSecret }
 }
 
 // Key Vault Secrets User for the identity
@@ -277,6 +300,17 @@ var prevKeyEnv = empty(credKeyPrev)
 var adminSecretEntry = empty(adminSecret) ? [] : [{ name: 'admin-secret', keyVaultUrl: adminSecretRes.properties.secretUri, identity: mi.id }]
 var adminEnv = empty(adminSecret) ? [] : [{ name: 'ADMIN_SECRET', secretRef: 'admin-secret' }]
 
+// Optional Stripe billing wiring for the api (empty = endpoints stay 501).
+var stripeSecretEntry = concat(
+  empty(stripeSecretKey) ? [] : [{ name: 'stripe-secret-key', keyVaultUrl: stripeSecretKeyRes.properties.secretUri, identity: mi.id }],
+  empty(stripeWebhookSecret) ? [] : [{ name: 'stripe-webhook-secret', keyVaultUrl: stripeWebhookSecretRes.properties.secretUri, identity: mi.id }]
+)
+var stripeEnv = concat(
+  empty(stripeSecretKey) ? [] : [{ name: 'STRIPE_SECRET_KEY', secretRef: 'stripe-secret-key' }],
+  empty(stripeWebhookSecret) ? [] : [{ name: 'STRIPE_WEBHOOK_SECRET', secretRef: 'stripe-webhook-secret' }],
+  empty(stripePriceId) ? [] : [{ name: 'STRIPE_PRICE_ID', value: stripePriceId }]
+)
+
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-api'
   location: location
@@ -286,7 +320,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8787, transport: 'auto' }
-      secrets: concat(kvSecrets, adminSecretEntry)
+      secrets: concat(kvSecrets, adminSecretEntry, stripeSecretEntry)
     }
     template: {
       containers: [
@@ -294,7 +328,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'api'
           image: apiImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: concat(cosmosEnv, secretEnv, adminEnv, [
+          env: concat(cosmosEnv, secretEnv, adminEnv, stripeEnv, [
             { name: 'API_PORT', value: '8787' }
             // Base URL of the MCP service, used to build each user's personal
             // MCP URL (https://<mcp>/u/<token>/mcp) — see issue #82.
