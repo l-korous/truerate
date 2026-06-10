@@ -27,7 +27,7 @@ export default function Home() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper">
-        <span className="font-display text-2xl text-ink-muted">TrueRate</span>
+        <span className="font-display text-2xl text-ink-muted">CustomRates</span>
       </div>
     );
   }

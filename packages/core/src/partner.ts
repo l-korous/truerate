@@ -13,6 +13,7 @@
 
 import type { EmailSender } from "./email.js";
 import type {
+  BenefitMatch,
   BenefitTemplate,
   ProgramCategory,
   ProgramField,
@@ -72,6 +73,16 @@ export interface PartnerProgramDraft {
   fields: ProgramField[];
   /** Benefit templates by tier, same shape as core Program.benefits. */
   benefits: Record<string, BenefitTemplate[]>;
+  /**
+   * How this program's benefits are recognised on the web (shared default).
+   * If omitted at publication time, defaults to matching on the program name as a brand.
+   */
+  defaultMatch?: BenefitMatch;
+  /**
+   * Whether a stored credential (API key, membership login) is expected.
+   * Defaults to false if omitted.
+   */
+  requiresCredential?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +165,8 @@ export interface PartnerSubmissionRepo {
   update(sub: PartnerSubmission): Promise<PartnerSubmission>;
   listByOrg(orgId: string): Promise<PartnerSubmission[]>;
   listByStatus(status: SubmissionStatus): Promise<PartnerSubmission[]>;
+  /** List submissions by source (e.g. "scraped"), optionally filtered by status. */
+  listBySource(source: SubmissionSource, status?: SubmissionStatus): Promise<PartnerSubmission[]>;
 }
 
 export interface PartnerNotificationRepo {
@@ -236,6 +249,12 @@ export class MemoryPartnerSubmissionRepo implements PartnerSubmissionRepo {
 
   async listByStatus(status: SubmissionStatus): Promise<PartnerSubmission[]> {
     return [...this.byId.values()].filter((s) => s.status === status);
+  }
+
+  async listBySource(source: SubmissionSource, status?: SubmissionStatus): Promise<PartnerSubmission[]> {
+    return [...this.byId.values()].filter(
+      (s) => s.source === source && (status === undefined || s.status === status),
+    );
   }
 }
 
@@ -374,6 +393,30 @@ export class PartnerWorkflow {
   }
 
   /**
+   * Create a scraped proposal directly (no org membership check).
+   * The proposal starts in "submitted" status, ready for admin review.
+   * The orgId is set to the system constant "SCRAPER-SYSTEM".
+   */
+  async createScrapedProposal(
+    draft: PartnerProgramDraft,
+    submissionId: string,
+  ): Promise<PartnerSubmission> {
+    assertNoPriceFields(draft);
+    const now = new Date().toISOString();
+    const sub: PartnerSubmission = {
+      id: submissionId,
+      orgId: "SCRAPER-SYSTEM",
+      submittedByUserId: "SCRAPER",
+      status: "submitted",
+      source: "scraped",
+      programDraft: draft,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return this.submissions.create(sub);
+  }
+
+  /**
    * Create a program draft for the given org. Validates that:
    * - The user is a member of the org (any role).
    * - The draft contains no price/amount/currency fields.
@@ -415,6 +458,26 @@ export class PartnerWorkflow {
     await this.submissions.update(updated);
     await this.sendNotification(updated, "submission_received");
     return updated;
+  }
+
+  /**
+   * Admin edit: update the program draft on a submission before approval.
+   * Allowed in any pre-decision status (draft, submitted, in_review).
+   * Admin-only: no org membership check.
+   */
+  async adminEdit(submissionId: string, patch: Partial<PartnerProgramDraft>): Promise<PartnerSubmission> {
+    const sub = await this.getSubmissionOrThrow(submissionId);
+    if (sub.status === "approved" || sub.status === "rejected") {
+      throw new PartnerWorkflowError("invalid_transition", `Cannot edit a submission in status '${sub.status}'`);
+    }
+    const merged = { ...sub.programDraft, ...patch };
+    assertNoPriceFields(merged);
+    const updated: PartnerSubmission = {
+      ...sub,
+      programDraft: merged,
+      updatedAt: new Date().toISOString(),
+    };
+    return this.submissions.update(updated);
   }
 
   /**

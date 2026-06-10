@@ -27,6 +27,10 @@ import {
   getCatalogRepo,
   getCatalogCache,
   resetCatalogCache,
+  getUsageRepo,
+  recordUsageSafe,
+  type UsageEventInput,
+  type UsageChannel,
   catalogEntryToProgram,
   programToCatalogInput,
   getPartnerOrgRepo,
@@ -36,6 +40,10 @@ import {
   PartnerWorkflowError,
   getAuditRepo,
   resetAuditRepo,
+  getFeatureFlagRepo,
+  resetFeatureFlagRepo,
+  getAppConfigRepo,
+  resetAppConfigRepo,
   type AuditAction,
   type AuditFilter,
   type CatalogCache,
@@ -52,8 +60,11 @@ import {
   type PartnerRole,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
-import { rateLimitMiddleware } from "./rate-limit.js";
+import { rateLimitMiddleware, signupRateLimit } from "./rate-limit.js";
 import { createEmailSender } from "./email.js";
+import { proposalRoutes } from "./review.js";
+import { demoRoutes } from "./demo.js";
+import { billingRoutes } from "./billing.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
 
@@ -100,6 +111,16 @@ export function resetAppAudit(): void {
   resetAuditRepo();
 }
 
+/** Reset feature flag repo state — for tests only. */
+export function resetAppFlags(): void {
+  resetFeatureFlagRepo();
+}
+
+/** Reset app config repo state — for tests only. */
+export function resetAppConfig(): void {
+  resetAppConfigRepo();
+}
+
 /**
  * Build the CORS origin allowlist from environment variables.
  *
@@ -141,6 +162,36 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true, mode: engine.mode }));
+
+// Centralized error handler. Without this, an uncaught exception returns a bare
+// 500 with NO log line — which is exactly how a broken core action (e.g. a
+// Cosmos write rejection) can ship silently behind green health checks. Log the
+// full error (name/message/code/stack) so failures are diagnosable, and return
+// a clean JSON body carrying the correlation id for support.
+app.onError((err, c) => {
+  // onError must NEVER throw — if it does, @hono/node-server returns a bare
+  // text/plain 500 with no body, which is undiagnosable. Wrap everything.
+  try {
+    const log = c.get("logger") ?? createLogger({ service: "api" });
+    const anyErr = err as unknown as { name?: string; message?: string; code?: unknown; statusCode?: unknown; body?: unknown; stack?: string };
+    log.error("unhandled error", {
+      name: anyErr?.name,
+      message: anyErr?.message,
+      code: anyErr?.code,
+      statusCode: anyErr?.statusCode,
+      cosmosBody: typeof anyErr?.body === "string" ? anyErr.body.slice(0, 500) : undefined,
+      stack: anyErr?.stack?.split("\n").slice(0, 8).join(" | "),
+    });
+    const status = err instanceof HTTPException ? err.status : 500;
+    // Return a clean body carrying only the correlation id — the full fault
+    // (name/message/code/Cosmos body/stack) is in the log line above, keyed by
+    // the same correlation id. Never leak internal error detail to clients.
+    return c.json({ error: "internal_error", correlationId: c.get("correlationId") }, status);
+  } catch (onErrFail) {
+    try { (c.get("logger") ?? createLogger({ service: "api" })).error("onError itself failed", { detail: String(onErrFail), original: String((err as Error)?.message) }); } catch { /* give up */ }
+    return c.json({ error: "internal_error" }, 500);
+  }
+});
 
 // Catalog with a plain-language summary of what each program/tier brings, so
 // the web UI can show "what you'll get" before the user commits.
@@ -296,7 +347,7 @@ const LoginSchema = z.object({
   password: z.string().min(1, "password required"),
 });
 
-app.post("/auth/register", async (c) => {
+app.post("/auth/register", signupRateLimit, async (c) => {
   const parsed = await parseBody(RegisterSchema, c);
   if (parsed instanceof Response) return parsed;
   const { email, password, market } = parsed;
@@ -549,7 +600,29 @@ app.post("/benefits/match", requireAuth, async (c) => {
     await saveUser(user);
     c.get("logger").info("activation milestone", { event: "extension_connected", userIdHash: hashUserId(user.id) });
   }
-  return c.json(engine.matchPage(parsed, user.memberships));
+  const result = engine.matchPage(parsed, user.memberships);
+
+  // Usage analytics (#333): record which provider/perk surfaced in this channel,
+  // for client-ROI insight. Default channel is the extension (this is its
+  // rendering path); a caller may declare another via x-truerate-channel.
+  // Fail-soft, fire-and-forget — never blocks/breaks the response. No prices.
+  const hdr = c.req.header("x-truerate-channel");
+  const channel: UsageChannel = hdr === "mcp" || hdr === "web" || hdr === "extension" ? hdr : "extension";
+  const country = user.market ? user.market.toUpperCase() : undefined;
+  const uHash = hashUserId(user.id);
+  const usageEvents: UsageEventInput[] = [];
+  for (const m of result.matches) {
+    const programId = m.benefit.programId ?? m.benefit.id;
+    if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
+      usageEvents.push({ channel, programId, benefitKind: "percentDiscount", country, userIdHash: uHash });
+    }
+    for (const sp of m.benefit.value.structuredPerks ?? []) {
+      usageEvents.push({ channel, programId, benefitKind: "perk", perkType: sp.type, country, userIdHash: uHash });
+    }
+  }
+  void recordUsageSafe(usageEvents);
+
+  return c.json(result);
 });
 
 // --- Client-side error reporting (unauthenticated, fire-and-forget) ----------
@@ -649,6 +722,77 @@ function requireCatalogEditor(c: any): Response | null {
 function adminActor(c: any): string {
   return c.req.header("x-admin-actor") ?? "admin";
 }
+
+// GET /admin/analytics/usage — provider/perk usage counts for client-ROI insight (#333).
+// Admin-authed (x-admin-secret). Returns counts by provider, perk, country, and day.
+// Filters (query): fromDay, toDay (YYYY-MM-DD), country, channel, programId.
+// ?country=CZ + .byProvider = the per-country provider leaderboard data source (#334).
+app.get("/admin/analytics/usage", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const q = c.req.query();
+  const channel = q.channel === "mcp" || q.channel === "extension" || q.channel === "web" ? q.channel : undefined;
+  const repo = await getUsageRepo();
+  const report = await repo.aggregate({
+    fromDay: q.fromDay || undefined,
+    toDay: q.toDay || undefined,
+    country: q.country || undefined,
+    channel,
+    programId: q.programId || undefined,
+  });
+  return c.json(report);
+});
+
+// POST /admin/analytics/seed-demo?count=N — populate usage analytics with
+// realistic synthetic demand so the leaderboard + /stats look alive for demos.
+// TrueRate is pre-launch (no real users to conflate with). Admin-authed.
+// Power-law-skewed toward popular programs; varied perks/countries/channels;
+// events tagged userIdHash "demo-…" so they're identifiable. No prices (#1).
+app.post("/admin/analytics/seed-demo", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+  const count = Math.max(1, Math.min(Number(c.req.query("count") ?? 800), 10000));
+  const days = Math.max(1, Math.min(Number(c.req.query("days") ?? 45), 180));
+  const countries = ["CZ", "DE", "AT", "PL", "SK", "HU", "IT", "ES", "FR", "GB"];
+  const channels: UsageChannel[] = ["mcp", "extension"];
+  const now = Date.now();
+  const events: UsageEventInput[] = [];
+  for (let i = 0; i < count; i++) {
+    const p = PROGRAMS[Math.floor(Math.pow(Math.random(), 2) * PROGRAMS.length)] ?? PROGRAMS[0]!;
+    const perks = Object.values(p.benefits).flat().flatMap((t) => t.value.structuredPerks ?? []);
+    const sp = perks.length ? perks[Math.floor(Math.random() * perks.length)] : undefined;
+    // Backdate across the last `days` days (recency-weighted) so events land on
+    // many Cosmos `/day` partitions — a single-partition burst of thousands of
+    // writes throttles — and so the byDay trend looks realistic for the demo.
+    const back = Math.floor(Math.pow(Math.random(), 1.5) * days);
+    const ts = new Date(now - back * 86_400_000 - Math.floor(Math.random() * 86_400_000)).toISOString();
+    events.push({
+      channel: channels[Math.floor(Math.random() * channels.length)]!,
+      programId: p.id,
+      perkType: sp?.type,
+      benefitKind: sp ? "perk" : "percentDiscount",
+      country: countries[Math.floor(Math.random() * countries.length)],
+      userIdHash: `demo-${Math.floor(Math.random() * 2500)}`,
+      ts,
+    });
+  }
+  // Write in small sequential batches (not one giant Promise.all) so we never
+  // slam the store with thousands of concurrent creates; tolerate the odd
+  // throttled batch so a partial hiccup still seeds the rest (best-effort).
+  const repo = await getUsageRepo();
+  const CHUNK = 50;
+  let seeded = 0;
+  for (let i = 0; i < events.length; i += CHUNK) {
+    const chunk = events.slice(i, i + CHUNK);
+    try {
+      await repo.recordMany(chunk);
+      seeded += chunk.length;
+    } catch {
+      /* a few throttled writes in this batch — keep going */
+    }
+  }
+  return c.json({ seeded });
+});
 
 // GET /admin/catalog — list catalog entries, optionally filtered by ?status=
 app.get("/admin/catalog", async (c) => {
@@ -1028,7 +1172,48 @@ const SubmissionRejectSchema = z.object({
   adminId: z.string().min(1).optional(),
 });
 
-// POST /admin/submissions/:id/approve — approve a submission (makes it available to catalog editor)
+// PUT /admin/submissions/:id — admin edit of a submission draft before approval
+app.put("/admin/submissions/:id", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(z.object({ programDraft: z.record(z.unknown()) }), c);
+  if (parsed instanceof Response) return parsed;
+
+  // Guard: patch must not contain price fields (product rule #1)
+  const priceField = findPriceField(parsed.programDraft);
+  if (priceField) {
+    return c.json({ error: "price_field_not_allowed", field: priceField }, 400);
+  }
+
+  const actor = adminActor(c);
+  const workflow = await getAppPartnerWorkflow();
+  try {
+    const submission = await workflow.adminEdit(
+      c.req.param("id"),
+      parsed.programDraft as Parameters<typeof workflow.adminEdit>[1],
+    );
+
+    const audit = await getAuditRepo();
+    await audit.append({
+      actor,
+      action: "admin.submission.edit",
+      targetId: submission.id,
+      targetType: "submission",
+      notes: "admin edited program draft",
+    });
+
+    return c.json({ submission });
+  } catch (err) {
+    if (err instanceof PartnerWorkflowError) {
+      const status = err.code === "submission_not_found" ? 404 : 400;
+      return c.json({ error: err.code, message: err.message }, status);
+    }
+    throw err;
+  }
+});
+
+// POST /admin/submissions/:id/approve — approve a submission and publish to catalog (#10.4)
 app.post("/admin/submissions/:id/approve", async (c) => {
   const authErr = requireCatalogEditor(c);
   if (authErr) return authErr;
@@ -1045,6 +1230,29 @@ app.post("/admin/submissions/:id/approve", async (c) => {
       parsed.adminId ?? actor,
     );
 
+    // Publish to catalog via the versioning path (#10.4) with partner-submission provenance.
+    const draft = submission.programDraft;
+    const catalogRepo = await getCatalogRepo();
+    await catalogRepo.upsertDraft({
+      programId: parsed.publishedProgramId,
+      provenance: {
+        source: "partner-submission",
+        sourceUrl: draft.sourceUrl,
+        asOf: new Date().toISOString().slice(0, 7),
+        submittedBy: submission.submittedByUserId,
+        notes: `Approved from submission ${submission.id}`,
+      },
+      region: draft.region,
+      name: draft.name,
+      category: draft.category,
+      defaultMatch: draft.defaultMatch ?? { brands: [draft.name] },
+      tiers: draft.tiers,
+      requiresCredential: draft.requiresCredential ?? false,
+      fields: draft.fields,
+      benefits: draft.benefits,
+    });
+    const catalogEntry = await catalogRepo.publish(parsed.publishedProgramId);
+
     const audit = await getAuditRepo();
     await audit.append({
       actor,
@@ -1055,7 +1263,7 @@ app.post("/admin/submissions/:id/approve", async (c) => {
       after: { status: submission.status, publishedProgramId: submission.publishedProgramId },
     });
 
-    return c.json({ submission });
+    return c.json({ submission, catalogEntry });
   } catch (err) {
     if (err instanceof PartnerWorkflowError) {
       const status = err.code === "submission_not_found" ? 404 : 400;
@@ -1274,6 +1482,256 @@ app.get("/admin/audit", async (c) => {
     : await audit.listRecent(limit);
 
   return c.json({ entries, count: entries.length });
+});
+
+// --- Feature flags (issue #78) -----------------------------------------------
+// Public read: GET /flags — returns all flags (consuming services poll this).
+// Admin CRUD: /admin/flags — gated by x-admin-secret, changes are audited.
+
+const FeatureFlagInputSchema = z.object({
+  key: z.string().min(1).regex(/^[a-z0-9._-]+$/, "key must be lowercase alphanumeric with dots, dashes, underscores"),
+  label: z.string().min(1),
+  enabled: z.boolean(),
+  description: z.string().optional(),
+  environment: z.string().optional(),
+});
+
+// GET /flags — public; returns all flags so consuming services can read them.
+app.get("/flags", async (c) => {
+  const repo = await getFeatureFlagRepo();
+  const flags = await repo.list();
+  return c.json({ flags, count: flags.length });
+});
+
+// GET /admin/flags — list all feature flags (admin only)
+app.get("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getFeatureFlagRepo();
+  const flags = await repo.list();
+  return c.json({ flags, count: flags.length });
+});
+
+// POST /admin/flags — create a feature flag
+app.post("/admin/flags", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(FeatureFlagInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "conflict", message: `Flag '${parsed.key}' already exists` }, 409);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const flag = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.create" as AuditAction,
+    targetId: flag.key,
+    targetType: "flag",
+    after: { key: flag.key, enabled: flag.enabled },
+  });
+
+  return c.json({ flag }, 201);
+});
+
+// GET /admin/flags/:key — get a specific flag
+app.get("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getFeatureFlagRepo();
+  const flag = await repo.get(c.req.param("key"));
+  if (!flag) return c.json({ error: "not_found" }, 404);
+  return c.json({ flag });
+});
+
+// PUT /admin/flags/:key — update (or toggle) a feature flag
+app.put("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(FeatureFlagInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const key = c.req.param("key");
+  if (parsed.key !== key) return c.json({ error: "validation_failed", message: "key in body must match URL" }, 400);
+
+  const repo = await getFeatureFlagRepo();
+  const before = await repo.get(key);
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const flag = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.update" as AuditAction,
+    targetId: flag.key,
+    targetType: "flag",
+    before: { key: before.key, enabled: before.enabled },
+    after: { key: flag.key, enabled: flag.enabled },
+  });
+
+  return c.json({ flag });
+});
+
+// DELETE /admin/flags/:key — delete a feature flag
+app.delete("/admin/flags/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const key = c.req.param("key");
+  const repo = await getFeatureFlagRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+
+  const actor = adminActor(c);
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.flag.delete" as AuditAction,
+    targetId: key,
+    targetType: "flag",
+    before: { key: existing.key, enabled: existing.enabled },
+  });
+
+  return c.body(null, 204);
+});
+
+// --- App config (issue #78) --------------------------------------------------
+// Public read: GET /config — returns all config entries.
+// Admin CRUD: /admin/config — gated by x-admin-secret, changes are audited.
+// Secrets never flow through here — use Azure Key Vault / environment variables.
+
+const AppConfigInputSchema = z.object({
+  key: z.string().min(1).regex(/^[a-z0-9._-]+$/, "key must be lowercase alphanumeric with dots, dashes, underscores"),
+  label: z.string().min(1),
+  value: z.string(),
+  description: z.string().optional(),
+});
+
+// GET /config — public; returns all config so consuming services can read them.
+app.get("/config", async (c) => {
+  const repo = await getAppConfigRepo();
+  const config = await repo.list();
+  return c.json({ config, count: config.length });
+});
+
+// GET /admin/config — list all config entries (admin only)
+app.get("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getAppConfigRepo();
+  const config = await repo.list();
+  return c.json({ config, count: config.length });
+});
+
+// POST /admin/config — create a config entry
+app.post("/admin/config", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(AppConfigInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(parsed.key);
+  if (existing) return c.json({ error: "conflict", message: `Config '${parsed.key}' already exists` }, 409);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const entry = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.create" as AuditAction,
+    targetId: entry.key,
+    targetType: "config",
+    after: { key: entry.key, value: entry.value },
+  });
+
+  return c.json({ config: entry }, 201);
+});
+
+// GET /admin/config/:key — get a specific config entry
+app.get("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const repo = await getAppConfigRepo();
+  const entry = await repo.get(c.req.param("key"));
+  if (!entry) return c.json({ error: "not_found" }, 404);
+  return c.json({ config: entry });
+});
+
+// PUT /admin/config/:key — update a config entry
+app.put("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const parsed = await parseBody(AppConfigInputSchema, c);
+  if (parsed instanceof Response) return parsed;
+
+  const key = c.req.param("key");
+  if (parsed.key !== key) return c.json({ error: "validation_failed", message: "key in body must match URL" }, 400);
+
+  const repo = await getAppConfigRepo();
+  const before = await repo.get(key);
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const now = new Date().toISOString();
+  const actor = adminActor(c);
+  const entry = await repo.upsert({ ...parsed, updatedAt: now, updatedBy: actor });
+
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.update" as AuditAction,
+    targetId: entry.key,
+    targetType: "config",
+    before: { key: before.key, value: before.value },
+    after: { key: entry.key, value: entry.value },
+  });
+
+  return c.json({ config: entry });
+});
+
+// DELETE /admin/config/:key — delete a config entry
+app.delete("/admin/config/:key", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const key = c.req.param("key");
+  const repo = await getAppConfigRepo();
+  const existing = await repo.get(key);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  await repo.delete(key);
+
+  const actor = adminActor(c);
+  const audit = await getAuditRepo();
+  await audit.append({
+    actor,
+    action: "admin.config.delete" as AuditAction,
+    targetId: key,
+    targetType: "config",
+    before: { key: existing.key, value: existing.value },
+  });
+
+  return c.body(null, 204);
 });
 
 // --- Partner self-service portal (issue #129) --------------------------------
@@ -1538,6 +1996,12 @@ app.delete("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
     throw err;
   }
 });
+
+// --- Admin proposal review queue (issue #106) --------------------------------
+// Routes are defined in ./review.ts; mounted here to share CORS and rate-limit middleware.
+app.route("/", proposalRoutes);
+app.route("/", demoRoutes);
+app.route("/", billingRoutes);
 
 // --- helpers ----------------------------------------------------------------
 

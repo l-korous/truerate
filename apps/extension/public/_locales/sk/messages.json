@@ -105,6 +105,16 @@
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelOneKeyExpediaActiveNote": {
+    "message": "Na tejto stránke je aktívny Expedia One Key. TrueRate zobrazuje, čo vaše ostatné členstvá pridávajú navyše.",
+    "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago je metavyhľadávač. Ceny od rezervačných partnerov môžu už zahŕňať vernostné zľavy (napr. Booking Genius). TrueRate zobrazuje, čo vaše členstvá pridávajú navyše.",
+    "description": "Note always shown on Trivago pages; informs users that OTA prices may already include loyalty discounts"
+  },
+
   "optionsTitle": {
     "message": "Nastavenia TrueRate",
     "description": "Options page title"

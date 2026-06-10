@@ -29,6 +29,7 @@ export const PROGRAMS: Program[] = [
   // ── OTA ────────────────────────────────────────────────────────────────
   {
     id: "booking_genius",
+    openToAnyone: true,
     name: "Booking.com Genius",
     category: "ota",
     region: "Global",
@@ -74,6 +75,7 @@ export const PROGRAMS: Program[] = [
 
   {
     id: "hotels_com_one_key",
+    openToAnyone: true,
     name: "Hotels.com One Key",
     category: "ota",
     region: "Global",
@@ -137,11 +139,13 @@ export const PROGRAMS: Program[] = [
   // ── Czech direct-booking / independent (the cold-start sweet spot) ───────
   {
     id: "your_prague_hotels",
+    openToAnyone: true,
     name: "Your Prague Hotels — Select",
     category: "hotel",
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.yourpraguehotels.com/en/about-loyalty-program/",
+    realizationUrl: "https://www.yourpraguehotels.com/en/",
     // Largest private hotel chain in Prague (Hotel Roma, Caesar, Michelangelo,
     // Galileo, Praga 1, Nová Živohošť). Free loyalty programme; direct only.
     defaultMatch: { domains: ["yourpraguehotels.com"], propertyNames: ["Hotel Roma", "Hotel Caesar", "Michelangelo Grand Hotel", "Hotel Galileo", "Hotel Praga 1"] },
@@ -167,11 +171,13 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "emblem_prague",
+    openToAnyone: true,
     name: "Emblem Prague — Emblematic",
     category: "hotel",
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.emblemprague.com/about-us/loyalty",
+    realizationUrl: "https://www.emblemprague.com/",
     // 5-star boutique hotel, Prague Old Town. Member rate is direct-only.
     defaultMatch: { domains: ["emblemprague.com"], propertyNames: ["Emblem Hotel", "Emblem Prague"] },
     requiresCredential: false,
@@ -197,11 +203,13 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "orea",
+    openToAnyone: true,
     name: "OREA Hotels & Resorts",
     category: "hotel",
     region: "CZ",
     asOf: "2026-05",
     sourceUrl: "https://www.orea.cz/en",
+    realizationUrl: "https://www.orea.cz/en/hotels-apartments",
     // Large Czech chain (mountains, cities, spa towns). Discounts via promo code
     // on orea.cz; ~15% on selected stays/dates; peak periods excluded.
     defaultMatch: { domains: ["orea.cz"], brands: ["OREA"] },
@@ -217,11 +225,13 @@ export const PROGRAMS: Program[] = [
   // ── International chains operating in Czechia ─────────────────────────────
   {
     id: "accor_all",
+    openToAnyone: true,
     name: "ALL — Accor Live Limitless",
     category: "hotel",
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://all.accor.com/loyalty-program/",
+    realizationUrl: "https://all.accor.com/",
     defaultMatch: {
       domains: ["all.accor.com", "accor.com"],
       brands: ["Sofitel", "Pullman", "Novotel", "Mercure", "ibis", "Raffles", "Fairmont", "MGallery", "Adagio", "Mövenpick", "Swissôtel", "Mama Shelter"],
@@ -314,11 +324,13 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "ihg_one_rewards",
+    openToAnyone: true,
     name: "IHG One Rewards",
     category: "hotel",
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.ihg.com/onerewards/",
+    realizationUrl: "https://www.ihg.com/",
     defaultMatch: {
       domains: ["ihg.com"],
       brands: ["InterContinental", "Crowne Plaza", "Holiday Inn", "Hotel Indigo", "Kimpton", "voco", "Regent", "Six Senses", "Staybridge", "Candlewood"],
@@ -398,11 +410,13 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "hilton_honors",
+    openToAnyone: true,
     name: "Hilton Honors",
     category: "hotel",
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.hilton.com/en/hilton-honors/",
+    realizationUrl: "https://www.hilton.com/",
     defaultMatch: {
       domains: ["hilton.com"],
       brands: ["Hilton", "DoubleTree", "Hampton", "Conrad", "Waldorf Astoria", "Canopy", "Curio", "Embassy Suites", "Hilton Garden Inn"],
@@ -475,11 +489,13 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "marriott_bonvoy",
+    openToAnyone: true,
     name: "Marriott Bonvoy",
     category: "hotel",
     region: "Global",
     asOf: "2026-05",
     sourceUrl: "https://www.marriott.com/loyalty.mi",
+    realizationUrl: "https://www.marriott.com/",
     defaultMatch: {
       domains: ["marriott.com"],
       brands: ["Marriott", "Sheraton", "Westin", "Courtyard", "St. Regis", "Ritz-Carlton", "W Hotels", "Le Méridien", "Autograph", "Aloft", "Four Points", "Renaissance", "Moxy"],
@@ -569,6 +585,7 @@ export const PROGRAMS: Program[] = [
   // ── Cards / fintech (broader than hospitality) ───────────────────────────
   {
     id: "amex_platinum",
+    openToAnyone: false,
     name: "American Express Platinum",
     category: "card",
     region: "US (benefits vary by region)",
@@ -614,6 +631,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "revolut",
+    openToAnyone: false,
     name: "Revolut",
     category: "subscription",
     region: "EEA/UK (perks vary by country)",
@@ -680,6 +698,7 @@ export const PROGRAMS: Program[] = [
   },
   {
     id: "miles_and_more",
+    openToAnyone: true,
     name: "Miles & More (Lufthansa Group)",
     category: "airline",
     region: "Global",
@@ -699,6 +718,157 @@ export const PROGRAMS: Program[] = [
             structuredPerks: [
               { type: "points_bonus", label: "Earns Lufthansa Group award miles" },
             ],
+          },
+        },
+      ],
+    },
+  },
+
+  // ── Czech hotels — direct booking (seed; precursor to the crawler #99) ─────
+  {
+    id: "orea_hotels",
+    openToAnyone: true,
+    name: "OREA Hotels & Resorts",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.orea.cz/en",
+    // Direct-booking benefits (no public loyalty club): free parking and free
+    // stay for children under 6 at selected hotels when booking on orea.cz.
+    // No headline % is advertised → modelled as perks (never a price).
+    realizationUrl: "https://www.orea.cz/en/hotels-apartments",
+    defaultMatch: { brands: ["OREA", "OREA Hotels", "OREA Resort"], domains: ["orea.cz"], categories: ["hotel"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free parking at selected hotels", "Free stay for children under 6"],
+            structuredPerks: [
+              { type: "parking", label: "Free parking at selected hotels", conditions: { subjectToAvailability: true, bookingChannel: ["direct"] } },
+              { type: "other", label: "Free stay for children under 6", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "book direct at orea.cz; selected hotels",
+            realizationUrl: "https://www.orea.cz/en/hotels-apartments",
+          },
+        },
+      ],
+    },
+  },
+
+  {
+    id: "cpi_hotels",
+    openToAnyone: true,
+    name: "CPI Hotels (Clarion, Spa & Wellness Nature Resorts)",
+    category: "hotel",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.cpihotels.com/rewards-program",
+    // CPI Hotels rewards program: members earn points and unlock perks on direct
+    // bookings. No headline % advertised → modelled as a points/perk benefit
+    // (never a price). Covers Clarion, Spa & Wellness Nature Resorts, etc.
+    realizationUrl: "https://www.cpihotels.com/reservation",
+    defaultMatch: { brands: ["CPI Hotels", "Clarion", "Clarion Congress", "Spa & Wellness Nature Resorts", "Buddha-Bar Hotel"], domains: ["cpihotels.com"], categories: ["hotel"] },
+    requiresCredential: false,
+    fields: [],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Loyalty points on direct bookings", "Member perks"],
+            structuredPerks: [
+              { type: "points_bonus", label: "Loyalty points on direct bookings", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "join CPI Hotels rewards; book direct at cpihotels.com",
+            realizationUrl: "https://www.cpihotels.com/reservation",
+          },
+        },
+      ],
+    },
+  },
+
+  // ── Czech rail — non-hotel travel providers (CZ focus) ───────────────────
+  // Real, publicly-documented loyalty/discount memberships. No prices — the
+  // discount % is the member benefit; the consumer/AI does any math.
+  {
+    id: "leo_express_smile",
+    name: "Leo Express Smile Club",
+    category: "rail",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.leoexpress.com/en/services/smile-club",
+    realizationUrl: "https://www.leoexpress.com/en",
+    defaultMatch: { brands: ["Leo Express", "LEO Express", "Leoexpress"], domains: ["leoexpress.com"] },
+    tiers: ["Orange", "Bronze", "Silver", "Gold"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "Smile Club level", type: "select", options: ["Orange", "Bronze", "Silver", "Gold"] }],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free seat reservations", "Pay with leo credit"],
+            structuredPerks: [
+              { type: "other", label: "Free seat reservations", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "Smile Club member; book direct at leoexpress.com",
+            realizationUrl: "https://www.leoexpress.com/en",
+          },
+        },
+      ],
+      Orange: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.025, conditions: "2.5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Bronze: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Silver: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.075, conditions: "7.5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Gold: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "10% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+    },
+  },
+  {
+    id: "cd_in_karta",
+    name: "České dráhy In Karta",
+    category: "rail",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.cd.cz/en/jizdne/in-karta/",
+    realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
+    defaultMatch: { brands: ["České dráhy", "Czech Railways", "ČD"], domains: ["cd.cz"] },
+    tiers: ["IN 25", "IN 50", "IN 100"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "In Karta application", type: "select", options: ["IN 25", "IN 50", "IN 100"] }],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 1,
+            perks: ["ČD Body points toward free tickets"],
+            structuredPerks: [{ type: "points_bonus", label: "ČD Body points — redeem for free domestic 2nd-class tickets" }],
+            conditions: "ČD e-shop loyalty; book direct at cd.cz",
+            realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
+          },
+        },
+      ],
+      "IN 25": [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.25, conditions: "25% off ČD domestic fares; book direct at cd.cz", realizationUrl: "https://www.cd.cz/en/eshop/default.htm" } }],
+      "IN 50": [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.5, conditions: "50% off Flexi/route fares; book direct at cd.cz", realizationUrl: "https://www.cd.cz/en/eshop/default.htm" } }],
+      "IN 100": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Unlimited 2nd-class domestic travel", "Free electronic seat reservations", "Free luggage and dog transport"],
+            structuredPerks: [
+              { type: "other", label: "Unlimited 2nd-class domestic travel", conditions: { bookingChannel: ["direct"] } },
+              { type: "other", label: "Free electronic seat reservations", conditions: { bookingChannel: ["direct"] } },
+              { type: "other", label: "Free luggage and dog transport", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "IN 100 holders; ČD domestic 2nd class; book direct at cd.cz",
+            realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
           },
         },
       ],

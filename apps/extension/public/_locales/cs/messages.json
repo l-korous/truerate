@@ -137,5 +137,15 @@
   "panelBonvoyActiveNote": {
     "message": "Na této stránce je aktivní Marriott Bonvoy. TrueRate zobrazuje, co vaše členství přidávají navíc.",
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelOneKeyExpediaActiveNote": {
+    "message": "Na této stránce je aktivní Expedia One Key. TrueRate zobrazuje, co vaše ostatní členství přidávají navíc.",
+    "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago je srovnávač cen. Ceny od partnerských rezervačních portálů mohou již zahrnovat věrnostní slevy (např. Booking Genius). TrueRate zobrazuje, co vaše členství přidávají navíc.",
+    "description": "Note always shown on Trivago pages; informs users that OTA prices may already include loyalty discounts"
   }
 }

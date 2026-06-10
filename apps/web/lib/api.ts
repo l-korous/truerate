@@ -313,3 +313,181 @@ export const adminCatalogApi = {
   restore: (programId: string, version: number) =>
     adminReq<{ entry: CatalogEntry }>(`/${programId}/restore/${version}`, { method: "POST" }),
 };
+
+// --- Admin feature flags API (via Next.js proxy routes) ----------------------
+
+export interface FeatureFlag {
+  key: string;
+  label: string;
+  enabled: boolean;
+  description?: string;
+  environment?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface FeatureFlagInput {
+  key: string;
+  label: string;
+  enabled: boolean;
+  description?: string;
+  environment?: string;
+}
+
+async function adminFlagReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const base = "/api/admin/flags";
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export const adminFlagsApi = {
+  list: () => adminFlagReq<{ flags: FeatureFlag[]; count: number }>(""),
+  create: (input: FeatureFlagInput) =>
+    adminFlagReq<{ flag: FeatureFlag }>("", { method: "POST", body: JSON.stringify(input) }),
+  get: (key: string) => adminFlagReq<{ flag: FeatureFlag }>(`/${encodeURIComponent(key)}`),
+  update: (key: string, input: FeatureFlagInput) =>
+    adminFlagReq<{ flag: FeatureFlag }>(`/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(input) }),
+  delete: (key: string) => adminFlagReq<void>(`/${encodeURIComponent(key)}`, { method: "DELETE" }),
+};
+
+// --- Admin app config API (via Next.js proxy routes) -------------------------
+
+export interface AppConfig {
+  key: string;
+  label: string;
+  value: string;
+  description?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface AppConfigInput {
+  key: string;
+  label: string;
+  value: string;
+  description?: string;
+}
+
+async function adminConfigReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const base = "/api/admin/config";
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export const adminConfigApi = {
+  list: () => adminConfigReq<{ config: AppConfig[]; count: number }>(""),
+  create: (input: AppConfigInput) =>
+    adminConfigReq<{ config: AppConfig }>("", { method: "POST", body: JSON.stringify(input) }),
+  get: (key: string) => adminConfigReq<{ config: AppConfig }>(`/${encodeURIComponent(key)}`),
+  update: (key: string, input: AppConfigInput) =>
+    adminConfigReq<{ config: AppConfig }>(`/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(input) }),
+  delete: (key: string) => adminConfigReq<void>(`/${encodeURIComponent(key)}`, { method: "DELETE" }),
+};
+
+// --- Usage analytics / leaderboard API (via Next.js proxy route) -------------
+
+export interface UsageBucket {
+  key: string;
+  count: number;
+}
+
+export interface UsageAggregation {
+  total: number;
+  byProvider: UsageBucket[];
+  byPerk: UsageBucket[];
+  byCountry: UsageBucket[];
+  byDay: UsageBucket[];
+}
+
+// --- Public "CustomRates for your hotel" demo (no auth) -------------------------
+
+export interface DemoTerms {
+  discountPercent?: number;
+  openToAnyone?: boolean;
+  perks: string[];
+  bestRateGuarantee?: boolean;
+  loyaltyProgram?: string;
+  conditions?: string;
+  confidence: "low" | "medium" | "high";
+  sourceUrl: string;
+}
+export interface DemoDirectBooking {
+  name: string;
+  city?: string;
+  country: string;
+  kind?: string;
+  realizationUrl: string;
+  /** Scraped direct-booking terms for this hotel, if we have them (#367). */
+  terms?: DemoTerms | null;
+}
+export interface DemoProgram {
+  programId: string;
+  name: string;
+  category: string;
+  region?: string;
+  topTier?: string;
+  summary: string[];
+  perkValues: { label: string; estUsd: number }[];
+  realizationUrl?: string;
+  /** Free to join — anyone can register and get the discount/perks. */
+  openToAnyone?: boolean;
+  /** Headline discount as a fraction (0.15 → 15%); 0 if perk-only. */
+  percentOff?: number;
+}
+export interface DemoHotelResult {
+  query: string;
+  directBooking: DemoDirectBooking[];
+  memberPrograms: DemoProgram[];
+}
+export interface PlatformStats {
+  hotelsCovered: number;
+  programs: number;
+  countries: number;
+  benefitSurfaces: number;
+}
+
+export const demoApi = {
+  hotel: async (q: string): Promise<DemoHotelResult> => {
+    const res = await fetch(`${API}/demo/hotel?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+    return res.json() as Promise<DemoHotelResult>;
+  },
+  stats: async (): Promise<PlatformStats> => {
+    const res = await fetch(`${API}/stats/overview`);
+    if (!res.ok) throw new Error(`Stats failed (${res.status})`);
+    return res.json() as Promise<PlatformStats>;
+  },
+};
+
+export const adminUsageApi = {
+  /** Aggregated usage; pass { country } for a per-country leaderboard, omit for global. */
+  get: async (filter: { country?: string } = {}): Promise<UsageAggregation> => {
+    const qs = new URLSearchParams();
+    if (filter.country) qs.set("country", filter.country);
+    const s = qs.toString();
+    const res = await fetch(`/api/admin/analytics/usage${s ? `?${s}` : ""}`, {
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+      throw new Error(String(msg));
+    }
+    return res.json() as Promise<UsageAggregation>;
+  },
+};

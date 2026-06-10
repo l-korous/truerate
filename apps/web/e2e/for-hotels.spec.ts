@@ -1,0 +1,33 @@
+import { test, expect } from "@playwright/test";
+
+// Public "CustomRates for your hotel" demo page (#wow). No auth.
+
+test("for-hotels demo shows platform scale and what an end-user sees for a hotel", async ({ page }) => {
+  await page.goto("/for-hotels");
+
+  // Platform-scale strip renders with real numbers.
+  await expect(page.getByTestId("platform-stats")).toBeVisible();
+  await expect(page.getByTestId("platform-stats")).toContainText("hotels covered");
+
+  // Search-as-you-type a chain (no submit button) → member perks surface.
+  await page.getByTestId("hotel-demo-input").fill("Marriott");
+  await expect(page.getByTestId("hotel-demo-result")).toBeVisible();
+  await expect(page.getByTestId("demo-perks")).toContainText("Marriott Bonvoy");
+  // Open-to-anyone programs invite non-members to register & book direct.
+  await expect(page.getByTestId("demo-perks")).toContainText(/register/i);
+
+  // Substring typeahead: a partial name surfaces matching properties with their
+  // country (the old exact-token matcher missed "Olympia" for "olymp").
+  await page.getByTestId("hotel-demo-input").fill("olymp");
+  await expect(page.getByTestId("demo-direct")).toBeVisible();
+  await expect(page.getByTestId("demo-direct")).toContainText(/olymp/i);
+
+  // Scraped per-hotel terms (#367): a hotel we have terms for shows its real
+  // direct-booking discount/perks, not just name + URL.
+  await page.getByTestId("hotel-demo-input").fill("pecr");
+  await expect(page.getByTestId("demo-direct")).toContainText(/register & save/i);
+
+  // No hotel price/rate leaks on the page (perk value estimates like "$25" are allowed).
+  const body = (await page.locator("body").textContent()) ?? "";
+  expect(body).not.toMatch(/nightly|room rate|member price|per room/i);
+});

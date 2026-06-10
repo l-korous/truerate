@@ -1,0 +1,40 @@
+name: Seed demo usage
+
+# One-off / re-runnable: populate the usage analytics with synthetic demand so
+# the leaderboard + /for-hotels "benefit views" look alive for client demos.
+# Uses the TRUERATE_ADMIN_SECRET repo secret (never exposed) to authenticate.
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Number of synthetic usage events to seed (max 10000)"
+        required: false
+        default: "3000"
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    env:
+      API: https://truerate-api.victoriousdune-875f3535.westeurope.azurecontainerapps.io
+    steps:
+      - name: Seed demo usage events
+        env:
+          ADMIN_SECRET: ${{ secrets.TRUERATE_ADMIN_SECRET }}
+          COUNT: ${{ github.event.inputs.count }}
+        run: |
+          set -uo pipefail
+          test -n "$ADMIN_SECRET" || { echo "::error::TRUERATE_ADMIN_SECRET is not set"; exit 1; }
+          echo "Seeding ${COUNT:-3000} usage events..."
+          RESP=$(curl -s -m 60 -X POST -H "x-admin-secret: $ADMIN_SECRET" "$API/admin/analytics/seed-demo?count=${COUNT:-3000}")
+          echo "Response: $RESP"
+          echo "$RESP" | grep -q '"seeded"' || { echo "::error::seed failed (admin secret wrong, or endpoint unavailable)"; exit 1; }
+          STATS=$(curl -s -m 30 "$API/stats/overview")
+          {
+            echo "### Demo usage seeded :rocket:"
+            echo ""
+            echo "- Seed result: \`$RESP\`"
+            echo "- Platform stats now: \`$STATS\`"
+          } >> "$GITHUB_STEP_SUMMARY"

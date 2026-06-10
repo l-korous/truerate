@@ -105,6 +105,16 @@
     "description": "Note shown when Marriott Bonvoy member DOM signals are detected; communicates incremental TrueRate value"
   },
 
+  "panelOneKeyExpediaActiveNote": {
+    "message": "Expedia One Key jest aktywny na tej stronie. TrueRate pokazuje, co Twoje inne członkostwa dodają ponad to.",
+    "description": "Note shown when Expedia One Key DOM signals are detected; communicates incremental TrueRate value"
+  },
+
+  "panelTrivagoMetasearchNote": {
+    "message": "Trivago to metawyszukiwarka. Ceny od partnerów rezerwacyjnych mogą już zawierać rabaty lojalnościowe (np. Booking Genius). TrueRate pokazuje, co Twoje członkostwa dodają ponad to.",
+    "description": "Note always shown on Trivago pages; informs users that OTA prices may already include loyalty discounts"
+  },
+
   "optionsTitle": {
     "message": "Ustawienia TrueRate",
     "description": "Options page title"

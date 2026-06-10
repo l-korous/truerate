@@ -160,6 +160,13 @@ export interface BenefitValue {
   pointsPerUnit?: number;
   /** Conditions/caveats shown to the user, e.g. "direct booking only". */
   conditions?: string;
+  /**
+   * Direct-booking ("realization") URL where this benefit is actually redeemed
+   * — e.g. the hotel's own booking page. Channels surface it as
+   * "members save X% — book direct at <URL>". This is NOT a price; the
+   * consumer/AI does any math. Distinct from Program.sourceUrl (provenance).
+   */
+  realizationUrl?: string;
 }
 
 /** How a benefit is recognised against a page / search target. */
@@ -225,6 +232,20 @@ export interface Program {
   // from and when, and which region it reflects, so the catalog can be audited
   // and refreshed (and eventually moved to an ops-editable store).
   sourceUrl?: string;
+  /**
+   * Default direct-booking ("realization") URL for this program's benefits —
+   * where a guest books to actually get the discount/perks. Per-benefit
+   * BenefitValue.realizationUrl overrides it. Never a price.
+   */
+  realizationUrl?: string;
+  /**
+   * Whether this membership/program is OPEN TO ANYONE — i.e. a guest can simply
+   * register (free, no status or invite) and immediately get the discount/perks.
+   * When true, channels may tell a NON-enrolled guest "register at <realizationUrl>
+   * and save X% booking direct". Paid cards/subscriptions or invite-only programs
+   * are false. (X% is a discount, not a price — the consumer does any math.)
+   */
+  openToAnyone?: boolean;
   asOf?: string; // e.g. "2026-05"
   region?: string; // e.g. "CZ", "Global", "US (varies by region)"
 }
@@ -544,8 +565,9 @@ export interface CatalogProvenance {
  * cross-partition fan-out.
  *
  * ## Document id
- * `{programId}#v{version}` — globally unique within the container; allows
- * point reads when the version number is already known.
+ * `{programId}-v{version}` — globally unique within the container; allows
+ * point reads when the version number is already known. ("#" is illegal in a
+ * Cosmos document id, so the separator is "-v".)
  *
  * ## Versioning invariant
  * Exactly ONE document per `programId` may have `isCurrent = true` at any
@@ -560,7 +582,7 @@ export interface CatalogProvenance {
  * or any amount computed from a property's room price.
  */
 export interface CatalogEntryDoc {
-  /** Cosmos document id: "{programId}#v{version}". */
+  /** Cosmos document id: "{programId}-v{version}" ("#" is illegal in a Cosmos id). */
   id: string;
   /** Partition key. Matches Program.id for seed entries. */
   programId: string;

@@ -1,0 +1,62 @@
+name: Bind custom domains (customrates.online)
+
+# One-shot: bind the customrates.online hostnames + free managed TLS certs to the
+# Container Apps, using the deploy OIDC service principal — which is NOT subject to
+# user MFA, so this sidesteps the personal-account MFA wall. DNS (A/CNAME + asuid
+# TXT) must already be in place (it is). Re-runnable / idempotent.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # OIDC federated login to Azure
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RG: ${{ vars.AZURE_RG || 'truerate-rg' }}
+      ENV: truerate-env
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bind hostnames + managed certificates
+        run: |
+          set -uo pipefail
+          addbind() {
+            app="$1"; host="$2"; method="$3"
+            existing=$(az containerapp hostname list -g "$RG" -n "$app" --query "[?name=='$host'].bindingType | [0]" -o tsv 2>/dev/null || true)
+            if [ -n "$existing" ] && [ "$existing" != "Disabled" ]; then
+              echo "── $host → $app already bound ($existing) — skip"; return
+            fi
+            echo "── $host → $app (cert validation: $method) ──"
+            az containerapp hostname add  -g "$RG" -n "$app" --hostname "$host" -o none 2>&1 | sed 's/^/  add:  /' || true
+            az containerapp hostname bind -g "$RG" -n "$app" --hostname "$host" \
+               --environment "$ENV" --validation-method "$method" -o none 2>&1 | sed 's/^/  bind: /' || true
+          }
+          addbind truerate-web "customrates.online"     HTTP
+          addbind truerate-web "www.customrates.online" CNAME
+          addbind truerate-api "api.customrates.online" CNAME
+          addbind truerate-mcp "mcp.customrates.online" CNAME
+          echo "=== hostnames + cert bindings now ==="
+          for app in truerate-web truerate-api truerate-mcp; do
+            echo "[$app]"
+            az containerapp hostname list -g "$RG" -n "$app" \
+              --query "[].{host:name,binding:bindingType}" -o table 2>&1 | sed 's/^/  /' || true
+          done
+
+      - name: Allow customrates.online origins in API CORS
+        run: |
+          set -uo pipefail
+          WEB_FQDN=$(az containerapp show -g "$RG" -n truerate-web --query "properties.configuration.ingress.fqdn" -o tsv)
+          ORIGINS="https://${WEB_FQDN},https://customrates.online,https://www.customrates.online"
+          echo "setting CORS_ALLOWED_ORIGINS=$ORIGINS"
+          az containerapp update -g "$RG" -n truerate-api \
+            --set-env-vars "CORS_ALLOWED_ORIGINS=$ORIGINS" -o none 2>&1 | sed 's/^/  cors: /' || true
+          echo "API CORS now: $(az containerapp show -g "$RG" -n truerate-api --query "properties.template.containers[0].env[?name=='CORS_ALLOWED_ORIGINS'].value | [0]" -o tsv)"

@@ -1,12 +1,12 @@
 /**
- * Web channel driver for the TrueRate synthetic-user harness (issue #41).
+ * Web channel driver for the CustomRates synthetic-user harness (issue #41).
  *
  * Accepts a TestPersona from @truerate/harness and a Playwright Page, then:
  *   1. Registers the persona in the web UI.
  *   2. Adds each of their catalog memberships.
  *   3. Asserts that displayed perks/conditions match the persona's expectedPerks
  *      contract (perk labels, condition tags, estimated value labels).
- *   4. Asserts that no TrueRate-produced price appears anywhere — product rule
+ *   4. Asserts that no CustomRates-produced price appears anywhere — product rule
  *      #1 (issue #1): only perk-value estimate tiers, never prices.
  *
  * Product rule invariants enforced here:
@@ -18,7 +18,7 @@
 import { expect, type Page } from "@playwright/test";
 import type { TestPersona } from "@truerate/harness";
 
-// Patterns whose presence would violate product rule #1 (no prices from TrueRate).
+// Patterns whose presence would violate product rule #1 (no prices from CustomRates).
 const FORBIDDEN_PRICE_PATTERNS = [
   /indicative member savings/i,
   /reveal my rates/i,
@@ -135,10 +135,13 @@ export async function runPersonaWebJourney(
     // At least one inventory item must be visible.
     await expect(page.getByTestId("inventory-item").first()).toBeVisible();
 
-    // Every expected perk label must appear in an inventory item.
+    // Every expected perk label must appear in at least one inventory item.
+    // .first() avoids strict-mode failure when one label is a substring of
+    // another (e.g. "Room upgrade when available" ⊂ "Priority room upgrade
+    // when available" — both can appear when two programs both carry room_upgrade).
     for (const ep of persona.expectedPerks) {
       await expect(
-        page.getByTestId("inventory-item").filter({ hasText: ep.label }),
+        page.getByTestId("inventory-item").filter({ hasText: ep.label }).first(),
       ).toBeVisible();
     }
 
@@ -158,6 +161,26 @@ export async function runPersonaWebJourney(
     if (needsAvailabilityTag) {
       await expect(page.getByText(/subject to availability/i).first()).toBeVisible();
     }
+  }
+
+  // ── Value tab ───────────────────────────────────────────────────────────────
+  // Navigate to the value tab when the persona has at least one perk with a
+  // non-zero monetary estimate. Verifies the rollup shows estimated values (not
+  // prices) and that per-membership rows appear for each contributing program.
+  const hasMonetaryPerks = persona.expectedPerks.some((ep) => ep.estimatedUsd[4] > 0);
+  if (hasMonetaryPerks) {
+    await page.getByTestId("tab-value").click();
+    await expect(page.getByTestId("value-explainer")).toBeVisible();
+    await assertNoPrices(page);
+
+    // Band cards (3★/4★/5★) are always rendered when the view has data.
+    // The 4★ grand total must contain "≈$" — the approximately-equal prefix
+    // that signals this is an estimate, never an exact price (product rule #1).
+    await expect(page.getByTestId("band-total-4")).toBeVisible();
+    await expect(page.getByTestId("band-total-4")).toContainText("≈$");
+
+    // Disclaimer must label these as estimates, never as prices (product rule #1).
+    await expect(page.getByTestId("value-disclaimer")).toContainText(/not.*price/i);
   }
 
   return addedLabels;

@@ -1,5 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { readFileSync } from "node:fs";
 import {
   EnrichmentEngine,
   getUserRepo,
@@ -8,14 +11,34 @@ import {
   generateCorrelationId,
   hashUserId,
   matchBenefits,
+  matchHotelDirectory,
   estimatePerkValue,
   estimatePerkValueAllBands,
+  recordUsageSafe,
   PROGRAMS,
+  type UsageEventInput,
   type Membership,
   type StructuredPerk,
   type StarBand,
   type ConfidenceLevel,
+  type HotelDirectoryEntry,
 } from "@truerate/core";
+
+const _require = createRequire(import.meta.url);
+
+// Fail-soft loader: returns [] on any read/parse error so a missing data file
+// degrades gracefully instead of crashing the server.
+function loadHotelDirectory(): HotelDirectoryEntry[] {
+  try {
+    const pkgDir = path.dirname(_require.resolve("@truerate/core/package.json"));
+    const raw = readFileSync(path.join(pkgDir, "data", "hotel-directory.json"), "utf-8");
+    return JSON.parse(raw) as HotelDirectoryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+const hotelDirectory = loadHotelDirectory();
 
 // Kept for the /health endpoint in index.ts (reports enrichment mode).
 export const engine = new EnrichmentEngine();
@@ -39,6 +62,8 @@ export interface McpBenefitResult {
     perks: string[];
     structuredPerks: StructuredPerk[];
     conditions?: string;
+    /** Direct-booking ("realization") URL where the benefit is redeemed — never a price. */
+    realizationUrl?: string;
     /**
      * Staleness level for the catalog entry behind this benefit.
      * "high"/"medium" = fresh; "low" = getting old; "stale" = past TTL.
@@ -55,6 +80,16 @@ export interface McpBenefitResult {
   programsApplied: string[];
   generatedAt: string;
   /**
+   * Hotels from the directory that match the query, for "Book direct at <URL>".
+   * Never includes prices — only name, city, country, and the direct-booking URL.
+   */
+  directBookingOptions: Array<{
+    name: string;
+    realizationUrl: string;
+    city?: string;
+    country: string;
+  }>;
+  /**
    * Human-readable staleness warnings for any matches whose catalog entry is
    * low-confidence or stale. Empty array when all terms are fresh.
    * These apply to terms/conditions freshness only, never to prices.
@@ -65,6 +100,7 @@ export interface McpBenefitResult {
 export function buildBenefitResult(
   matches: ReturnType<typeof matchBenefits>,
   context: McpBenefitResult["context"],
+  directBookingOptions: McpBenefitResult["directBookingOptions"] = [],
 ): McpBenefitResult {
   const programs = new Set<string>();
   const stalenessWarnings: string[] = [];
@@ -80,6 +116,7 @@ export function buildBenefitResult(
       perks: m.benefit.value.perks ?? [],
       structuredPerks,
       conditions: m.benefit.value.conditions,
+      realizationUrl: m.benefit.value.realizationUrl,
       termsConfidenceLevel: m.confidence?.level,
     };
     if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
@@ -128,6 +165,7 @@ export function buildBenefitResult(
     perkValueEstimates,
     programsApplied: [...programs],
     generatedAt: new Date().toISOString(),
+    directBookingOptions,
     stalenessWarnings,
   };
 }
@@ -140,11 +178,11 @@ export function formatBenefitResult(r: McpBenefitResult): string {
   const noPrice =
     "\nPrices are not returned. Apply any discount % to the public rate from the booking provider.";
 
-  if (!r.matches.length) {
+  if (!r.matches.length && !r.directBookingOptions?.length) {
     return `No applicable benefits found for ${ctxLabel}.${noPrice}`;
   }
 
-  const lines: string[] = [`Applicable benefits for ${ctxLabel}:\n`];
+  const lines: string[] = r.matches.length ? [`Applicable benefits for ${ctxLabel}:\n`] : [];
 
   const byMembership = new Map<string, typeof r.matches>();
   for (const m of r.matches) {
@@ -162,6 +200,7 @@ export function formatBenefitResult(r: McpBenefitResult): string {
         lines.push(`  discount: ${pct}${cond ? ` (${cond})` : ""}`);
       }
       if (item.perks.length) lines.push(`  perks: ${item.perks.join(", ")}`);
+      if (item.realizationUrl) lines.push(`  book direct: ${item.realizationUrl}`);
     }
   }
 
@@ -172,6 +211,14 @@ export function formatBenefitResult(r: McpBenefitResult): string {
       .filter((e) => e.estimatedUsd[band] > 0)
       .map((e) => `${e.label} ≈ $${e.estimatedUsd[band]} (${band}★)`);
     if (estLines.length) lines.push(`\nperk estimates: ${estLines.join("; ")}`);
+  }
+
+  if (r.directBookingOptions?.length) {
+    lines.push(`\nBook direct:`);
+    for (const h of r.directBookingOptions) {
+      const loc = [h.city, h.country].filter(Boolean).join(", ");
+      lines.push(`  ${h.name}${loc ? ` (${loc})` : ""} — ${h.realizationUrl}`);
+    }
   }
 
   if (r.stalenessWarnings.length) {
@@ -240,6 +287,22 @@ export function buildServer(userId: string, correlationId: string = generateCorr
         category: "hotel",
       }, { programs: programsMap });
 
+      // Parse city/country from location ("Prague" or "Prague, CZ").
+      let city: string | undefined;
+      let country: string | undefined;
+      if (args.location) {
+        const parts = args.location.split(",").map((s: string) => s.trim());
+        city = parts[0];
+        if (parts[1]?.length === 2) country = parts[1].toUpperCase();
+      }
+
+      const directMatches = matchHotelDirectory(hotelDirectory, {
+        hotel: args.hotel,
+        domain: args.domain,
+        city,
+        country,
+      });
+
       const context: McpBenefitResult["context"] = {
         hotel: args.hotel,
         brand: args.brand,
@@ -247,11 +310,33 @@ export function buildServer(userId: string, correlationId: string = generateCorr
         location: args.location,
         stars: args.stars,
       };
-      const result = buildBenefitResult(matches, context);
+      const directBookingOptions = directMatches.map((h) => ({
+        name: h.name,
+        realizationUrl: h.realizationUrl,
+        city: h.city,
+        country: h.country,
+      }));
+      const result = buildBenefitResult(matches, context, directBookingOptions);
       toolLog.info("tool complete", {
         matchCount: matches.length,
         programsApplied: result.programsApplied,
       });
+
+      // Usage analytics (#333): record which provider/perk surfaced, for client
+      // ROI insight. Fire-and-forget + fail-soft — never blocks/breaks the tool.
+      // No prices, hashed user id only.
+      const usageEvents: UsageEventInput[] = [];
+      const uHash = hashUserId(userId);
+      for (const m of matches) {
+        const programId = m.benefit.programId ?? m.benefit.id;
+        if (m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff) {
+          usageEvents.push({ channel: "mcp", programId, benefitKind: "percentDiscount", country, userIdHash: uHash });
+        }
+        for (const sp of m.benefit.value.structuredPerks ?? []) {
+          usageEvents.push({ channel: "mcp", programId, benefitKind: "perk", perkType: sp.type, country, userIdHash: uHash });
+        }
+      }
+      void recordUsageSafe(usageEvents);
 
       return {
         content: [{ type: "text", text: formatBenefitResult(result) }],

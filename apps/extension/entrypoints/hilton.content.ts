@@ -2,7 +2,7 @@ import type { PageContext, PageMatchResult } from "@truerate/core";
 import { detectHiltonPageType, extractHiltonHotelName, detectHonorsActive } from "../utils/hilton-context";
 import { sendTrMessage } from "../utils/messages";
 import { installWindowHandlers } from "../utils/error-reporter";
-import { esc, perkEstimateRow, worstStalenessLevel } from "../utils/render-helpers";
+import { esc, perkEstimateRow, worstStalenessLevel, bookDirectLink } from "../utils/render-helpers";
 import { t } from "../utils/i18n";
 
 // Content script for Hilton.com hotel search and property-detail pages.
@@ -147,6 +147,22 @@ function renderResult(s: ShadowRoot, r: PageMatchResult, honorsActive = false) {
     ? `<div class="tr-discounts">${discounts.join("")}</div>`
     : "";
 
+  const seenUrls = new Set<string>();
+  const bookDirectLinks = r.matches
+    .filter((m) => !!m.benefit.value.realizationUrl)
+    .flatMap((m) => {
+      const url = m.benefit.value.realizationUrl!;
+      if (seenUrls.has(url)) return [];
+      seenUrls.add(url);
+      const pct = m.benefit.value.kind === "percentDiscount" && m.benefit.value.percentOff !== undefined
+        ? m.benefit.value.percentOff
+        : undefined;
+      return [bookDirectLink(url, pct)];
+    });
+  const bookDirectHtml = bookDirectLinks.length
+    ? `<div class="tr-book-direct-block">${bookDirectLinks.join("")}</div>`
+    : "";
+
   const estimatedPerkTypes = new Set(r.perkEstimates.map((e) => e.label));
   const freeTextPerks = r.perks.filter((p) => !estimatedPerkTypes.has(p));
   const perksHtml = freeTextPerks.length
@@ -174,6 +190,7 @@ function renderResult(s: ShadowRoot, r: PageMatchResult, honorsActive = false) {
   panel(s).innerHTML = head(true) + `<div class="tr-body">
       ${honorsNoteHtml}
       ${discountHtml}
+      ${bookDirectHtml}
       ${perksHtml}
       ${estimatesHtml}
       ${stalenessHtml}
@@ -218,6 +235,9 @@ function styleEl(): HTMLStyleElement {
     .tr-est-cond{display:block;font-size:10px;color:#8a8aa0}
     .tr-honors-note{background:#f0f4ff;border:1px solid #c0d0f0;border-radius:8px;padding:6px 10px;font-size:11px;color:#1a3a7a;margin-bottom:8px}
     .tr-stale-note{background:#fdf8e1;border:1px solid #e8d87a;border-radius:8px;padding:6px 10px;font-size:11px;color:#7a6800;margin-top:6px}
-    .tr-stale-warn{background:#fff3f0;border-color:#f0b8a8;color:#8b2500}`;
+    .tr-stale-warn{background:#fff3f0;border-color:#f0b8a8;color:#8b2500}
+    .tr-book-direct-block{margin:4px 0 6px}
+    .tr-book-direct{display:inline-block;color:#0f8a5f;font-size:12px;font-weight:600;text-decoration:none;border:1px solid #0f8a5f;padding:4px 10px;border-radius:999px}
+    .tr-book-direct:hover{background:#e6f4ee}`;
   return s;
 }

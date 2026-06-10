@@ -60,4 +60,35 @@ describe("RateLimiter", () => {
     assert.ok(r.resetMs > before, "resetMs must be in the future");
     assert.ok(r.resetMs <= before + 60_000 + 5, "resetMs within window");
   });
+
+  test("peek reports allowed without consuming a slot", () => {
+    const limiter = new RateLimiter({ windowMs: 60_000, max: 2 });
+    // Peeking many times must not exhaust the window.
+    for (let i = 0; i < 10; i++) assert.equal(limiter.peek("p").allowed, true);
+    // Two real checks then peek shows blocked, still without consuming.
+    limiter.check("p");
+    limiter.check("p");
+    assert.equal(limiter.peek("p").allowed, false);
+    assert.equal(limiter.peek("p").remaining, 0);
+    // A real check confirms it is genuinely at the limit.
+    assert.equal(limiter.check("p").allowed, false);
+  });
+
+  test("peek remaining matches subsequent check behavior", () => {
+    const limiter = new RateLimiter({ windowMs: 60_000, max: 3 });
+    assert.equal(limiter.peek("q").remaining, 3);
+    limiter.check("q");
+    assert.equal(limiter.peek("q").remaining, 2);
+  });
+
+  test("clear() wipes all keys", () => {
+    const limiter = new RateLimiter({ windowMs: 60_000, max: 1 });
+    limiter.check("a");
+    limiter.check("b");
+    assert.equal(limiter.check("a").allowed, false);
+    assert.equal(limiter.check("b").allowed, false);
+    limiter.clear();
+    assert.equal(limiter.check("a").allowed, true);
+    assert.equal(limiter.check("b").allowed, true);
+  });
 });

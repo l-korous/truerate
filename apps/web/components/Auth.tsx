@@ -37,14 +37,14 @@ export function AuthScreen({ onAuth }: { onAuth: (u: PublicUser) => void }) {
         {/* Hero */}
         <div className="py-16">
           <div className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-ink-muted">
-            <span className="h-2 w-2 rounded-full bg-save" /> TrueRate
+            <span className="h-2 w-2 rounded-full bg-save" /> CustomRates
           </div>
           <h1 className="font-display text-5xl leading-[1.05] text-ink lg:text-6xl">
             The rate that&apos;s{" "}
             <span className="italic text-save">actually&nbsp;yours.</span>
           </h1>
           <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-muted">
-            Anonymous search hides the prices your memberships already unlock. TrueRate
+            Anonymous search hides the prices your memberships already unlock. CustomRates
             keeps every membership in one place and reveals the real rate — on the web
             and inside your AI assistant.
           </p>

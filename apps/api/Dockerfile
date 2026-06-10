@@ -20,5 +20,8 @@ WORKDIR /app
 COPY --from=build /export/node_modules ./node_modules
 COPY --from=build /export/dist ./dist
 COPY --from=build /repo/packages/core/dist ./node_modules/@truerate/core/dist
+# The /demo + /stats endpoints load the hotel directory at runtime, so ship the
+# data file (mirrors the MCP image). Without it the loader fail-softs to empty.
+COPY --from=build /repo/packages/core/data ./node_modules/@truerate/core/data
 EXPOSE 8787
 CMD ["node", "dist/index.js"]

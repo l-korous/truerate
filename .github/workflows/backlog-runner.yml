@@ -17,7 +17,7 @@ name: Backlog runner
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every 5 minutes (concurrency serializes; long runs queue)
+    - cron: "7,37 * * * *" # every ~30 min (offset off :00/:30 to avoid fleet collisions)
   workflow_dispatch: {}
 
 concurrency:
@@ -64,7 +64,7 @@ jobs:
           cands=$(gh issue list --repo "$REPO" --state open --limit 300 --json number,labels --jq '
             [ .[] | {n:.number, L:[.labels[].name]}
               | select((.L|index("agent-ready"))|not)
-              | select( ["blocked","needs-design","no-auto","type:epic","type:spike",
+              | select( ["blocked","needs-design","no-auto","type:epic","type:spike","desktop",
                          "area:scraping","area:infra","area:ci-cd","area:auth","area:observability"]
                         as $X | (.L|any(. as $l | $X|index($l))) | not )
               | {n, p:(if (.L|index("P0")) then 0 elif (.L|index("P1")) then 1 elif (.L|index("P2")) then 2 else 3 end)} ]
@@ -101,8 +101,10 @@ jobs:
           # (P0 < P1 < P2 < none, then lowest number). Skip-and-CONTINUE past
           # issues already in progress / done-awaiting-merge, so one completed-but-
           # unmerged issue can't wedge the whole queue.
+          # Exclude `desktop` issues: those require a real browser / local resources
+          # (scraping, bulk import) and are run by the desktop agent, not cloud CI.
           CANDIDATES=$(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
-            --jq '[ .[] | {n:.number, L:[.labels[].name]} | select( (.L|index("blocked")) | not )
+            --jq '[ .[] | {n:.number, L:[.labels[].name]} | select( (.L|index("blocked")) | not ) | select( (.L|index("desktop")) | not )
                     | {n, p:(if (.L|index("P0")) then 0 elif (.L|index("P1")) then 1 elif (.L|index("P2")) then 2 else 3 end)} ]
                   | sort_by(.p, .n) | .[].n')
           PICK=""
@@ -138,6 +140,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Scheduled runs have actor=github-actions[bot]; the action's GitHub-App
+          # token exchange rejects bot actors (401 "no write access") since ~Jun 2026.
+          # Supplying github_token skips the exchange. Safe here: triggers are
+          # schedule/dispatch only (no untrusted surface). GITHUB_TOKEN pushes don't
+          # fire CI on agent branches — the auto-merge sweeper's zero-checks self-heal
+          # dispatches CI explicitly. (#374)
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           # This workflow runs ONLY on schedule + workflow_dispatch (no untrusted
           # trigger surface), and the loop dispatches itself / is nudged by
           # auto-merge via GITHUB_TOKEN, so the actor is github-actions[bot].
@@ -189,33 +198,7 @@ jobs:
           gh pr create --repo "$REPO" --base main --head "$branch" \
             --title "agent: implement #$ISSUE" --body "Closes #$ISSUE" || echo "Could not auto-open PR (open it manually)."
 
-      # Keep the loop continuous instead of waiting on the (throttled) cron:
-      # if there is still eligible agent-ready work AND we are below the in-flight
-      # cap, immediately chain another run. Tight guards prevent a runaway loop —
-      # it stops when the queue is drained or at capacity (auto-merge re-triggers
-      # the runner after it merges a PR and frees a slot).
-      - name: Chain the next run
-        if: steps.pick.outputs.should_run == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -uo pipefail
-          inflight=$(gh pr list --repo "$REPO" --state open --json headRefName \
-            --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
-          MAX_INFLIGHT=6
-          if [ "$inflight" -ge "$MAX_INFLIGHT" ]; then
-            echo "At capacity (in-flight=$inflight/$MAX_INFLIGHT). Not chaining; auto-merge re-triggers after a merge."
-            exit 0
-          fi
-          next=""
-          for n in $(gh issue list --repo "$REPO" --state open --label agent-ready --json number,labels \
-              --jq '[ .[] | select( (.labels|map(.name)|index("blocked")) | not ) ] | sort_by(.number) | .[].number'); do
-            br=$(gh api "repos/$REPO/git/matching-refs/heads/claude/$n-" --jq 'length' 2>/dev/null || echo 0)
-            if [ "${br:-0}" -eq 0 ]; then next="$n"; break; fi
-          done
-          if [ -z "$next" ]; then echo "No more eligible agent-ready work — chain stops here."; exit 0; fi
-          echo "Eligible work remains (#$next) and capacity free — chaining another runner."
-          for i in 1 2 3; do
-            gh workflow run "Backlog runner" --repo "$REPO" && { echo "chained."; break; } || { echo "dispatch attempt $i failed; retrying"; sleep 5; }
-          done
+      # Cadence is the ~30-min cron + a nudge from auto-merge after each merge
+      # (which frees an in-flight slot). No aggressive self-chaining: this keeps a
+      # predictable ~30-min implementer rhythm so the 4h groomer lands roughly
+      # once per 8 implementer runs (the desired impl:groom ratio).
