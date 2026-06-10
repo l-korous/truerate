@@ -220,3 +220,26 @@ jobs:
                webImage="ghcr.io/${OWNER_LC}/truerate-web:${LAST_GOOD}" \
             && echo "::notice::Rolled back to ${LAST_GOOD}." \
             || echo "::error::Rollback ALSO failed — manual intervention required."
+
+      # A Bicep deploy resets each Container App's ingress, dropping custom-domain
+      # bindings (the Bicep doesn't declare them — managed certs need out-of-band
+      # DNS validation). Re-bind here on EVERY run via the same method that
+      # provisioned them; ACA reuses the existing managed cert per hostname (fast,
+      # no re-provisioning). Idempotent: skips hostnames already bound.
+      - name: Re-ensure customrates.online custom domains
+        if: always()
+        env:
+          ENV_NAME: truerate-env
+        run: |
+          set -uo pipefail
+          rebind() {
+            app="$1"; host="$2"; method="$3"
+            bound=$(az containerapp hostname list -g "$RG" -n "$app" --query "[?name=='$host'].bindingType | [0]" -o tsv 2>/dev/null || true)
+            if [ -n "$bound" ] && [ "$bound" != "Disabled" ]; then echo "  $host already bound"; return; fi
+            az containerapp hostname add  -g "$RG" -n "$app" --hostname "$host" -o none 2>&1 | sed 's/^/  add: /' || true
+            az containerapp hostname bind -g "$RG" -n "$app" --hostname "$host" --environment "$ENV_NAME" --validation-method "$method" -o none 2>&1 | sed 's/^/  bind: /' || true
+          }
+          rebind truerate-web customrates.online     HTTP
+          rebind truerate-web www.customrates.online CNAME
+          rebind truerate-api api.customrates.online CNAME
+          rebind truerate-mcp mcp.customrates.online CNAME
