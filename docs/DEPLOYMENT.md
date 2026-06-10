@@ -81,7 +81,7 @@ deploy, add reviewers to the `production` environment (Settings → Environments
 - **build** — production `next build` of the web app.
 - **e2e** — Playwright journey, report uploaded as an artifact.
 
-`.github/workflows/deploy.yml` — on push to `main` and manual dispatch:
+`.github/workflows/deploy.yml` — on push to `main`, manual dispatch, and automatically after every auto-merged agent PR (the auto-merge workflow calls `gh workflow run "Deploy (Azure)"` so prod tracks main even though GITHUB_TOKEN pushes don't fire push triggers):
 
 1. `docker login ghcr.io` with the workflow's built-in `GITHUB_TOKEN` (no PAT).
 2. `azure/login@v2` via OIDC (client/tenant/subscription IDs); ensure the RG.
