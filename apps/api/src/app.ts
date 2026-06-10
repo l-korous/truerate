@@ -64,6 +64,7 @@ import { rateLimitMiddleware, signupRateLimit } from "./rate-limit.js";
 import { createEmailSender } from "./email.js";
 import { proposalRoutes } from "./review.js";
 import { demoRoutes } from "./demo.js";
+import { billingRoutes } from "./billing.js";
 
 type AppVariables = { userId: string; email: string; correlationId: string; logger: Logger };
 
@@ -2000,6 +2001,7 @@ app.delete("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
 // Routes are defined in ./review.ts; mounted here to share CORS and rate-limit middleware.
 app.route("/", proposalRoutes);
 app.route("/", demoRoutes);
+app.route("/", billingRoutes);
 
 // --- helpers ----------------------------------------------------------------
 
