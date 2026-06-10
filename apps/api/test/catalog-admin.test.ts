@@ -400,3 +400,50 @@ test("DELETE /admin/catalog/:id — 404 for unknown program", async () => {
   });
   assert.equal(res.status, 404);
 });
+
+// ─── realizationUrl round-trip ────────────────────────────────────────────────
+
+test("POST /admin/catalog — preserves realizationUrl in the draft", async () => {
+  const app = await getApp();
+  const entry = {
+    ...sampleEntry,
+    programId: "test_realization",
+    realizationUrl: "https://testhotel.com/book",
+    openToAnyone: true,
+  };
+  const res = await app.request("/admin/catalog", {
+    method: "POST",
+    headers: { ...adminHeader, ...JSON_CT },
+    body: JSON.stringify(entry),
+  });
+  assert.equal(res.status, 201);
+  const { entry: created } = await res.json();
+  assert.equal(created.realizationUrl, "https://testhotel.com/book", "realizationUrl is stored");
+  assert.equal(created.openToAnyone, true, "openToAnyone is stored");
+});
+
+test("realizationUrl is preserved after publish and appears in published catalog", async () => {
+  const app = await getApp();
+  const entry = {
+    ...sampleEntry,
+    programId: "test_realization_pub",
+    realizationUrl: "https://testhotel.com/book-direct",
+  };
+  await app.request("/admin/catalog", {
+    method: "POST",
+    headers: { ...adminHeader, ...JSON_CT },
+    body: JSON.stringify(entry),
+  });
+  await app.request("/admin/catalog/test_realization_pub/publish", {
+    method: "POST",
+    headers: adminHeader,
+  });
+
+  const res = await app.request("/admin/catalog/test_realization_pub", { headers: adminHeader });
+  const { entry: published } = await res.json();
+  assert.equal(published.realizationUrl, "https://testhotel.com/book-direct");
+  // Verify no prices leaked in
+  const raw = JSON.stringify(published);
+  assert.ok(!raw.includes("nightlyAmount"), "no price fields");
+  assert.ok(!raw.includes("memberPrice"), "no price fields");
+});

@@ -25,6 +25,8 @@ function emptyInput(): CatalogEntryInput {
     tiers: [],
     fields: [],
     benefits: {},
+    realizationUrl: "",
+    openToAnyone: false,
   };
 }
 
@@ -40,6 +42,8 @@ function entryToInput(entry: CatalogEntry): CatalogEntryInput {
     tiers: entry.tiers,
     fields: entry.fields,
     benefits: entry.benefits,
+    realizationUrl: entry.realizationUrl,
+    openToAnyone: entry.openToAnyone,
   };
 }
 
@@ -161,16 +165,41 @@ export function CatalogEntryForm({ initial, onSave, saving }: Props) {
           />
         </label>
 
-        <label className="flex items-center gap-2">
+        <label className="block">
+          <span className="text-sm text-ink-muted">Realization URL — direct-booking URL where the discount is obtained</span>
           <input
-            type="checkbox"
-            checked={form.requiresCredential}
-            onChange={(e) => set("requiresCredential", e.target.checked)}
-            className="rounded"
-            data-testid="field-requiresCredential"
+            value={form.realizationUrl ?? ""}
+            onChange={(e) => set("realizationUrl", e.target.value || undefined)}
+            placeholder="https://..."
+            type="url"
+            className="mt-1 block w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink"
+            data-testid="field-realizationUrl"
           />
-          <span className="text-sm text-ink-muted">Requires credential (membership number / login)</span>
         </label>
+
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.requiresCredential}
+              onChange={(e) => set("requiresCredential", e.target.checked)}
+              className="rounded"
+              data-testid="field-requiresCredential"
+            />
+            <span className="text-sm text-ink-muted">Requires credential (membership number / login)</span>
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.openToAnyone ?? false}
+              onChange={(e) => set("openToAnyone", e.target.checked)}
+              className="rounded"
+              data-testid="field-openToAnyone"
+            />
+            <span className="text-sm text-ink-muted">Open to anyone (free registration, no status required)</span>
+          </label>
+        </div>
       </section>
 
       <section className="rounded-xl border border-line bg-card p-6 space-y-4">

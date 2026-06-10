@@ -25,6 +25,8 @@ export function catalogEntryToProgram(entry: CatalogEntryDoc): Program {
     sourceUrl: entry.provenance.sourceUrl,
     asOf: entry.provenance.asOf,
     region: entry.region,
+    realizationUrl: entry.realizationUrl,
+    openToAnyone: entry.openToAnyone,
   };
 }
 
@@ -412,6 +414,8 @@ export function programToCatalogInput(program: Program): CatalogEntryInput {
     requiresCredential: program.requiresCredential,
     fields: program.fields,
     benefits: program.benefits,
+    realizationUrl: program.realizationUrl,
+    openToAnyone: program.openToAnyone,
   };
 }
 

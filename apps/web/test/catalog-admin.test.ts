@@ -64,6 +64,8 @@ function entryToInput(entry: CatalogEntry): CatalogEntryInput {
     tiers: entry.tiers,
     fields: entry.fields,
     benefits: entry.benefits,
+    realizationUrl: entry.realizationUrl,
+    openToAnyone: entry.openToAnyone,
   };
 }
 
@@ -150,4 +152,32 @@ test("catalog entry types do not have price fields", () => {
   assert.ok(!raw.includes("memberPrice"), "no memberPrice");
   assert.ok(!raw.includes("finalPrice"), "no finalPrice");
   assert.ok(!raw.includes("indicativePrice"), "no indicativePrice");
+});
+
+// ─── realizationUrl round-trip ────────────────────────────────────────────────
+
+test("entryToInput: preserves realizationUrl", () => {
+  const entry = makeEntry({ realizationUrl: "https://hotel.example.com/book" });
+  const input = entryToInput(entry);
+  assert.equal(input.realizationUrl, "https://hotel.example.com/book");
+});
+
+test("entryToInput: undefined realizationUrl is preserved as undefined", () => {
+  const entry = makeEntry({ realizationUrl: undefined });
+  const input = entryToInput(entry);
+  assert.equal(input.realizationUrl, undefined);
+});
+
+test("entryToInput: preserves openToAnyone", () => {
+  const entry = makeEntry({ openToAnyone: true });
+  const input = entryToInput(entry);
+  assert.equal(input.openToAnyone, true);
+});
+
+test("realizationUrl is not a price field", () => {
+  const entry = makeEntry({ realizationUrl: "https://hotel.example.com/book" });
+  const raw = JSON.stringify(entry);
+  assert.ok(raw.includes("realizationUrl"), "realizationUrl is present");
+  assert.ok(!raw.includes("nightlyAmount"), "no nightlyAmount");
+  assert.ok(!raw.includes("memberPrice"), "no memberPrice");
 });

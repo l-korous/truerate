@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { adminCatalogApi, type CatalogEntry, type CatalogEntryInput } from "@/lib/api";
 import { CatalogEntryForm } from "@/components/CatalogEntryForm";
 import { CatalogVersionHistory } from "@/components/CatalogVersionHistory";
+import { GuestPreview } from "@/components/GuestPreview";
 
-type Tab = "edit" | "history";
+type Tab = "edit" | "preview" | "history";
 
 export default function CatalogEntryPage() {
   const { id } = useParams<{ id: string }>();
@@ -142,7 +143,7 @@ export default function CatalogEntryPage() {
 
         {!isNew && (
           <div className="mb-6 flex gap-1 border-b border-line">
-            {(["edit", "history"] as Tab[]).map((t) => (
+            {(["edit", "preview", "history"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -152,7 +153,7 @@ export default function CatalogEntryPage() {
                     : "text-ink-muted hover:text-ink"
                 }`}
               >
-                {t === "edit" ? "Edit" : "Version history"}
+                {t === "edit" ? "Edit" : t === "preview" ? "Guest preview" : "Version history"}
               </button>
             ))}
           </div>
@@ -178,6 +179,10 @@ export default function CatalogEntryPage() {
               </div>
             )}
           </>
+        )}
+
+        {!isNew && tab === "preview" && entry && (
+          <GuestPreview entry={entry} />
         )}
 
         {!isNew && tab === "history" && (
