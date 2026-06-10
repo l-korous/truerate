@@ -85,19 +85,21 @@ export function AddMembership({
         </div>
 
         {mode === "pick" && (
-          <div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {programs.map((p) => (
-                <button key={p.id} data-testid={`program-${p.id}`}
-                  onClick={() => { setProgram(p); setMode("catalog"); }}
-                  className="flex flex-col items-start rounded-xl border border-line bg-paper px-4 py-3 text-left transition hover:border-ink/30 hover:bg-white">
-                  <span className="font-medium text-ink">{p.name}</span>
-                  <span className="mt-0.5 text-xs text-ink-muted">{CATEGORY_LABEL[p.category] ?? p.category}</span>
-                </button>
-              ))}
+          <div className="flex flex-col gap-3">
+            <div className="max-h-[55vh] overflow-y-auto">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {programs.map((p) => (
+                  <button key={p.id} data-testid={`program-${p.id}`}
+                    onClick={() => { setProgram(p); setMode("catalog"); }}
+                    className="flex flex-col items-start rounded-xl border border-line bg-paper px-4 py-3 text-left transition hover:border-ink/30 hover:bg-white">
+                    <span className="font-medium text-ink">{p.name}</span>
+                    <span className="mt-0.5 text-xs text-ink-muted">{CATEGORY_LABEL[p.category] ?? p.category}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <button onClick={() => setMode("custom")} data-testid="add-custom"
-              className="mt-3 w-full rounded-xl border border-dashed border-line py-3 text-sm font-medium text-ink-muted hover:bg-white">
+              className="w-full rounded-xl border border-dashed border-line py-3 text-sm font-medium text-ink-muted hover:bg-white">
               + A specific hotel or deal not listed (e.g. a negotiated rate)
             </button>
           </div>
