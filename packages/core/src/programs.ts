@@ -791,6 +791,89 @@ export const PROGRAMS: Program[] = [
       ],
     },
   },
+
+  // ── Czech rail — non-hotel travel providers (CZ focus) ───────────────────
+  // Real, publicly-documented loyalty/discount memberships. No prices — the
+  // discount % is the member benefit; the consumer/AI does any math.
+  {
+    id: "leo_express_smile",
+    name: "Leo Express Smile Club",
+    category: "rail",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.leoexpress.com/en/services/smile-club",
+    realizationUrl: "https://www.leoexpress.com/en",
+    defaultMatch: { brands: ["Leo Express", "LEO Express", "Leoexpress"], domains: ["leoexpress.com"] },
+    tiers: ["Orange", "Bronze", "Silver", "Gold"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "Smile Club level", type: "select", options: ["Orange", "Bronze", "Silver", "Gold"] }],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Free seat reservations", "Pay with leo credit"],
+            structuredPerks: [
+              { type: "other", label: "Free seat reservations", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "Smile Club member; book direct at leoexpress.com",
+            realizationUrl: "https://www.leoexpress.com/en",
+          },
+        },
+      ],
+      Orange: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.025, conditions: "2.5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Bronze: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.05, conditions: "5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Silver: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.075, conditions: "7.5% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+      Gold: [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.1, conditions: "10% back as leo credit, redeemable on Leo Express; direct booking", realizationUrl: "https://www.leoexpress.com/en" } }],
+    },
+  },
+  {
+    id: "cd_in_karta",
+    name: "České dráhy In Karta",
+    category: "rail",
+    region: "CZ",
+    asOf: "2026-06",
+    sourceUrl: "https://www.cd.cz/en/jizdne/in-karta/",
+    realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
+    defaultMatch: { brands: ["České dráhy", "Czech Railways", "ČD"], domains: ["cd.cz"] },
+    tiers: ["IN 25", "IN 50", "IN 100"],
+    requiresCredential: false,
+    fields: [{ key: "tier", label: "In Karta application", type: "select", options: ["IN 25", "IN 50", "IN 100"] }],
+    benefits: {
+      "*": [
+        {
+          scope: "brand",
+          value: {
+            kind: "pointsEarn",
+            pointsPerUnit: 1,
+            perks: ["ČD Body points toward free tickets"],
+            structuredPerks: [{ type: "points_bonus", label: "ČD Body points — redeem for free domestic 2nd-class tickets" }],
+            conditions: "ČD e-shop loyalty; book direct at cd.cz",
+            realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
+          },
+        },
+      ],
+      "IN 25": [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.25, conditions: "25% off ČD domestic fares; book direct at cd.cz", realizationUrl: "https://www.cd.cz/en/eshop/default.htm" } }],
+      "IN 50": [{ scope: "brand", value: { kind: "percentDiscount", percentOff: 0.5, conditions: "50% off Flexi/route fares; book direct at cd.cz", realizationUrl: "https://www.cd.cz/en/eshop/default.htm" } }],
+      "IN 100": [
+        {
+          scope: "brand",
+          value: {
+            kind: "perk",
+            perks: ["Unlimited 2nd-class domestic travel", "Free electronic seat reservations", "Free luggage and dog transport"],
+            structuredPerks: [
+              { type: "other", label: "Unlimited 2nd-class domestic travel", conditions: { bookingChannel: ["direct"] } },
+              { type: "other", label: "Free electronic seat reservations", conditions: { bookingChannel: ["direct"] } },
+              { type: "other", label: "Free luggage and dog transport", conditions: { bookingChannel: ["direct"] } },
+            ],
+            conditions: "IN 100 holders; ČD domestic 2nd class; book direct at cd.cz",
+            realizationUrl: "https://www.cd.cz/en/eshop/default.htm",
+          },
+        },
+      ],
+    },
+  },
 ];
 
 const BY_ID = new Map(PROGRAMS.map((p) => [p.id, p]));
