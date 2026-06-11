@@ -1,0 +1,10 @@
+{
+  "reporter": ["text", "json-summary"],
+  "include": ["src/**"],
+  "exclude": ["test/**", "scripts/**"],
+  "check-coverage": true,
+  "branches": 40,
+  "functions": 50,
+  "lines": 50,
+  "statements": 50
+}
