@@ -10,6 +10,11 @@ const nextConfig = {
     // (dependsOn ^build ensures harness is built first) and by Playwright.
     tsconfigPath: "./tsconfig.build.json",
   },
+  // Enable the Next.js instrumentation hook (instrumentation.ts) so OTel
+  // is wired up at server startup before any routes are handled.
+  experimental: {
+    instrumentationHook: true,
+  },
 };
 
 export default nextConfig;
