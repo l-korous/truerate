@@ -261,6 +261,17 @@ export interface PartnerSubmission {
 
 export type PartnerDraftInput = PartnerProgramDraft & { orgId: string };
 
+export type SubscriptionStatus = "none" | "trialing" | "active" | "past_due" | "canceled";
+
+export interface OrgSubscription {
+  hotelId: string;
+  status: SubscriptionStatus;
+  trialEndsAt: string | null;
+  /** Days left in the trial (rounded up), or null if not in trial. */
+  daysLeft: number | null;
+  entitled: boolean;
+}
+
 export const partnerApi = {
   createOrg: (body: { name: string; country: string; contactEmail: string }) =>
     req<{ org: PartnerOrg }>("/partner/orgs", { method: "POST", body: JSON.stringify(body) }),
@@ -276,6 +287,8 @@ export const partnerApi = {
     req<{ submission: PartnerSubmission }>(`/partner/submissions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   submitForReview: (id: string) =>
     req<{ submission: PartnerSubmission }>(`/partner/submissions/${id}/submit`, { method: "POST" }),
+  getOrgSubscription: (orgId: string) =>
+    req<OrgSubscription>(`/partner/orgs/${orgId}/subscription`),
 };
 
 // --- Admin catalog API (via Next.js proxy routes) ----------------------------
