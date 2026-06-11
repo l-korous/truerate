@@ -49,6 +49,35 @@ export function subscriptionEntitled(s: SubscriptionStatus): boolean {
   return s === "trialing" || s === "active";
 }
 
+/**
+ * Full entitlement check including trial expiry.
+ * Returns true when a hotel's offers should surface in channels.
+ * A "trialing" subscription is only entitled while trialEndsAt is in the future.
+ */
+export function isEntitled(sub: HotelSubscription | null | undefined): boolean {
+  if (!sub) return false;
+  if (sub.status === "active") return true;
+  if (sub.status === "trialing") {
+    if (sub.trialEndsAt) return new Date(sub.trialEndsAt) > new Date();
+    return true; // trialing with no expiry — assumed valid
+  }
+  return false;
+}
+
+/**
+ * Days remaining in a free trial, rounded up.
+ * Returns null if the subscription is not in "trialing" status or has no trialEndsAt.
+ * Returns 0 if the trial has expired.
+ */
+export function trialDaysRemaining(sub: HotelSubscription): number | null {
+  if (sub.status !== "trialing" || !sub.trialEndsAt) return null;
+  const msLeft = new Date(sub.trialEndsAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+}
+
+/** Default trial length in days for new hotel onboarding. */
+export const DEFAULT_TRIAL_DAYS = 90;
+
 export interface SubscriptionRepo {
   init(): Promise<void>;
   get(hotelId: string): Promise<HotelSubscription | null>;
@@ -57,6 +86,12 @@ export interface SubscriptionRepo {
   /** Look up by Stripe IDs (webhook payloads reference these, not hotelId). */
   byStripeCustomer(customerId: string): Promise<HotelSubscription | null>;
   bySubscription(subscriptionId: string): Promise<HotelSubscription | null>;
+  /**
+   * Return all trialing subscriptions whose trialEndsAt falls within the next
+   * `withinDays` days (i.e. trialEndsAt > now AND trialEndsAt <= now + withinDays).
+   * Used by the reminder-email job.
+   */
+  listExpiringSoon(withinDays: number): Promise<HotelSubscription[]>;
 }
 
 // ─── Cosmos backend ───────────────────────────────────────────────────────────
@@ -105,6 +140,20 @@ class CosmosSubscriptionRepo implements SubscriptionRepo {
   bySubscription(subscriptionId: string): Promise<HotelSubscription | null> {
     return this.queryOne("stripeSubscriptionId", subscriptionId);
   }
+  async listExpiringSoon(withinDays: number): Promise<HotelSubscription[]> {
+    const now = new Date().toISOString();
+    const cutoff = new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000).toISOString();
+    const { resources } = await this.container.items
+      .query<HotelSubscription>({
+        query: `SELECT * FROM c WHERE c.status = 'trialing' AND c.trialEndsAt > @now AND c.trialEndsAt <= @cutoff`,
+        parameters: [
+          { name: "@now", value: now },
+          { name: "@cutoff", value: cutoff },
+        ],
+      })
+      .fetchAll();
+    return resources;
+  }
 }
 
 // ─── In-memory backend (local dev / tests) ──────────────────────────────────
@@ -123,6 +172,15 @@ class MemorySubscriptionRepo implements SubscriptionRepo {
   }
   async bySubscription(subscriptionId: string): Promise<HotelSubscription | null> {
     return [...this.byHotel.values()].find((s) => s.stripeSubscriptionId === subscriptionId) ?? null;
+  }
+  async listExpiringSoon(withinDays: number): Promise<HotelSubscription[]> {
+    const now = Date.now();
+    const cutoff = now + withinDays * 24 * 60 * 60 * 1000;
+    return [...this.byHotel.values()].filter((s) => {
+      if (s.status !== "trialing" || !s.trialEndsAt) return false;
+      const end = new Date(s.trialEndsAt).getTime();
+      return end > now && end <= cutoff;
+    });
   }
 }
 
