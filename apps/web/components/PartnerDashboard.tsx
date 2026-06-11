@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { partnerApi, type PartnerOrg, type PartnerSubmission } from "@/lib/api";
+import { partnerApi, type PartnerOrg, type PartnerSubmission, type OrgSubscription } from "@/lib/api";
 import { PartnerSubmissionForm } from "./PartnerSubmissionForm";
 
 type View = "dashboard" | "new-org" | "new-submission" | { edit: string };
@@ -114,9 +114,48 @@ function NewOrgForm({ onCreated, onCancel }: NewOrgFormProps) {
   );
 }
 
+function TrialBanner({ sub }: { sub: OrgSubscription }) {
+  if (sub.status === "none") return null;
+  if (sub.status === "active") {
+    return (
+      <p className="mt-1.5 text-xs text-green-600">Subscription active</p>
+    );
+  }
+  if (sub.status === "canceled" || (sub.status === "trialing" && sub.daysLeft === 0)) {
+    return (
+      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <span className="font-semibold">Trial expired.</span> Start a subscription to continue listing your program on TrueRate.
+      </div>
+    );
+  }
+  if (sub.status === "past_due") {
+    return (
+      <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+        <span className="font-semibold">Payment past due.</span> Please update your billing details to keep your program active.
+      </div>
+    );
+  }
+  if (sub.status === "trialing" && sub.daysLeft !== null) {
+    const urgent = sub.daysLeft <= 7;
+    const colorClass = urgent
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-blue-100 bg-blue-50 text-blue-700";
+    return (
+      <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${colorClass}`}>
+        <span className="font-semibold">
+          {sub.daysLeft === 1 ? "Trial expires tomorrow." : `${sub.daysLeft} days left in your free trial.`}
+        </span>{" "}
+        {urgent ? "Add a payment method now to avoid interruption." : "Upgrade at any time from your billing settings."}
+      </div>
+    );
+  }
+  return null;
+}
+
 export function PartnerDashboard() {
   const [orgs, setOrgs] = useState<PartnerOrg[]>([]);
   const [submissions, setSubmissions] = useState<PartnerSubmission[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Record<string, OrgSubscription>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("dashboard");
@@ -128,6 +167,20 @@ export function PartnerDashboard() {
       const [orgRes, subRes] = await Promise.all([partnerApi.myOrgs(), partnerApi.listSubmissions()]);
       setOrgs(orgRes.orgs);
       setSubmissions(subRes.submissions);
+
+      // Fetch subscription status for each org (best-effort — silently skip on error).
+      const subsByOrg: Record<string, OrgSubscription> = {};
+      await Promise.all(
+        orgRes.orgs.map(async (org) => {
+          try {
+            const s = await partnerApi.getOrgSubscription(org.id);
+            subsByOrg[org.id] = s;
+          } catch {
+            // Subscription info unavailable — non-fatal.
+          }
+        }),
+      );
+      setSubscriptions(subsByOrg);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load partner data");
     } finally {
@@ -237,20 +290,26 @@ export function PartnerDashboard() {
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">Your organizations</h2>
           <div className="divide-y divide-border rounded-xl border border-border bg-surface">
-            {orgs.map((org) => (
-              <div key={org.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-ink">{org.name}</p>
-                  <p className="text-xs text-ink-muted">{org.country} · {org.contactEmail}</p>
-                  {org.status === "rejected" && org.rejectReason && (
-                    <p className="mt-1 text-xs text-red-600">Rejected: {org.rejectReason}</p>
-                  )}
+            {orgs.map((org) => {
+              const sub = subscriptions[org.id];
+              return (
+                <div key={org.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-ink">{org.name}</p>
+                      <p className="text-xs text-ink-muted">{org.country} · {org.contactEmail}</p>
+                      {org.status === "rejected" && org.rejectReason && (
+                        <p className="mt-1 text-xs text-red-600">Rejected: {org.rejectReason}</p>
+                      )}
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[org.status] ?? ""}`}>
+                      {org.status}
+                    </span>
+                  </div>
+                  {sub && <TrialBanner sub={sub} />}
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[org.status] ?? ""}`}>
-                  {org.status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {orgs.every((o) => o.status === "pending") && (
             <p className="mt-2 text-xs text-amber-600">
