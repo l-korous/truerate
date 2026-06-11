@@ -12,4 +12,5 @@ dist
 .azure
 playwright-report
 test-results
+coverage
 *.tsbuildinfo
