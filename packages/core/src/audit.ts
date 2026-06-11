@@ -37,7 +37,10 @@ export type AuditAction =
   // Admin: app config
   | "admin.config.create"
   | "admin.config.update"
-  | "admin.config.delete";
+  | "admin.config.delete"
+  // Referral program
+  | "partner.referral.signup"   // referee org signed up with a referral code
+  | "partner.referral.reward";  // referrer trial extended on referee activation
 
 export interface AuditEntry {
   /** Unique document id. */
