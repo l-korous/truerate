@@ -41,22 +41,9 @@ jobs:
         run: pnpm typecheck
 
       # `pnpm test` builds @truerate/core first, then runs every package's
-      # node:test suite (core, api, mcp, extension). c8 wraps each package's
-      # test run and enforces per-package coverage thresholds (see .c8rc.json).
+      # node:test suite (core, api, mcp, extension).
       - name: Unit & integration tests
         run: pnpm test
-
-      - name: Upload coverage reports
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-reports
-          path: |
-            packages/core/coverage/coverage-summary.json
-            apps/api/coverage/coverage-summary.json
-            apps/mcp/coverage/coverage-summary.json
-          retention-days: 30
-          if-no-files-found: warn
 
   build:
     name: Build web (production)
