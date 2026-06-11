@@ -58,6 +58,11 @@ import {
   type SubmissionStatus,
   type PartnerProgramDraft,
   type PartnerRole,
+  getSubscriptionRepo,
+  resetSubscriptionRepo,
+  isEntitled,
+  trialDaysRemaining,
+  DEFAULT_TRIAL_DAYS,
 } from "@truerate/core";
 import { issueToken, requireAuth } from "./auth.js";
 import { rateLimitMiddleware, signupRateLimit } from "./rate-limit.js";
@@ -91,6 +96,9 @@ export function resetAppCatalog(): void {
 
 /** Reset partner workflow state — for tests only. */
 export { resetPartnerWorkflow as resetAppPartner };
+
+/** Reset subscription repo state — for tests only. */
+export { resetSubscriptionRepo as resetAppSubscription };
 
 // Email sender — resolved once, then reused.
 // In production, ACS_EMAIL_ENDPOINT/ACS_EMAIL_SENDER configure the ACS sender.
@@ -1084,6 +1092,16 @@ app.post("/admin/partners/:id/approve", async (c) => {
   try {
     const org = await workflow.approveOrg(c.req.param("id"), parsed.adminId ?? actor);
 
+    // Auto-start a free trial for the newly approved org.
+    const subRepo = await getSubscriptionRepo();
+    const trialEndsAt = new Date(Date.now() + DEFAULT_TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await subRepo.upsert({
+      hotelId: org.id,
+      status: "trialing",
+      trialEndsAt,
+      updatedAt: new Date().toISOString(),
+    });
+
     const audit = await getAuditRepo();
     await audit.append({
       actor,
@@ -1997,6 +2015,67 @@ app.delete("/partner/orgs/:id/members/:memberId", requireAuth, async (c) => {
   }
 });
 
+// GET /partner/orgs/:id/subscription — subscription + trial status for an org.
+// Any org member may read this so the dashboard can show the trial countdown.
+app.get("/partner/orgs/:id/subscription", requireAuth, async (c) => {
+  const userId = c.get("userId");
+  const orgId = c.req.param("id");
+
+  // Verify caller is a member of the org.
+  const orgRepo = await getPartnerOrgRepo();
+  const member = await orgRepo.getMember(userId, orgId);
+  if (!member) return c.json({ error: "not_a_member", message: "You are not a member of this organization" }, 403);
+
+  const subRepo = await getSubscriptionRepo();
+  const sub = await subRepo.get(orgId);
+
+  const daysLeft = sub ? trialDaysRemaining(sub) : null;
+  return c.json({
+    hotelId: orgId,
+    status: sub?.status ?? "none",
+    trialEndsAt: sub?.trialEndsAt ?? null,
+    daysLeft,
+    entitled: isEntitled(sub),
+  });
+});
+
+// POST /admin/billing/reminders — scan for trials expiring soon and send reminder emails.
+// Intended to be called by a scheduled job (Container Apps Job) or manually by an admin.
+// Reminder windows: 30, 7, 1 day(s) before trial end. Idempotent within each window.
+app.post("/admin/billing/reminders", async (c) => {
+  const authErr = requireCatalogEditor(c);
+  if (authErr) return authErr;
+
+  const subRepo = await getSubscriptionRepo();
+  const orgRepo = await getPartnerOrgRepo();
+  const sender = await getEmailSender();
+
+  const WINDOWS = [30, 7, 1] as const;
+  const sent: { hotelId: string; daysLeft: number }[] = [];
+
+  for (const window of WINDOWS) {
+    // Find trials expiring within `window` days (and not within `window-1` days,
+    // so each hotel receives at most one reminder per window boundary).
+    const lower = window === 1 ? 0 : WINDOWS[WINDOWS.indexOf(window) + 1] ?? 0;
+    const expiring = await subRepo.listExpiringSoon(window);
+    const inWindow = expiring.filter((s) => {
+      const days = trialDaysRemaining(s);
+      return days !== null && days > lower;
+    });
+
+    for (const sub of inWindow) {
+      const org = await orgRepo.getOrg(sub.hotelId);
+      if (!org?.contactEmail) continue;
+      const daysLeft = trialDaysRemaining(sub) ?? window;
+      const { subject, text } = buildTrialReminderEmail(org.name, daysLeft);
+      await sender.send({ to: org.contactEmail, subject, text }).catch(() => { /* logged by transport */ });
+      sent.push({ hotelId: sub.hotelId, daysLeft });
+    }
+  }
+
+  return c.json({ sent });
+});
+
 // --- Admin proposal review queue (issue #106) --------------------------------
 // Routes are defined in ./review.ts; mounted here to share CORS and rate-limit middleware.
 app.route("/", proposalRoutes);
@@ -2004,6 +2083,24 @@ app.route("/", demoRoutes);
 app.route("/", billingRoutes);
 
 // --- helpers ----------------------------------------------------------------
+
+function buildTrialReminderEmail(orgName: string, daysLeft: number): { subject: string; text: string } {
+  const urgency = daysLeft <= 1 ? "tomorrow" : `in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  return {
+    subject: `TrueRate: Your free trial expires ${urgency} — ${orgName}`,
+    text: [
+      `Hello ${orgName},`,
+      "",
+      `Your 3-month free trial on TrueRate expires ${urgency}.`,
+      "",
+      "To keep your loyalty program listed and accessible to travellers, please start your subscription by visiting your TrueRate partner dashboard.",
+      "",
+      "Members save X% booking direct — your program will stop surfacing in TrueRate channels once the trial ends.",
+      "",
+      "— The TrueRate team",
+    ].join("\n"),
+  };
+}
 
 async function loadUser(id: string): Promise<User> {
   const { getUserRepo } = await import("@truerate/core");
