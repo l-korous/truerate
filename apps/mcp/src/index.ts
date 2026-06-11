@@ -1,3 +1,7 @@
+import { setupTelemetry } from "@truerate/core";
+// Must be called before any other imports so HTTP instrumentation registers first.
+setupTelemetry("truerate-mcp");
+
 import { createServer } from "node:http";
 import { createLogger } from "@truerate/core";
 import { createRequestListener } from "./http.js";

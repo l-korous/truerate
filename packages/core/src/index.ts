@@ -23,3 +23,4 @@ export { BookingProvider } from "./providers/booking.js";
 export type { HotelProvider, ProviderProperty } from "./providers/types.js";
 export { RateLimiter, createRateLimiter } from "./rate-limiter.js";
 export type { RateLimiterConfig, RateLimitResult } from "./rate-limiter.js";
+export { setupTelemetry, _resetTelemetry } from "./telemetry.js";

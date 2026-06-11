@@ -1,3 +1,7 @@
+import { setupTelemetry } from "@truerate/core";
+// Must be called before any other imports so HTTP instrumentation registers first.
+setupTelemetry("truerate-api");
+
 import { serve } from "@hono/node-server";
 import { createLogger } from "@truerate/core";
 import { app, engine } from "./app.js";
