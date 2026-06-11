@@ -19,6 +19,7 @@ export * from "./hotel-directory.js";
 export * from "./hotel-terms.js";
 export * from "./usage-db.js";
 export * from "./billing.js";
+export * from "./referral.js";
 export { BookingProvider } from "./providers/booking.js";
 export type { HotelProvider, ProviderProperty } from "./providers/types.js";
 export { RateLimiter, createRateLimiter } from "./rate-limiter.js";
