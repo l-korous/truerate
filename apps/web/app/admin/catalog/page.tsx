@@ -55,12 +55,20 @@ export default function CatalogAdminPage() {
             <span className="h-2 w-2 rounded-full bg-save" />
             <h1 className="font-display text-3xl text-ink">Catalog editor</h1>
           </div>
-          <Link
-            href="/admin/catalog/new"
-            className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90"
-          >
-            New program
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/admin/catalog/bulk"
+              className="rounded-lg border border-line bg-paper px-4 py-2 text-sm font-medium text-ink hover:bg-card"
+            >
+              Bulk import
+            </Link>
+            <Link
+              href="/admin/catalog/new"
+              className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink/90"
+            >
+              New program
+            </Link>
+          </div>
         </div>
 
         <div className="mb-6 flex gap-2">

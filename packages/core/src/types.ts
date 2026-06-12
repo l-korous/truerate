@@ -628,6 +628,19 @@ export interface CatalogEntryDoc {
    */
   benefits: Record<string, BenefitTemplate[]>;
 
+  /**
+   * Default direct-booking ("realization") URL for this program — where a guest
+   * books to actually get the discount/perks. Channels surface it as
+   * "members save X% — book direct at <URL>". Never a price.
+   */
+  realizationUrl?: string;
+
+  /**
+   * Whether this program is open to anyone — a guest can simply register
+   * (free, no status) and immediately get the discount/perks.
+   */
+  openToAnyone?: boolean;
+
   // ── Lifecycle timestamps ───────────────────────────────────────────────────
   createdAt: string;   // ISO-8601
   updatedAt: string;   // ISO-8601

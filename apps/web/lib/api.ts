@@ -122,6 +122,8 @@ export interface CatalogEntry {
   requiresCredential: boolean;
   fields: ProgramField[];
   benefits: Record<string, BenefitTemplate[]>;
+  realizationUrl?: string;
+  openToAnyone?: boolean;
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
@@ -139,6 +141,8 @@ export interface CatalogEntryInput {
   requiresCredential: boolean;
   fields: ProgramField[];
   benefits: Record<string, BenefitTemplate[]>;
+  realizationUrl?: string;
+  openToAnyone?: boolean;
 }
 
 export interface PerkBandEstimate {
@@ -308,6 +312,12 @@ async function adminReq<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface BulkImportResult {
+  results: Array<{ programId: string; ok: boolean; error?: string }>;
+  succeeded: number;
+  failed: number;
+}
+
 export const adminCatalogApi = {
   list: (status?: string) =>
     adminReq<{ entries: CatalogEntry[]; count: number }>(status ? `?status=${status}` : ""),
@@ -325,6 +335,18 @@ export const adminCatalogApi = {
     adminReq<{ history: CatalogEntry[]; programId: string }>(`/${programId}/history`),
   restore: (programId: string, version: number) =>
     adminReq<{ entry: CatalogEntry }>(`/${programId}/restore/${version}`, { method: "POST" }),
+  bulkImport: async (entries: CatalogEntryInput[]): Promise<BulkImportResult> => {
+    const res = await fetch("/api/admin/catalog/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entries),
+    });
+    if (!res.ok && res.status !== 207) {
+      const msg = (await res.json().catch(() => ({})))?.error ?? `Request failed (${res.status})`;
+      throw new Error(String(msg));
+    }
+    return res.json() as Promise<BulkImportResult>;
+  },
 };
 
 // --- Admin feature flags API (via Next.js proxy routes) ----------------------

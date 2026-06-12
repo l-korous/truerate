@@ -143,4 +143,6 @@ export const CatalogEntryInputSchema = z.object({
   requiresCredential: z.boolean(),
   fields: z.array(ProgramFieldSchema),
   benefits: z.record(z.array(BenefitTemplateSchema)),
+  realizationUrl: z.string().url("realizationUrl must be a valid URL").optional(),
+  openToAnyone: z.boolean().optional(),
 });
