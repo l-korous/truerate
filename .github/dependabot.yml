@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # pnpm workspace packages
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      # Group all non-breaking minor/patch updates together to reduce noise
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Ignore major version bumps (review manually)
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - dependencies
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - github-actions
