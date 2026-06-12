@@ -10,9 +10,26 @@ import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/admin-auth";
 // missing/invalid, admin pages redirect to /admin/login and admin APIs return
 // 401 — data is never exposed.
 
-export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };
+export const config = {
+  matcher: [
+    "/admin/:path*",
+    "/api/admin/:path*",
+    // Catch requests with a stale/invalid Next-Action header so they never
+    // reach the action dispatcher's manifest Proxy getter, which crashes with
+    // "Cannot read properties of undefined (reading 'workers')" when the
+    // action ID is absent from the current deployment's manifest.
+    { source: "/(.*)", has: [{ type: "header", key: "next-action" }] },
+  ],
+};
 
 export async function middleware(req: NextRequest): Promise<NextResponse> {
+  // This app has no server actions. Any request carrying a Next-Action header
+  // is either from a stale browser cache (post-deployment mismatch) or a
+  // probe. Reject early so the action dispatcher's manifest Proxy never runs.
+  if (req.headers.get("next-action")) {
+    return NextResponse.json({ error: "server_action_not_found" }, { status: 404 });
+  }
+
   const { pathname } = req.nextUrl;
 
   // Allow the sign-in surfaces through unauthenticated.
